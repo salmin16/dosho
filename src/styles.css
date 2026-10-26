@@ -1,0 +1,128 @@
+@import "tailwindcss" source("../");
+
+@theme {
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --color-ink: #15120f;
+  --color-ink-2: #231e1a;
+  --color-ink-3: #3a322b;
+  --color-paper: #f6f1e7;
+  --color-paper-2: #ede5d6;
+  --color-sand: #d9ccb4;
+  --color-stone: #776c60;
+  --color-ochre: #c0612b;
+  --color-ochre-dark: #9a4a1e;
+  --color-gold: #d6a443;
+  --color-moss: #3e5c49;
+  --color-moss-light: #dfe8df;
+  --color-danger: #a33a2a;
+
+  --animate-rise: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-fade: fade 1.2s ease both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply m-0 bg-paper text-ink font-sans;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--color-ochre);
+  color: var(--color-paper);
+}
+
+.font-display {
+  font-variation-settings: "opsz" 144, "SOFT" 30;
+  letter-spacing: -0.02em;
+}
+
+/* Fine contour-line texture used behind dark sections */
+.contours {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Cg fill='none' stroke='%23d6a443' stroke-opacity='0.09' stroke-width='1'%3E%3Cpath d='M-50 320c80-60 160-90 240-60s150 100 240 70 130-110 220-90'/%3E%3Cpath d='M-50 360c80-60 170-80 250-50s140 100 230 70 140-100 220-80'/%3E%3Cpath d='M-50 400c90-50 170-70 250-40s140 90 230 60 140-90 220-70'/%3E%3Cpath d='M-50 440c90-40 170-60 250-30s140 80 230 50 140-80 220-60'/%3E%3Cpath d='M-50 280c80-70 160-100 240-70s150 110 240 80 130-120 220-100'/%3E%3Cpath d='M-50 240c80-80 160-110 240-80s150 120 240 90 130-130 220-110'/%3E%3Cpath d='M-50 200c80-90 160-120 240-90s150 130 240 100 130-140 220-120'/%3E%3Cpath d='M-50 480c90-30 170-50 250-20s140 70 230 40 140-70 220-50'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 600px 600px;
+}
+
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.marker-ping {
+  animation: ping-soft 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.link-underline {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 0.3s ease;
+}
+.link-underline:hover {
+  background-size: 100% 1px;
+}
+
+.field {
+  @apply w-full rounded-md border border-sand bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20;
+}
+
+.label {
+  @apply mb-1.5 block font-mono text-[11px] uppercase tracking-[0.14em] text-stone;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_8px_24px_-12px_rgba(192,97,43,0.8)] transition hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition hover:border-current/60 hover:bg-current/5 active:translate-y-px;
+}
+
+.eyebrow {
+  @apply font-mono text-[11px] uppercase tracking-[0.22em];
+}
