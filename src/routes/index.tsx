@@ -14,6 +14,10 @@ import {
   Briefcase,
   HardHat,
   Compass,
+  FileSpreadsheet,
+  Wrench,
+  CheckCircle2,
+  ArrowUpRight,
 } from 'lucide-react'
 import {
   MINERALS,
@@ -22,6 +26,7 @@ import {
   REGIONS,
   SERVICE_CATEGORIES,
   SERVICE_PROVIDERS,
+  formatUsd,
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
@@ -39,6 +44,7 @@ function Home() {
     <>
       <Hero />
       <Stats />
+      <OpportunityStreamsShowcase />
       <Featured />
       <HowItWorks />
       <VerificationLadder />
@@ -227,6 +233,159 @@ function SectionHead({
       </div>
       {action}
     </div>
+  )
+}
+
+function OpportunityStreamsShowcase() {
+  const { t, tv, fixtures } = useI18n()
+
+  const streamIcons = {
+    tenders: FileSpreadsheet,
+    services: Wrench,
+    personnel: HardHat,
+  } as const
+
+  return (
+    <section className="border-b border-ink/10 bg-paper-2 px-5 py-24 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-7xl">
+        <SectionHead
+          eyebrow={t('opp.streams.eyebrow')}
+          title={
+            <>
+              {t('opp.streams.titlePre')}
+              <em className="italic text-ochre">{t('opp.streams.titleEm')}</em>
+            </>
+          }
+          body={t('opp.streams.subtitle')}
+          action={
+            <Link to="/opportunities" className="btn-ghost shrink-0">
+              {t('home.featured.browseAll', { count: PROJECTS.length })} <ArrowRight size={16} />
+            </Link>
+          }
+        />
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          {fixtures.opportunityStreams.map((stream) => {
+            const Icon = streamIcons[stream.id]
+            const matchingProjects = PROJECTS.filter((p) => p.type === stream.type)
+            const totalPipelineUsd = matchingProjects.reduce((sum, p) => sum + p.investmentUsd, 0)
+
+            return (
+              <article
+                key={stream.id}
+                className="group flex flex-col justify-between rounded-2xl border border-ink/12 bg-white/85 p-7 transition duration-300 hover:-translate-y-1 hover:border-ochre/40 hover:bg-white hover:shadow-[0_24px_48px_-28px_rgba(21,18,15,0.4)]"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold">
+                      <span>{stream.code}</span>
+                      <span className="text-paper/40">·</span>
+                      <span>{stream.badge}</span>
+                    </span>
+                    <span className="rounded-full border border-moss/25 bg-moss-light px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-moss">
+                      {stream.complianceTag}
+                    </span>
+                  </div>
+
+                  <div className="mt-5 flex items-start gap-3.5">
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-ochre/20 bg-ochre/10 text-ochre">
+                      <Icon size={22} />
+                    </div>
+                    <div>
+                      <h3 className="font-display text-2xl font-medium leading-snug text-ink">{stream.title}</h3>
+                      <p className="mt-1 font-mono text-[11px] text-stone">{stream.contractModel}</p>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-relaxed text-stone">{stream.summary}</p>
+
+                  {/* Analytical KPI strip */}
+                  <dl className="mt-5 grid grid-cols-3 gap-2 rounded-xl border border-ink/10 bg-paper-2/70 p-3 text-center">
+                    <div>
+                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.activeListings')}</dt>
+                      <dd className="font-display mt-0.5 text-2xl font-medium text-ink">{matchingProjects.length}</dd>
+                    </div>
+                    <div className="border-x border-ink/10 px-1">
+                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.pipelineValue')}</dt>
+                      <dd className="font-display mt-0.5 text-2xl font-medium text-ochre">{formatUsd(totalPipelineUsd)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.typicalTicket')}</dt>
+                      <dd className="mt-1.5 font-mono text-[11px] font-semibold text-ink">{stream.typicalValue}</dd>
+                    </div>
+                  </dl>
+
+                  {/* Visual Demand Breakdown */}
+                  <div className="mt-5">
+                    <div className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-stone">
+                      {t('opp.streams.demandBreakdown')}
+                    </div>
+                    <ul className="space-y-2.5">
+                      {stream.subCategories.map((sub) => (
+                        <li key={sub.name} className="text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium text-ink/90">{sub.name}</span>
+                            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px]">
+                              <span
+                                className={`rounded px-1.5 py-0.5 ${
+                                  sub.demand === 'High'
+                                    ? 'bg-ochre/15 font-semibold text-ochre'
+                                    : sub.demand === 'Active'
+                                      ? 'bg-moss-light text-moss'
+                                      : 'bg-paper-2 text-stone'
+                                }`}
+                              >
+                                {tv(sub.demand)}
+                              </span>
+                              <span className="w-7 text-right text-stone">{sub.share}%</span>
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink/10">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-ochre to-gold"
+                              style={{ width: `${sub.share * 2.2}%` }}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Requirements */}
+                  <div className="mt-5 border-t border-ink/10 pt-4">
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
+                      {t('opp.streams.keyRequirements')}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {stream.requirements.map((req) => (
+                        <span
+                          key={req}
+                          className="inline-flex items-center gap-1 rounded-md border border-sand bg-paper/60 px-2 py-1 text-[11px] text-ink/85"
+                        >
+                          <CheckCircle2 size={11} className="shrink-0 text-moss" />
+                          {req}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <Link
+                  to="/opportunities"
+                  search={{ type: stream.type }}
+                  className="mt-6 flex w-full items-center justify-between rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-paper transition group-hover:bg-ochre"
+                >
+                  <span>{t('opp.streams.exploreStream')}</span>
+                  <span className="inline-flex items-center gap-1 font-mono text-xs opacity-90">
+                    {matchingProjects.length} <ArrowUpRight size={15} />
+                  </span>
+                </Link>
+              </article>
+            )
+          })}
+        </div>
+      </div>
+    </section>
   )
 }
 

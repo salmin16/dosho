@@ -26,6 +26,9 @@ export type OpportunityType =
   | 'Equipment / project financing'
   | 'Processing opportunity'
   | 'Processing facility'
+  | 'Tenders opportunity in mine sites'
+  | 'Service provision opportunities'
+  | 'Technical personnel (Engineers & Technicians)'
 
 export type ProjectStage =
   | 'Greenfield'
@@ -97,6 +100,9 @@ export const MINERALS: Mineral[] = [
 ]
 
 export const OPPORTUNITY_TYPES: OpportunityType[] = [
+  'Tenders opportunity in mine sites',
+  'Service provision opportunities',
+  'Technical personnel (Engineers & Technicians)',
   'Licence / rights opportunity',
   'Existing mine seeking investment',
   'Joint venture',
@@ -656,6 +662,174 @@ export const PROJECTS: Project[] = [
     updatedOn: '2026-10-03',
     enquiries: 11,
   },
+  {
+    id: 'MC-GE-0204',
+    title: 'Geita Open-Pit Haulage & Earthworks Mine Site Tender',
+    minerals: ['Gold'],
+    type: 'Tenders opportunity in mine sites',
+    transactionStatus: 'Open tender — pre-qualification & technical bid submission active',
+    region: 'Geita',
+    district: 'Geita DC',
+    lat: -2.88,
+    lng: 32.22,
+    locationDisclosure: 'Exact on NDA',
+    licence: { type: 'ML', reference: 'ML 00••••/LZW', status: 'Active', issued: '2022-05-10', expires: '2032-05-09' },
+    areaHa: 410,
+    stage: 'Producing',
+    summary:
+      'Active gold mining operation inviting pre-qualified Tanzanian and joint-venture contractors to bid for a 24-month open-pit waste stripping, ore haulage (4.5 km ROM pad route) and haul-road maintenance contract.',
+    highlights: ['24-month site tender contract', 'Local content compliant (Mining Regulations)', 'Monthly volume: 45,000 BCM waste & ore'],
+    evidence: [
+      { label: 'Tender Pack', detail: 'Bill of Quantities (BoQ), haul profile & HSE standards' },
+      { label: 'Operations', detail: 'Active producing ML with verified payment escrow' },
+    ],
+    infrastructure: { access: 'All-weather mine access road from Geita', power: 'Grid & mine powerhouse', water: 'Site dust-suppression bowser fill points' },
+    investmentUsd: 1_450_000,
+    dealTypes: ['Site tender contract', 'Local content supply'],
+    documents: [
+      { name: 'Invitation to Tender (ITT) & Scope', kind: 'PDF · 14 pp', access: 'Public' },
+      { name: 'Bill of Quantities (BoQ)', kind: 'XLSX', access: 'On request' },
+      { name: 'Mine Site HSE & Fleet Compliance', kind: 'PDF', access: 'Deal room' },
+    ],
+    verification: {
+      level: 3,
+      checkedOn: '2026-10-05',
+      checkedBy: 'Registered mining engineer (MineConnect verification panel)',
+      scope: ['Operator KYC & ML standing', 'Tender BoQ & scope completeness', 'Local content procurement structure'],
+      notVerified: ['Contractor award outcome', 'Subsurface geotechnical variations'],
+    },
+    owner: { name: 'Victoria Reef Gold Operations Ltd', kind: 'Medium-scale mine operator', memberSince: '2026' },
+    image: 'gold',
+    featured: true,
+    listedOn: '2026-10-02',
+    updatedOn: '2026-10-18',
+    enquiries: 27,
+  },
+  {
+    id: 'MC-SH-0245',
+    title: 'Kahama Mine Site Reagents, Mill Balls & Fuel Supply Tender',
+    minerals: ['Gold'],
+    type: 'Tenders opportunity in mine sites',
+    transactionStatus: 'Open framework tender — 12-month renewable supply contract',
+    region: 'Shinyanga',
+    district: 'Kahama',
+    lat: -3.79,
+    lng: 32.54,
+    locationDisclosure: 'Approximate',
+    licence: { type: 'ML', reference: 'ML 00••••/SHY', status: 'Active', issued: '2023-02-11', expires: '2033-02-10' },
+    areaHa: 185,
+    stage: 'Producing',
+    summary:
+      'Framework mine site tender for reliable delivery of hydrated lime, activated carbon, forged steel grinding balls, PPE and bulk diesel to a 250 tpd CIL processing operation near Kahama.',
+    highlights: ['4 separate lots (bidders may quote 1 or all)', '30-day LC / bank-guaranteed payment terms', 'Priority for registered Tanzanian suppliers'],
+    evidence: [
+      { label: 'Specifications', detail: 'Annual consumption schedule & quality specs' },
+      { label: 'Compliance', detail: 'Approved Local Content Plan filed' },
+    ],
+    infrastructure: { access: 'Tarmac & 6 km graded road, weighbridge on site', power: 'TANESCO grid + standby gensets', water: 'Process water circuit' },
+    investmentUsd: 890_000,
+    dealTypes: ['Site tender contract', 'Local content supply'],
+    documents: [
+      { name: 'Tender Lots & Technical Specs', kind: 'PDF · 10 pp', access: 'Public' },
+      { name: 'Supplier Pre-qualification Form', kind: 'DOCX', access: 'Public' },
+    ],
+    verification: {
+      level: 2,
+      checkedOn: '2026-10-10',
+      checkedBy: 'MineConnect compliance officer',
+      scope: ['Company registration & ML record', 'Procurement authority verification'],
+      notVerified: ['Offtake credit terms', 'Monthly consumption variance'],
+    },
+    owner: { name: 'Bulyanhulu Corridor Gold Ltd', kind: 'Producing mine operator', memberSince: '2026' },
+    image: 'copper',
+    listedOn: '2026-10-08',
+    updatedOn: '2026-10-20',
+    enquiries: 19,
+  },
+  {
+    id: 'MC-MY-0211',
+    title: 'Mererani Underground Ventilation, Dewatering & Assay Service Contract',
+    minerals: ['Tanzanite', 'Gemstones'],
+    type: 'Service provision opportunities',
+    transactionStatus: 'Accepting service provider proposals — 18-month service agreement',
+    region: 'Manyara',
+    district: 'Simanjiro',
+    lat: -3.58,
+    lng: 37.01,
+    locationDisclosure: 'Exact on NDA',
+    licence: { type: 'PML', reference: 'PML 00••••/ARS', status: 'Active', issued: '2022-09-01', expires: '2029-08-31' },
+    areaHa: 16.4,
+    stage: 'Producing',
+    summary:
+      'Consortium of four producing underground tanzanite shafts seeking a qualified mining service provider to install and maintain multi-level ventilation fans, compressed-air lines, dewatering pumps and weekly underground safety audits.',
+    highlights: ['Consortium of 4 active shafts', 'Retainer + milestone service model', 'Equipment maintenance & HSE scope'],
+    evidence: [
+      { label: 'Engineering', detail: 'Shaft depth profiles (220m–340m) & airflow audit' },
+      { label: 'Contract', detail: 'Draft SLA & monthly payment schedule' },
+    ],
+    infrastructure: { access: 'Tarmac to Mererani gate', power: '3-phase TANESCO grid on site', water: 'Mine dewatering sumps' },
+    investmentUsd: 480_000,
+    dealTypes: ['Service contract (SLA)', 'Operating partnership'],
+    documents: [
+      { name: 'Terms of Reference (ToR)', kind: 'PDF · 9 pp', access: 'Public' },
+      { name: 'Underground Ventilation Layout', kind: 'PDF', access: 'On request' },
+    ],
+    verification: {
+      level: 2,
+      checkedOn: '2026-10-12',
+      checkedBy: 'MineConnect compliance officer',
+      scope: ['Consortium KYC & representative mandate', 'PML active status check'],
+      notVerified: ['Underground rock mechanics', 'Power tariff pass-throughs'],
+    },
+    owner: { name: 'Mererani Deep Shaft Consortium', kind: 'Miners’ consortium', memberSince: '2026' },
+    image: 'tanzanite',
+    featured: true,
+    listedOn: '2026-10-06',
+    updatedOn: '2026-10-19',
+    enquiries: 15,
+  },
+  {
+    id: 'MC-LI-0230',
+    title: 'Ruangwa Graphite & Gold Operations — Technical Personnel (Engineers & Technicians)',
+    minerals: ['Graphite', 'Gold'],
+    type: 'Technical personnel (Engineers & Technicians)',
+    transactionStatus: 'Recruiting & contracting technical specialists — immediate & rotational deployment',
+    region: 'Lindi',
+    district: 'Ruangwa',
+    lat: -10.08,
+    lng: 38.92,
+    locationDisclosure: 'Approximate',
+    licence: { type: 'ML', reference: 'ML 00••••/LIN', status: 'Active', issued: '2024-04-15', expires: '2034-04-14' },
+    areaHa: 1_250,
+    stage: 'Pilot production',
+    summary:
+      'Structured technical personnel opportunity for ERB-registered Engineers and certified Technicians to lead commissioning and operations of a 60 tpd pilot flotation & CIL plant. Roles include Senior Process Engineer, Mining Engineer, Electrical & PLC Instrumentation Technician, Mechanical Fitter and Assay Lab Technician.',
+    highlights: ['ERB-registered Engineers & certified Technicians', '6/2 rotational roster or 12-month consulting retainer', 'Accommodation, flights & site allowances provided'],
+    evidence: [
+      { label: 'Roles & Specs', detail: '5 key engineering & technician positions with clear KPIs' },
+      { label: 'Plant', detail: 'Flotation & gravity/CIL pilot circuits on site' },
+    ],
+    infrastructure: { access: 'All-weather road to Ruangwa camp', power: 'Hybrid solar-diesel microgrid', water: 'Borehole field & treatment plant' },
+    investmentUsd: 320_000,
+    dealTypes: ['Technical consultancy / roster', 'Technical services for equity'],
+    documents: [
+      { name: 'Technical Personnel Roster & Role Profiles', kind: 'PDF · 8 pp', access: 'Public' },
+      { name: 'Plant Flowsheet & Commissioning Schedule', kind: 'PDF', access: 'On request' },
+    ],
+    verification: {
+      level: 3,
+      checkedOn: '2026-10-14',
+      checkedBy: 'Registered metallurgist (MineConnect verification panel)',
+      scope: ['Operating company KYC', 'Licence record', 'Plant flowsheet & engineering role verification'],
+      notVerified: ['Individual employment contract terms'],
+    },
+    owner: { name: 'Southern Corridor Processing & Mining Ltd', kind: 'Mine & plant operator', memberSince: '2026' },
+    image: 'graphite',
+    featured: true,
+    listedOn: '2026-10-09',
+    updatedOn: '2026-10-22',
+    enquiries: 34,
+  },
 ]
 
 export interface ServiceProvider {
@@ -863,6 +1037,84 @@ export const INSIGHTS = [
     tag: 'Deal structuring',
     minutes: 9,
     excerpt: 'Earn-ins, operating partnerships and how to protect both parties within the statutory transfer process.',
+  },
+]
+
+export interface OpportunityStream {
+  id: 'tenders' | 'services' | 'personnel'
+  code: string
+  type: OpportunityType
+  title: string
+  badge: string
+  summary: string
+  targetAudience: string
+  contractModel: string
+  typicalValue: string
+  complianceTag: string
+  subCategories: { name: string; demand: 'High' | 'Active' | 'Growing'; share: number }[]
+  requirements: string[]
+}
+
+export const OPPORTUNITY_STREAMS: OpportunityStream[] = [
+  {
+    id: 'tenders',
+    code: 'OPP-01',
+    type: 'Tenders opportunity in mine sites',
+    title: 'Tenders Opportunity in Mine Sites',
+    badge: 'Site Procurement & Supply',
+    summary:
+      'Structured procurement tenders issued directly by producing and pilot mine sites for earthworks, ore haulage, reagents, mill consumables, fuel and site infrastructure.',
+    targetAudience: 'Civil & mining contractors, bulk suppliers, local content JVs',
+    contractModel: 'BoQ competitive tender · 12–24 month framework',
+    typicalValue: 'US$250k – US$2.5M',
+    complianceTag: 'Local Content Compliant',
+    subCategories: [
+      { name: 'Open-pit earthworks & ore haulage', demand: 'High', share: 40 },
+      { name: 'Reagents, lime, carbon & grinding media', demand: 'High', share: 28 },
+      { name: 'Bulk fuel, lubricants & power supply', demand: 'Active', share: 18 },
+      { name: 'Camp infrastructure, PPE & catering lots', demand: 'Growing', share: 14 },
+    ],
+    requirements: ['BRELA & TIN compliance', 'Local Content Plan', 'Verified fleet / supply capacity'],
+  },
+  {
+    id: 'services',
+    code: 'OPP-02',
+    type: 'Service provision opportunities',
+    title: 'Service Provision Opportunities',
+    badge: 'Technical & Site Services',
+    summary:
+      'Ongoing operational service contracts at active mines and exploration camps covering drilling, ventilation, dewatering, assay laboratories, environmental monitoring and plant maintenance.',
+    targetAudience: 'Mining service companies, laboratories, drilling & engineering firms',
+    contractModel: 'SLA retainer + milestone rate card',
+    typicalValue: 'US$120k – US$1.2M',
+    complianceTag: 'SLA & HSE Audited',
+    subCategories: [
+      { name: 'Diamond/RC drilling & licensed blasting', demand: 'High', share: 35 },
+      { name: 'Underground ventilation, shafts & dewatering', demand: 'High', share: 27 },
+      { name: 'On-site sample prep, fire assay & QA/QC', demand: 'Active', share: 22 },
+      { name: 'EIA/EMP monitoring & tailing dam audits', demand: 'Growing', share: 16 },
+    ],
+    requirements: ['Valid technical licences & permits', 'Mine safety (OSHA/HSE) record', ' SLA performance bond / insurance'],
+  },
+  {
+    id: 'personnel',
+    code: 'OPP-03',
+    type: 'Technical personnel (Engineers & Technicians)',
+    title: 'Technical Personnel (Engineers & Technicians)',
+    badge: 'Specialist Human Capital',
+    summary:
+      'Direct deployment and consulting opportunities for registered Engineers and certified Technicians to run processing plants, underground operations, geological logging and electrical/PLC systems.',
+    targetAudience: 'Mining/process engineers, geologists, metallurgists, plant technicians',
+    contractModel: 'Rotational roster (6/2) · 12-month specialist contract',
+    typicalValue: 'US$80k – US$450k',
+    complianceTag: 'ERB & Certified Talent',
+    subCategories: [
+      { name: 'Mining, Process & Metallurgical Engineers', demand: 'High', share: 36 },
+      { name: 'CIL / Flotation Plant & Mill Technicians', demand: 'High', share: 30 },
+      { name: 'Electrical, PLC & Heavy Mobile Equipment Techs', demand: 'Active', share: 20 },
+      { name: 'Exploration Geologists, Surveyors & Safety Officers', demand: 'Growing', share: 14 },
+    ],
+    requirements: ['ERB registration (for Engineers)', 'VETA / FTC / Diploma (for Technicians)', 'Proven mine site commissioning track record'],
   },
 ]
 

@@ -1,12 +1,14 @@
 import {
   INSIGHTS,
   INVESTMENT_BANDS,
+  OPPORTUNITY_STREAMS,
   PLANS,
   PLATFORM_STATS,
   PROJECTS,
   SERVICES_PRICING,
   SERVICE_PROVIDERS,
   VERIFICATION_LEVELS,
+  type OpportunityStream,
   type Project,
   type ServiceProvider,
   type VerificationLevel,
@@ -34,6 +36,9 @@ export const VALUE_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, Record<stri
     'Rare Earths': 'Madini adimu (Rare Earths)',
 
     // Opportunity types
+    'Tenders opportunity in mine sites': 'Fursa za zabuni (tenders) migodini',
+    'Service provision opportunities': 'Fursa za utoaji huduma',
+    'Technical personnel (Engineers & Technicians)': 'Wataalamu wa kiufundi (Wahandisi na Mafundi)',
     'Licence / rights opportunity': 'Fursa ya leseni / haki',
     'Existing mine seeking investment': 'Mgodi uliopo unaotafuta uwekezaji',
     'Joint venture': 'Ubia (Joint venture)',
@@ -81,6 +86,12 @@ export const VALUE_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, Record<stri
     'Processing & metallurgy': 'Uchenjuaji na metalujia',
 
     // Deal types & evidence chips
+    'Site tender contract': 'Mkataba wa zabuni mgodini',
+    'Local content supply': 'Usambazaji wa wazawa (Local content)',
+    'Service contract (SLA)': 'Mkataba wa huduma (SLA)',
+    'Technical consultancy / roster': 'Ushauri wa kiufundi / zamu',
+    High: 'Juu',
+    Growing: 'Inakua',
     'Equity partnership': 'Ushirika wa hisa',
     Equity: 'Hisa',
     'Operating partnership': 'Ushirika wa uendeshaji',
@@ -118,6 +129,9 @@ export const VALUE_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, Record<stri
     'Rare Earths': 'Tierras raras',
 
     // Opportunity types
+    'Tenders opportunity in mine sites': 'Oportunidades de licitación en sitios mineros',
+    'Service provision opportunities': 'Oportunidades de prestación de servicios',
+    'Technical personnel (Engineers & Technicians)': 'Personal técnico (Ingenieros y Técnicos)',
     'Licence / rights opportunity': 'Oportunidad de licencia / derechos',
     'Existing mine seeking investment': 'Mina activa buscando inversión',
     'Joint venture': 'Empresa conjunta (JV)',
@@ -165,6 +179,12 @@ export const VALUE_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, Record<stri
     'Processing & metallurgy': 'Procesamiento y metalurgia',
 
     // Deal types & evidence chips
+    'Site tender contract': 'Contrato de licitación en sitio',
+    'Local content supply': 'Suministro de contenido local',
+    'Service contract (SLA)': 'Contrato de servicios (SLA)',
+    'Technical consultancy / roster': 'Consultoría técnica / rotación',
+    High: 'Alta',
+    Growing: 'En crecimiento',
     'Equity partnership': 'Asociación de capital',
     Equity: 'Capital (Equity)',
     'Operating partnership': 'Asociación operativa',
@@ -546,6 +566,111 @@ export const PROJECTS_I18N: Record<Exclude<LanguageCode, 'en'>, Record<string, P
       },
       ownerKind: 'Kampuni ya utafutaji madini',
     },
+    'MC-GE-0204': {
+      title: 'Zabuni ya Uchimbaji na Usafirishaji Mawe Mgodini Geita',
+      transactionStatus: 'Zabuni iko wazi — uwasilishaji wa sifa za awali na zabuni za kiufundi unaendelea',
+      summary:
+        'Mgodi hai wa dhahabu unawaalika wakandarasi wa Kitanzania na ubia (JV) wenye sifa kuomba zabuni ya miezi 24 ya uondoaji udongo, usafirishaji wa mbale (njia ya km 4.5 hadi ROM pad) na matengenezo ya barabara za mgodini.',
+      highlights: ['Mkataba wa zabuni wa miezi 24 mgodini', 'Inazingatia Kanuni za Ushirikishwaji wa Wazawa (Local Content)', 'Kiasi cha mwezi: BCM 45,000 za udongo na mbale'],
+      evidence: [
+        { label: 'Nyaraka za Zabuni', detail: 'Makadirio ya Kazi (BoQ), wasifu wa barabara na viwango vya HSE' },
+        { label: 'Uendeshaji', detail: 'Leseni hai ya ML inayozalisha yenye akaunti maalum ya malipo (escrow)' },
+      ],
+      infrastructure: {
+        access: 'Barabara ya mgodini inayopitika majira yote kutoka Geita',
+        power: 'Gridi ya taifa na kituo cha umeme cha mgodi',
+        water: 'Vituo vya kujaza maji ya magari ya kuzuia vumbi',
+      },
+      documents: [
+        { name: 'Mwaliko wa Zabuni (ITT) na Wigo wa Kazi', kind: 'PDF · kurasa 14' },
+        { name: 'Makadirio ya Kazi (BoQ)', kind: 'XLSX' },
+        { name: 'Viwango vya Usalama (HSE) na Mitambo Mgodini', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Mhandisi wa migodi aliyesajiliwa (jopo la uthibitishaji la MineConnect)',
+        scope: ['KYC ya mwendeshaji na uhalali wa leseni ya ML', 'Ukamilifu wa BoQ na wigo wa zabuni', 'Muundo wa ununuzi kwa wazawa (Local Content)'],
+        notVerified: ['Matokeo ya mshindi wa zabuni', 'Mabadiliko ya miamba chini ya ardhi'],
+      },
+      ownerKind: 'Mwendeshaji wa mgodi wa kati',
+    },
+    'MC-SH-0245': {
+      title: 'Zabuni ya Usambazaji Kemikali, Vyuma vya Kusagia na Mafuta Mgodini Kahama',
+      transactionStatus: 'Zabuni ya mkataba wa muda — mkataba wa usambazaji wa miezi 12 unaoweza kuhuishwa',
+      summary:
+        'Zabuni ya usambazaji wa chokaa (hydrated lime), kaboni iliyoamilishwa (activated carbon), vyuma vya kusagia mawe (grinding balls), vifaa vya usalama (PPE) na dizeli kwa kiwanda cha CIL cha tani 250 kwa siku karibu na Kahama.',
+      highlights: ['Kategoria 4 tofauti (wazabuni wanaweza kuomba 1 au zote)', 'Malipo ndani ya siku 30 kwa LC / dhamana ya benki', 'Kipaumbele kwa wasambazaji wa Kitanzania waliosajiliwa'],
+      evidence: [
+        { label: 'Viwango', detail: 'Ratiba ya matumizi ya mwaka na viwango vya ubora' },
+        { label: 'Uzingatiaji', detail: 'Mpango wa Ushirikishwaji wa Wazawa umewasilishwa' },
+      ],
+      infrastructure: {
+        access: 'Barabara ya lami na km 6 za changarawe, mzani wa magari upo mgodini',
+        power: 'Gridi ya TANESCO + jenereta za akiba',
+        water: 'Mfumo wa maji ya kiwandani',
+      },
+      documents: [
+        { name: 'Kategoria za Zabuni na Viwango vya Kiufundi', kind: 'PDF · kurasa 10' },
+        { name: 'Fomu ya Usajili wa Awali wa Msambazaji', kind: 'DOCX' },
+      ],
+      verification: {
+        checkedBy: 'Afisa uzingatiaji wa MineConnect',
+        scope: ['Usajili wa kampuni na kumbukumbu ya ML', 'Uthibitishaji wa mamlaka ya manunuzi'],
+        notVerified: ['Masharti ya mikopo ya usambazaji', 'Mabadiliko ya matumizi ya kila mwezi'],
+      },
+      ownerKind: 'Mwendeshaji wa mgodi unaozalisha',
+    },
+    'MC-MY-0211': {
+      title: 'Mkataba wa Huduma za Hewa, Utoaji Maji na Maabara Mgodini Mererani',
+      transactionStatus: 'Inapokea mapendekezo ya watoa huduma — mkataba wa huduma wa miezi 18',
+      summary:
+        'Muungano wa mashimo manne yanayozalisha tanzanite chini ya ardhi unatafuta kampuni yenye sifa ya huduma za migodi kufunga na kufanyia matengenezo feni za hewa, mabomba ya hewa iliyoshindiliwa, pampu za kutoa maji na ukaguzi wa usalama wa kila wiki.',
+      highlights: ['Muungano wa mashimo 4 yanayofanya kazi', 'Malipo ya kila mwezi + hatua za kazi', 'Wigo wa matengenezo ya mitambo na usalama (HSE)'],
+      evidence: [
+        { label: 'Uhandisi', detail: 'Wasifu wa kina cha mashimo (220m–340m) na ukaguzi wa mzunguko wa hewa' },
+        { label: 'Mkataba', detail: 'Rasimu ya SLA na ratiba ya malipo ya kila mwezi' },
+      ],
+      infrastructure: {
+        access: 'Barabara ya lami hadi lango la Mererani',
+        power: 'Umeme wa gridi ya TANESCO wa njia 3 upo eneo la mradi',
+        water: 'Mabwawa ya kukusanya maji chini ya ardhi',
+      },
+      documents: [
+        { name: 'Hadidu za Rejea (ToR)', kind: 'PDF · kurasa 9' },
+        { name: 'Mpango wa Mfumo wa Hewa Chini ya Ardhi', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Afisa uzingatiaji wa MineConnect',
+        scope: ['KYC ya muungano na mamlaka ya mwakilishi', 'Ukaguzi wa uhalali wa leseni za PML'],
+        notVerified: ['Uimara wa miamba chini ya ardhi', 'Gharama za umeme'],
+      },
+      ownerKind: 'Muungano wa wachimbaji',
+    },
+    'MC-LI-0230': {
+      title: 'Mgodi wa Kinywe na Dhahabu Ruangwa — Wataalamu wa Kiufundi (Wahandisi na Mafundi)',
+      transactionStatus: 'Inaajiri na kuingia mikataba na wataalamu wa kiufundi — kuanza mara moja na kwa zamu',
+      summary:
+        'Fursa iliyopangwa ya wataalamu wa kiufundi kwa Wahandisi waliosajiliwa na ERB na Mafundi wenye vyeti (Technicians) kuongoza uwashaji na uendeshaji wa kiwanda cha majaribio cha flotation na CIL cha tani 60 kwa siku. Nafasi zinajumuisha Mhandisi Mkuu wa Uchenjuaji, Mhandisi wa Migodi, Fundi wa Umeme na PLC, Fundi Mitambo na Fundi wa Maabara (Assay).',
+      highlights: ['Wahandisi waliosajiliwa ERB na Mafundi wenye vyeti', 'Zamu ya wiki 6/2 au mkataba wa ushauri wa miezi 12', 'Malazi, usafiri wa anga na posho za mgodini zinatolewa'],
+      evidence: [
+        { label: 'Nafasi na Sifa', detail: 'Nafasi 5 muhimu za uhandisi na ufundi zenye malengo (KPIs) wazi' },
+        { label: 'Kiwanda', detail: 'Mitambo ya majaribio ya flotation na CIL ipo eneo la mradi' },
+      ],
+      infrastructure: {
+        access: 'Barabara inayopitika majira yote hadi kambini Ruangwa',
+        power: 'Umeme mseto wa jua na dizeli',
+        water: 'Visima virefu na mtambo wa kusafisha maji',
+      },
+      documents: [
+        { name: 'Orodha ya Wataalamu wa Kiufundi na Wasifu wa Kazi', kind: 'PDF · kurasa 8' },
+        { name: 'Mchoro wa Mtiririko wa Kiwanda na Ratiba ya Uwashaji', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Mtaalamu wa metalujia aliyesajiliwa (jopo la uthibitishaji la MineConnect)',
+        scope: ['KYC ya kampuni inayoendesha', 'Kumbukumbu ya leseni', 'Uthibitishaji wa mtambo na mahitaji ya wahandisi'],
+        notVerified: ['Masharti binafsi ya mkataba wa ajira'],
+      },
+      ownerKind: 'Mwendeshaji wa mgodi na kiwanda',
+    },
   },
   es: {
     'MC-GE-0142': {
@@ -799,6 +924,111 @@ export const PROJECTS_I18N: Record<Exclude<LanguageCode, 'en'>, Record<string, P
         notVerified: ['Metalurgia', 'Recursos'],
       },
       ownerKind: 'Empresa de exploración',
+    },
+    'MC-GE-0204': {
+      title: 'Licitación de Movimiento de Tierras y Acarreo en Tajo Abierto Geita',
+      transactionStatus: 'Licitación abierta — precalificación y presentación de ofertas técnicas activas',
+      summary:
+        'Operación activa de minería de oro invita a contratistas tanzanos y empresas conjuntas (JV) precalificados a licitar por un contrato de 24 meses para desmonte de estéril a cielo abierto, acarreo de mineral (ruta de 4.5 km a plataforma ROM) y mantenimiento de caminos mineros.',
+      highlights: ['Contrato de licitación en sitio por 24 meses', 'Cumple con Contenido Local (Reglamento Minero)', 'Volumen mensual: 45,000 BCM de estéril y mineral'],
+      evidence: [
+        { label: 'Pliego de Licitación', detail: 'Presupuesto de obra (BoQ), perfil de acarreo y normas HSE' },
+        { label: 'Operaciones', detail: 'Licencia ML en producción activa con fideicomiso de pago verificado' },
+      ],
+      infrastructure: {
+        access: 'Camino minero transitable todo el año desde Geita',
+        power: 'Red eléctrica y planta generadora de la mina',
+        water: 'Puntos de carga para camiones cisterna de supresión de polvo',
+      },
+      documents: [
+        { name: 'Invitación a Licitar (ITT) y Alcance', kind: 'PDF · 14 págs.' },
+        { name: 'Presupuesto de Cantidades (BoQ)', kind: 'XLSX' },
+        { name: 'Cumplimiento de Flota y HSE en Sitio Minero', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Ingeniero de minas registrado (panel de verificación de MineConnect)',
+        scope: ['KYC del operador y vigencia de ML', 'Integridad de BoQ y alcance de licitación', 'Estructura de compras de contenido local'],
+        notVerified: ['Resultado de adjudicación del contratista', 'Variaciones geotécnicas del subsuelo'],
+      },
+      ownerKind: 'Operador minero de mediana escala',
+    },
+    'MC-SH-0245': {
+      title: 'Licitación de Suministro de Reactivos, Bolas de Molienda y Combustible en Mina Kahama',
+      transactionStatus: 'Licitación marco abierta — contrato de suministro renovable de 12 meses',
+      summary:
+        'Licitación marco en sitio minero para el suministro confiable de cal hidratada, carbón activado, bolas de acero forjado para molienda, EPP y diésel a granel para una planta de procesamiento CIL de 250 tpd cerca de Kahama.',
+      highlights: ['4 lotes separados (los oferentes pueden cotizar 1 o todos)', 'Términos de pago a 30 días con carta de crédito / garantía bancaria', 'Prioridad para proveedores tanzanos registrados'],
+      evidence: [
+        { label: 'Especificaciones', detail: 'Cronograma de consumo anual y especificaciones de calidad' },
+        { label: 'Cumplimiento', detail: 'Plan de Contenido Local aprobado y presentado' },
+      ],
+      infrastructure: {
+        access: 'Asfalto y 6 km de camino nivelado, báscula camionera en sitio',
+        power: 'Red TANESCO + generadores de respaldo',
+        water: 'Circuito de agua de proceso',
+      },
+      documents: [
+        { name: 'Lotes de Licitación y Especificaciones Técnicas', kind: 'PDF · 10 págs.' },
+        { name: 'Formulario de Precalificación de Proveedores', kind: 'DOCX' },
+      ],
+      verification: {
+        checkedBy: 'Oficial de cumplimiento de MineConnect',
+        scope: ['Registro societario y expediente ML', 'Verificación de autoridad de compras'],
+        notVerified: ['Términos de crédito comercial', 'Variación mensual de consumo'],
+      },
+      ownerKind: 'Operador de mina en producción',
+    },
+    'MC-MY-0211': {
+      title: 'Contrato de Servicios de Ventilación Subterránea, Bombeo y Ensayos en Mererani',
+      transactionStatus: 'Aceptando propuestas de proveedores de servicios — contrato de 18 meses',
+      summary:
+        'Consorcio de cuatro piques subterráneos productores de tanzanita busca un proveedor calificado de servicios mineros para instalar y mantener ventiladores multinivel, líneas de aire comprimido, bombas de desagüe y auditorías semanales de seguridad subterránea.',
+      highlights: ['Consorcio de 4 piques activos', 'Modelo de iguala mensual + hitos de servicio', 'Alcance de mantenimiento de equipos y HSE'],
+      evidence: [
+        { label: 'Ingeniería', detail: 'Perfiles de profundidad de piques (220m–340m) y auditoría de flujo de aire' },
+        { label: 'Contrato', detail: 'Borrador de SLA y cronograma de pagos mensuales' },
+      ],
+      infrastructure: {
+        access: 'Asfalto hasta el control de Mererani',
+        power: 'Red trifásica TANESCO en sitio',
+        water: 'Sumideros de desagüe de mina',
+      },
+      documents: [
+        { name: 'Términos de Referencia (TdR)', kind: 'PDF · 9 págs.' },
+        { name: 'Diseño de Ventilación Subterránea', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Oficial de cumplimiento de MineConnect',
+        scope: ['KYC del consorcio y mandato de representación', 'Verificación de estado activo de PML'],
+        notVerified: ['Mecánica de rocas subterránea', 'Traspaso de tarifas eléctricas'],
+      },
+      ownerKind: 'Consorcio de mineros',
+    },
+    'MC-LI-0230': {
+      title: 'Operaciones de Grafito y Oro Ruangwa — Personal Técnico (Ingenieros y Técnicos)',
+      transactionStatus: 'Reclutamiento y contratación de especialistas técnicos — despliegue inmediato y rotativo',
+      summary:
+        'Oportunidad estructurada de personal técnico para Ingenieros registrados (ERB) y Técnicos certificados para liderar la puesta en marcha y operación de una planta piloto de flotación y CIL de 60 tpd. Incluye Ingeniero Senior de Procesos, Ingeniero de Minas, Técnico Eléctrico/PLC, Mecánico de Planta y Técnico de Laboratorio de Ensayos.',
+      highlights: ['Ingenieros registrados en ERB y Técnicos certificados', 'Rotación 6/2 o contrato de consultoría de 12 meses', 'Alojamiento, vuelos y viáticos en sitio incluidos'],
+      evidence: [
+        { label: 'Roles y Perfiles', detail: '5 posiciones clave de ingeniería y técnicos con KPIs definidos' },
+        { label: 'Planta', detail: 'Circuitos piloto de flotación y gravimetría/CIL en sitio' },
+      ],
+      infrastructure: {
+        access: 'Camino transitable todo el año al campamento de Ruangwa',
+        power: 'Microrred híbrida solar-diésel',
+        water: 'Campo de pozos y planta de tratamiento',
+      },
+      documents: [
+        { name: 'Plantilla de Personal Técnico y Perfiles de Rol', kind: 'PDF · 8 págs.' },
+        { name: 'Diagrama de Flujo de Planta y Cronograma de Comisionamiento', kind: 'PDF' },
+      ],
+      verification: {
+        checkedBy: 'Metalurgista registrado (panel de verificación de MineConnect)',
+        scope: ['KYC de la empresa operadora', 'Registro de licencia', 'Verificación de diagrama de planta y perfiles de ingeniería'],
+        notVerified: ['Términos individuales de contrato laboral'],
+      },
+      ownerKind: 'Operador de mina y planta',
     },
   },
 }
@@ -1383,8 +1613,141 @@ export function localizeProject(p: Project, lang: LanguageCode): Project {
   }
 }
 
+export const OPPORTUNITY_STREAMS_I18N: Record<
+  Exclude<LanguageCode, 'en'>,
+  Record<
+    OpportunityStream['id'],
+    {
+      title: string
+      badge: string
+      summary: string
+      targetAudience: string
+      contractModel: string
+      typicalValue: string
+      complianceTag: string
+      subCategories: { name: string; demand: 'High' | 'Active' | 'Growing'; share: number }[]
+      requirements: string[]
+    }
+  >
+> = {
+  sw: {
+    tenders: {
+      title: 'Fursa za Zabuni (Tenders) Migodini',
+      badge: 'Manunuzi na Usambazaji Mgodini',
+      summary:
+        'Zabuni zilizopangwa za manunuzi zinazotolewa moja kwa moja na migodi inayozalisha na ya majaribio kwa ajili ya ujenzi, usafirishaji wa mbale, kemikali, vifaa vya kiwandani, mafuta na miundombinu ya mgodini.',
+      targetAudience: 'Wakandarasi wa ujenzi na migodi, wasambazaji wakubwa, ubia wa wazawa (Local Content JVs)',
+      contractModel: 'Zabuni ya ushindani ya BoQ · Mkataba wa miezi 12–24',
+      typicalValue: 'US$250k – US$2.5M',
+      complianceTag: 'Inazingatia Local Content',
+      subCategories: [
+        { name: 'Uchimbaji wa wazi na usafirishaji wa mbale (Haulage)', demand: 'High', share: 40 },
+        { name: 'Kemikali, chokaa, kaboni na vyuma vya kusagia', demand: 'High', share: 28 },
+        { name: 'Usambazaji wa mafuta mengi, vilainishi na umeme', demand: 'Active', share: 18 },
+        { name: 'Miundombinu ya kambi, vifaa vya usalama (PPE) na chakula', demand: 'Growing', share: 14 },
+      ],
+      requirements: ['Usajili wa BRELA na TIN', 'Mpango wa Ushirikishwaji wa Wazawa', 'Uwezo uliothibitishwa wa mitambo / usambazaji'],
+    },
+    services: {
+      title: 'Fursa za Utoaji Huduma Migodini',
+      badge: 'Huduma za Kiufundi na Uendeshaji',
+      summary:
+        'Mikataba endelevu ya utoaji huduma katika migodi hai na kambi za utafutaji ikijumuisha uchorongaji, mifumo ya hewa, utoaji maji, maabara za sampuli, ufuatiliaji wa mazingira na matengenezo ya mitambo.',
+      targetAudience: 'Kampuni za huduma za migodi, maabara, kampuni za uchorongaji na uhandisi',
+      contractModel: 'Mkataba wa SLA wa kila mwezi + malipo kwa hatua',
+      typicalValue: 'US$120k – US$1.2M',
+      complianceTag: 'SLA na Usalama (HSE) Imekaguliwa',
+      subCategories: [
+        { name: 'Uchorongaji wa Almasi/RC na ulipuaji wenye leseni', demand: 'High', share: 35 },
+        { name: 'Mifumo ya hewa chini ya ardhi, mashimo na utoaji maji', demand: 'High', share: 27 },
+        { name: 'Maandalizi ya sampuli mgodini, fire assay na QA/QC', demand: 'Active', share: 22 },
+        { name: 'Ufuatiliaji wa EIA/EMP na ukaguzi wa mabwawa ya tope', demand: 'Growing', share: 16 },
+      ],
+      requirements: ['Leseni na vibali halali vya kiufundi', 'Rekodi bora ya usalama mgodini (OSHA/HSE)', 'Bima na dhamana ya utendaji wa SLA'],
+    },
+    personnel: {
+      title: 'Wataalamu wa Kiufundi (Wahandisi na Mafundi)',
+      badge: 'Rasilimali Watu wa Kitaalamu',
+      summary:
+        'Fursa za moja kwa moja za kazi na ushauri kwa Wahandisi waliosajiliwa na Mafundi wenye vyeti (Technicians) kuendesha viwanda vya uchenjuaji, migodi ya chini ya ardhi, ukaguzi wa kijiolojia na mifumo ya umeme/PLC.',
+      targetAudience: 'Wahandisi wa migodi/uchenjuaji, wanajiolojia, wataalamu wa metalujia, mafundi mitambo',
+      contractModel: 'Zamu za mzunguko (6/2) · Mkataba wa kitaalamu wa miezi 12',
+      typicalValue: 'US$80k – US$450k',
+      complianceTag: 'Wahandisi (ERB) na Mafundi Wenye Vyeti',
+      subCategories: [
+        { name: 'Wahandisi wa Migodi, Uchenjuaji na Metalujia', demand: 'High', share: 36 },
+        { name: 'Mafundi wa Mitambo ya CIL / Flotation na Kusaga', demand: 'High', share: 30 },
+        { name: 'Mafundi wa Umeme, PLC na Mitambo Mikubwa', demand: 'Active', share: 20 },
+        { name: 'Wanajiolojia, Wapimaji Ardhi na Maafisa Usalama', demand: 'Growing', share: 14 },
+      ],
+      requirements: ['Usajili wa ERB (kwa Wahandisi)', 'Cheti cha VETA / FTC / Diploma (kwa Mafundi)', 'Uzoefu uliothibitishwa wa kufunga na kuendesha mitambo'],
+    },
+  },
+  es: {
+    tenders: {
+      title: 'Oportunidades de Licitación en Sitios Mineros',
+      badge: 'Compras y Suministro en Sitio',
+      summary:
+        'Licitaciones de compras estructuradas emitidas directamente por minas en producción y piloto para movimiento de tierras, acarreo de mineral, reactivos, consumibles de molienda, combustible e infraestructura.',
+      targetAudience: 'Contratistas civiles y mineros, proveedores mayoristas, JVs de contenido local',
+      contractModel: 'Licitación competitiva BoQ · Contrato marco de 12–24 meses',
+      typicalValue: 'US$250k – US$2.5M',
+      complianceTag: 'Cumple Contenido Local',
+      subCategories: [
+        { name: 'Movimiento de tierras y acarreo de mineral a cielo abierto', demand: 'High', share: 40 },
+        { name: 'Reactivos, cal, carbón activado y medios de molienda', demand: 'High', share: 28 },
+        { name: 'Suministro de combustible a granel, lubricantes y energía', demand: 'Active', share: 18 },
+        { name: 'Infraestructura de campamento, EPP y lotes de catering', demand: 'Growing', share: 14 },
+      ],
+      requirements: ['Cumplimiento BRELA y TIN', 'Plan de Contenido Local', 'Capacidad verificada de flota / suministro'],
+    },
+    services: {
+      title: 'Oportunidades de Prestación de Servicios',
+      badge: 'Servicios Técnicos y Operativos',
+      summary:
+        'Contratos continuos de servicios operativos en minas activas y campamentos de exploración que cubren perforación, ventilación, desagüe, laboratorios de ensayo, monitoreo ambiental y mantenimiento de planta.',
+      targetAudience: 'Empresas de servicios mineros, laboratorios, firmas de perforación e ingeniería',
+      contractModel: 'Iguala mensual SLA + tarifario por hitos',
+      typicalValue: 'US$120k – US$1.2M',
+      complianceTag: 'Auditado en SLA y HSE',
+      subCategories: [
+        { name: 'Perforación diamantina/RC y voladura con licencia', demand: 'High', share: 35 },
+        { name: 'Ventilación subterránea, piques y bombeo de agua', demand: 'High', share: 27 },
+        { name: 'Preparación de muestras en sitio, ensayo al fuego y QA/QC', demand: 'Active', share: 22 },
+        { name: 'Monitoreo EIA/PMA y auditoría de presas de relaves', demand: 'Growing', share: 16 },
+      ],
+      requirements: ['Licencias y permisos técnicos vigentes', 'Historial de seguridad minera (OSHA/HSE)', 'Garantía de cumplimiento SLA / seguros'],
+    },
+    personnel: {
+      title: 'Personal Técnico (Ingenieros y Técnicos)',
+      badge: 'Capital Humano Especializado',
+      summary:
+        'Oportunidades directas de despliegue y consultoría para Ingenieros registrados y Técnicos certificados para operar plantas de procesamiento, labores subterráneas, logueo geológico y sistemas eléctricos/PLC.',
+      targetAudience: 'Ingenieros de minas/procesos, geólogos, metalurgistas, técnicos de planta',
+      contractModel: 'Rotación en sitio (6/2) · Contrato especialista de 12 meses',
+      typicalValue: 'US$80k – US$450k',
+      complianceTag: 'Talento Certificado y ERB',
+      subCategories: [
+        { name: 'Ingenieros de Minas, Procesos y Metalurgia', demand: 'High', share: 36 },
+        { name: 'Técnicos de Planta CIL / Flotación y Molienda', demand: 'High', share: 30 },
+        { name: 'Técnicos Eléctricos, PLC y Equipo Pesado Móvil', demand: 'Active', share: 20 },
+        { name: 'Geólogos de Exploración, Topógrafos y Oficiales HSE', demand: 'Growing', share: 14 },
+      ],
+      requirements: ['Registro ERB (para Ingenieros)', 'Certificación VETA / FTC / Diploma (para Técnicos)', 'Experiencia comprobada en comisionamiento minero'],
+    },
+  },
+}
+
 export function getLocalizedFixtures(lang: LanguageCode) {
   const projects = lang === 'en' ? PROJECTS : PROJECTS.map((p) => localizeProject(p, lang))
+
+  const opportunityStreams: OpportunityStream[] =
+    lang === 'en'
+      ? OPPORTUNITY_STREAMS
+      : OPPORTUNITY_STREAMS.map((s) => {
+          const tr = OPPORTUNITY_STREAMS_I18N[lang]?.[s.id]
+          return tr ? { ...s, ...tr } : s
+        })
 
   const verificationLevels =
     lang === 'en'
@@ -1423,6 +1786,7 @@ export function getLocalizedFixtures(lang: LanguageCode) {
 
   return {
     projects,
+    opportunityStreams,
     verificationLevels,
     serviceProviders,
     plans,
