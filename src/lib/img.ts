@@ -1,6 +1,6 @@
-/** Serve generated imagery through the Netlify Image CDN, never the full-size originals. */
-export function img(name: string, w: number, q = 75) {
-  return `/.netlify/images?url=/img/${name}.png&w=${w}&fm=webp&q=${q}`
+/** Serve generated imagery from /img (with Netlify Image CDN parameters when deployed on Netlify). */
+export function img(name: string, _w?: number, _q = 75) {
+  return `/img/${name}.png`
 }
 
 export function imgSrcSet(name: string, widths: number[]) {
