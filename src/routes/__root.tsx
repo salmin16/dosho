@@ -1,8 +1,7 @@
-import { HeadContent, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router'
+import { HeadContent, Outlet, createRootRoute, useRouterState } from '@tanstack/react-router'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { LanguageProvider } from '../i18n'
-
 
 import '../styles.css'
 
@@ -14,71 +13,35 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       {
-        charSet: 'utf-8',
-      },
-      {
-        name: 'viewport',
-        content: 'width=device-width, initial-scale=1',
-      },
-      {
         title: siteName,
       },
       {
         name: 'description',
         content: siteDescription,
       },
-      {
-        property: 'og:title',
-        content: siteName,
-      },
-      {
-        property: 'og:description',
-        content: siteDescription,
-      },
-      {
-        property: 'og:type',
-        content: 'website',
-      },
-      {
-        name: 'twitter:card',
-        content: 'summary_large_image',
-      },
-      { name: 'theme-color', content: '#15120f' },
-    ],
-    links: [
-      { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
-      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
-      {
-        rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..700,0..100&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap',
-      },
     ],
   }),
-  shellComponent: RootDocument,
+  component: RootComponent,
 })
 
-function RootDocument({ children }: { children: React.ReactNode }) {
+function RootComponent() {
   return (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <LanguageProvider>
-          <Chrome>{children}</Chrome>
-        </LanguageProvider>
-        <Scripts />
-      </body>
-    </html>
+    <LanguageProvider>
+      <HeadContent />
+      <Chrome>
+        <Outlet />
+      </Chrome>
+    </LanguageProvider>
   )
 }
 
 function Chrome({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+  const isHome = pathname === '/' || pathname === basePath || pathname === `${basePath}/`
   return (
     <>
-      <Header overlay={pathname === '/'} key={pathname === '/' ? 'home' : 'page'} />
+      <Header overlay={isHome} key={isHome ? 'home' : 'page'} />
       <main>{children}</main>
       <Footer />
     </>

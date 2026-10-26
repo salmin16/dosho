@@ -1,6 +1,7 @@
-/** Serve generated imagery from /img (with Netlify Image CDN parameters when deployed on Netlify). */
+/** Serve generated imagery from /img with base URL support for root (Vercel/Netlify) and subpath (GitHub Pages). */
 export function img(name: string, _w?: number, _q = 75) {
-  return `/img/${name}.png`
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+  return `${base}/img/${name}.png`
 }
 
 export function imgSrcSet(name: string, widths: number[]) {
