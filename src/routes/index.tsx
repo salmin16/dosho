@@ -30,6 +30,7 @@ import {
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
+import { useAuthSession } from '../lib/supabaseAuth'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
@@ -156,8 +157,62 @@ function Hero() {
             {t('home.hero.haveProject')}
           </Link>
         </div>
+
+        {/* Grounded Auth & Due-Diligence Vault Banner */}
+        <GroundedAuthHeroBanner />
       </div>
     </section>
+  )
+}
+
+function GroundedAuthHeroBanner() {
+  const session = useAuthSession()
+
+  return (
+    <div className="mt-8 flex flex-col items-start justify-between gap-4 rounded-xl border border-gold/30 bg-ink-2/90 p-5 shadow-xl backdrop-blur-md sm:flex-row sm:items-center">
+      <div className="flex items-start gap-3.5">
+        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ochre/20 text-gold">
+          <Lock size={18} />
+        </div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-moss/30 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+              Supabase + PostgreSQL RLS
+            </span>
+            <h2 className="font-display text-base font-semibold text-paper">
+              {session
+                ? `Authenticated Vault Active — ${session.user.fullName} (${session.user.email})`
+                : 'New: Private Investor & Operator Due-Diligence Vault'}
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-paper/70">
+            {session
+              ? `Your session is grounded to UUID ${session.user.id}. Access or manage your private geological & tender dossiers.`
+              : 'Sign in or provision an account to store confidential assay reports, license dossiers, and grounded notes enforced by Row-Level Security (auth.uid() = user_id).'}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+        {session ? (
+          <Link to="/dashboard" className="btn-primary !py-2.5 !px-4 text-xs">
+            Open Grounded Dashboard <ArrowRight size={14} />
+          </Link>
+        ) : (
+          <>
+            <Link
+              to="/login"
+              className="rounded-md border border-paper/25 bg-paper/10 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/20"
+            >
+              Sign In
+            </Link>
+            <Link to="/signup" className="btn-primary !py-2.5 !px-4 text-xs">
+              Create Vault Account <ArrowRight size={14} />
+            </Link>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
