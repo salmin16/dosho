@@ -1,9 +1,12 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
+  Briefcase,
+  Coins,
   FileText,
   Lock,
   LogOut,
+  Pickaxe,
   PlusCircle,
   ShieldCheck,
   Trash2,
@@ -18,9 +21,13 @@ import {
 } from '../lib/supabaseAuth'
 import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
+import { useCurrency } from '../lib/currency'
+import CurrencySwitcher from '../components/CurrencySwitcher'
 import type {
   DocumentClassification,
+  QuoteRequestRecord,
   UserDocument,
+  UserListedProject,
   UserProfile,
 } from '../types/database'
 
@@ -32,9 +39,14 @@ function DashboardRouteComponent() {
   const navigate = useNavigate()
   const session = useAuthSession()
   const { saved: savedProjectIds } = useSavedProjects()
+  const { currency, currencyMeta, rateForSelected, formatUsd, formatExactUsd } =
+    useCurrency()
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [documents, setDocuments] = useState<UserDocument[]>([])
+  const [listedProjects, setListedProjects] = useState<UserListedProject[]>([])
+  const [quoteRequests, setQuoteRequests] = useState<QuoteRequestRecord[]>([])
+
   const [title, setTitle] = useState('')
   const [classification, setClassification] =
     useState<DocumentClassification>('CONFIDENTIAL')
@@ -46,6 +58,8 @@ function DashboardRouteComponent() {
     const data = await fetchGroundedUserData()
     setProfile(data.profile)
     setDocuments(data.documents)
+    setListedProjects(data.listedProjects)
+    setQuoteRequests(data.quoteRequests)
   }, [])
 
   useEffect(() => {
@@ -102,27 +116,44 @@ function DashboardRouteComponent() {
         {/* Grounded Session Header */}
         <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
-              <ShieldCheck size={14} />
-              RLS Policy Active: auth.uid() = user_id
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
+                <ShieldCheck size={14} />
+                RLS Policy Active: auth.uid() = user_id
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
+                <Coins size={13} className="text-gold" />
+                {currencyMeta.flag} {currency} (1 USD ={' '}
+                {rateForSelected.toLocaleString('en-US', {
+                  maximumFractionDigits: 2,
+                })}{' '}
+                {currency})
+              </span>
             </div>
             <h1 className="mt-3 font-display text-3xl font-semibold">
               Welcome, {profile?.full_name || session.user.fullName}
             </h1>
             <p className="mt-1 text-sm text-paper/75">
-              Authenticated Email: <span className="font-mono">{session.user.email}</span> · User UUID:{' '}
+              Authenticated Email:{' '}
+              <span className="font-mono">{session.user.email}</span> · User UUID:{' '}
               <span className="font-mono text-gold">{session.user.id}</span>
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="inline-flex items-center gap-2 self-start rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20 sm:self-auto"
-          >
-            <LogOut size={15} />
-            Sign Out
-          </button>
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+            <CurrencySwitcher dark />
+            <Link to="/list-a-project" className="btn-primary !py-2.5 !px-4 text-xs">
+              + List a Project
+            </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="inline-flex items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
+            >
+              <LogOut size={15} />
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {/* Main Vault Grid */}
@@ -136,7 +167,10 @@ function DashboardRouteComponent() {
               </h2>
             </div>
             <p className="mt-1 text-xs text-stone">
-              Records are strictly bound to <code className="font-mono text-ink">user_id = {session.user.id.slice(0, 8)}…</code>
+              Records are strictly bound to{' '}
+              <code className="font-mono text-ink">
+                user_id = {session.user.id.slice(0, 8)}…
+              </code>
             </p>
 
             {error && (
@@ -208,8 +242,9 @@ function DashboardRouteComponent() {
             </form>
           </section>
 
-          {/* Grounded Documents List */}
+          {/* Grounded Documents, Listed Projects & Quote Requests */}
           <section className="space-y-6 lg:col-span-2">
+            {/* Grounded Documents List */}
             <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -270,6 +305,118 @@ function DashboardRouteComponent() {
               )}
             </div>
 
+            {/* Grounded Listed Projects */}
+            <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Pickaxe size={18} className="text-ochre" />
+                  <h2 className="font-display text-xl font-semibold text-ink">
+                    Your Submitted Projects ({listedProjects.length})
+                  </h2>
+                </div>
+                <Link
+                  to="/list-a-project"
+                  className="text-xs font-semibold text-ochre hover:underline"
+                >
+                  + List Another Project →
+                </Link>
+              </div>
+
+              {listedProjects.length === 0 ? (
+                <p className="mt-3 text-sm text-stone">
+                  You haven&apos;t submitted any projects yet. Use the{' '}
+                  <Link to="/list-a-project" className="text-ochre underline">
+                    List a Project
+                  </Link>{' '}
+                  workflow to submit a verified mineral right or tender.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {listedProjects.map((proj) => (
+                    <div
+                      key={proj.id}
+                      className="rounded-lg border border-ink/10 bg-paper p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                          {proj.mineral} · {proj.region} · {proj.licence_type} ({proj.licence_reference})
+                        </span>
+                        <span className="rounded bg-moss-light px-2 py-0.5 font-mono text-[10px] text-moss">
+                          {proj.status}
+                        </span>
+                      </div>
+                      <h3 className="mt-1 font-display text-lg font-semibold text-ink">
+                        {proj.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-stone">{proj.summary}</p>
+                      <p className="mt-2 font-mono text-xs font-semibold text-ink">
+                        Seeking Investment ({currency}):{' '}
+                        <span className="text-ochre">
+                          {formatExactUsd(proj.investment_usd)}
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Grounded Quote Requests */}
+            <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Briefcase size={18} className="text-ochre" />
+                  <h2 className="font-display text-xl font-semibold text-ink">
+                    Your Service Quote Requests ({quoteRequests.length})
+                  </h2>
+                </div>
+                <Link
+                  to="/services"
+                  className="text-xs font-semibold text-ochre hover:underline"
+                >
+                  Request Another Quote →
+                </Link>
+              </div>
+
+              {quoteRequests.length === 0 ? (
+                <p className="mt-3 text-sm text-stone">
+                  No service quotes requested yet. Visit the{' '}
+                  <Link to="/services" className="text-ochre underline">
+                    Mining Services Marketplace
+                  </Link>{' '}
+                  to request quotes in {currency}.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {quoteRequests.map((q) => (
+                    <div
+                      key={q.id}
+                      className="rounded-lg border border-ink/10 bg-paper p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                          Provider: {q.provider_name}
+                        </span>
+                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] text-ink">
+                          {q.status}
+                        </span>
+                      </div>
+                      <h3 className="mt-1 font-display text-base font-semibold text-ink">
+                        {q.service_requested}
+                      </h3>
+                      <p className="mt-1 text-xs text-stone">{q.scope_notes}</p>
+                      <p className="mt-2 font-mono text-xs font-semibold text-ink">
+                        Estimated Budget ({currency}):{' '}
+                        <span className="text-ochre">
+                          {formatExactUsd(q.estimated_budget_usd)}
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Bookmarked Mining Opportunities */}
             <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
               <div className="flex items-center justify-between">
@@ -302,13 +449,17 @@ function DashboardRouteComponent() {
                       className="rounded-lg border border-ink/10 bg-paper p-4 transition hover:border-ochre"
                     >
                       <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
-                        {proj.commodity} · {proj.region}
+                        {proj.minerals.join(', ')} · {proj.region}
                       </span>
                       <h3 className="mt-1 font-display text-base font-semibold text-ink">
                         {proj.title}
                       </h3>
                       <p className="mt-1 text-xs text-stone">
-                        Ask: {proj.capitalAsk} · Stage: {proj.stage}
+                        Seeking ({currency}):{' '}
+                        <strong className="text-ink">
+                          {formatUsd(proj.investmentUsd)}
+                        </strong>{' '}
+                        · Stage: {proj.stage}
                       </p>
                     </Link>
                   ))}

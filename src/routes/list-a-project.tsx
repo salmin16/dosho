@@ -1,8 +1,10 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, UploadCloud, FileText, X } from 'lucide-react'
 import { MINERALS, OPPORTUNITY_TYPES, REGIONS, STAGES } from '../data/fixtures'
 import { useI18n, type TranslationKey } from '../i18n'
+import { createGroundedProject, getSession, useAuthSession } from '../lib/supabaseAuth'
+import { useCurrency } from '../lib/currency'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -22,17 +24,34 @@ type Form = Record<string, string | string[] | boolean>
 
 function ListProject() {
   const { t, tv, fixtures } = useI18n()
+  const navigate = useNavigate()
+  const session = useAuthSession()
+  const { currency, toUsd } = useCurrency()
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState<Form>({
-    ownerKind: 'Individual',
-    minerals: [],
-    dealTypes: [],
-    evidence: [],
-    files: [],
-    pkg: 'verified',
+  const [form, setForm] = useState<Form>(() => {
+    const active = getSession()
+    return {
+      ownerKind: 'Individual',
+      name: active?.user.fullName ?? '',
+      email: active?.user.email ?? '',
+      minerals: [],
+      dealTypes: [],
+      evidence: [],
+      files: [],
+      pkg: 'verified',
+    }
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!getSession()) {
+      navigate({
+        to: '/signup',
+        search: { next: '/list-a-project', reason: 'list_project' } as unknown as undefined,
+      })
+    }
+  }, [navigate, session])
 
   const v = (k: string) => (form[k] as string) ?? ''
   const arr = (k: string) => (form[k] as string[]) ?? []
@@ -78,9 +97,27 @@ function ListProject() {
     return Object.keys(e).length === 0
   }
 
-  const next = () => {
+  const next = async () => {
+    if (!getSession()) {
+      navigate({
+        to: '/signup',
+        search: { next: '/list-a-project', reason: 'list_project' } as unknown as undefined,
+      })
+      return
+    }
     if (!validate()) return
     if (step === STEP_KEYS.length - 1) {
+      const rawInv = parseFloat(v('investment').replace(/[^0-9.]/g, '')) || 0
+      await createGroundedProject({
+        title: v('title'),
+        mineral: arr('minerals')[0] || 'Gold',
+        region: v('region'),
+        licenceType: v('licenceType'),
+        licenceReference: v('licenceRef'),
+        investmentUsd: toUsd(rawInv),
+        submittedCurrency: currency,
+        summary: v('summary'),
+      })
       setSubmitted(`MC-SUB-${Math.floor(10000 + Math.random() * 89999)}`)
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return

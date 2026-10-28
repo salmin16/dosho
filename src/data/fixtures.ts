@@ -1125,13 +1125,14 @@ export const PLATFORM_STATS = [
   { value: '9 days', label: 'Median verification turnaround' },
 ]
 
+import { formatCurrencyFromUsd } from '../lib/currency'
+
 export function getProject(id: string) {
   return PROJECTS.find((p) => p.id === id)
 }
 
 export function formatUsd(n: number) {
-  if (n >= 1_000_000) return `US$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 2).replace(/\.?0+$/, '')}M`
-  return `US$${Math.round(n / 1000)}k`
+  return formatCurrencyFromUsd(n)
 }
 
 export function formatDate(iso: string) {

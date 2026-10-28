@@ -31,6 +31,7 @@ import {
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
 import { useAuthSession } from '../lib/supabaseAuth'
+import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
@@ -366,7 +367,7 @@ function OpportunityStreamsShowcase() {
                     </div>
                     <div>
                       <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.typicalTicket')}</dt>
-                      <dd className="mt-1.5 font-mono text-[11px] font-semibold text-ink">{stream.typicalValue}</dd>
+                      <dd className="mt-1.5 font-mono text-[11px] font-semibold text-ink">{convertInlineUsdText(stream.typicalValue)}</dd>
                     </div>
                   </dl>
 

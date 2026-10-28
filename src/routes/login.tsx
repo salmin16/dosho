@@ -1,24 +1,31 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Lock, Mail, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { getSession, signInWithEmail } from '../lib/supabaseAuth'
 
 export const Route = createFileRoute('/login')({
+  validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
+    next: typeof s.next === 'string' && s.next.startsWith('/') ? s.next : undefined,
+    reason: typeof s.reason === 'string' ? s.reason : undefined,
+  }),
   component: LoginRouteComponent,
 })
 
 function LoginRouteComponent() {
   const navigate = useNavigate()
+  const { next, reason } = Route.useSearch()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
+
   useEffect(() => {
     if (getSession()) {
-      navigate({ to: '/dashboard' })
+      navigate({ to: targetDestination as '/dashboard' })
     }
-  }, [navigate])
+  }, [navigate, targetDestination])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,12 +36,21 @@ function LoginRouteComponent() {
       if (res.error) {
         setError(res.error)
       } else {
-        navigate({ to: '/dashboard' })
+        navigate({ to: targetDestination as '/dashboard' })
       }
     } finally {
       setSubmitting(false)
     }
   }
+
+  const reasonBanner =
+    reason === 'list_project'
+      ? 'Mandatory Membership: You must be signed in as a verified member to list a mining project.'
+      : reason === 'request_quote'
+        ? 'Mandatory Membership: Please sign in to request a formal service quote.'
+        : reason === 'membership_required'
+          ? 'Mandatory Membership: Please sign in or create a free member account to access this section.'
+          : null
 
   return (
     <div className="min-h-screen bg-paper pb-20 pt-28 text-ink">
@@ -51,6 +67,13 @@ function LoginRouteComponent() {
           <p className="mt-1.5 text-sm text-stone">
             Access your private investor &amp; operator due-diligence vault.
           </p>
+
+          {reasonBanner && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-ochre/30 bg-ochre/10 p-3.5 text-xs font-medium text-ink">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-ochre" />
+              <span>{reasonBanner}</span>
+            </div>
+          )}
 
           {error && (
             <div
@@ -119,6 +142,7 @@ function LoginRouteComponent() {
             New to MineConnect?{' '}
             <Link
               to="/signup"
+              search={{ next, reason } as unknown as undefined}
               className="font-semibold text-ochre hover:underline"
             >
               Create an account

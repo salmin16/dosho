@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react'
-import type { DocumentClassification, UserDocument, UserProfile } from '../types/database'
+import type {
+  DocumentClassification,
+  QuoteRequestRecord,
+  SupportedCurrency,
+  UserDocument,
+  UserListedProject,
+  UserProfile,
+} from '../types/database'
 
 export interface AuthUser {
   id: string
   email: string
   fullName: string
   role: 'authenticated'
+  preferredCurrency?: SupportedCurrency
   createdAt: string
 }
 
@@ -19,6 +27,8 @@ const SESSION_KEY = 'mineconnect.auth.session.v1'
 const USERS_KEY = 'mineconnect.auth.users.v1'
 const PROFILES_KEY = 'mineconnect.db.user_profiles.v1'
 const DOCUMENTS_KEY = 'mineconnect.db.user_documents.v1'
+const PROJECTS_KEY = 'mineconnect.db.user_projects.v1'
+const QUOTES_KEY = 'mineconnect.db.quote_requests.v1'
 const AUTH_EVENT = 'mineconnect:auth-changed'
 
 interface StoredAccount {
@@ -26,6 +36,7 @@ interface StoredAccount {
   email: string
   fullName: string
   passwordHash: string
+  preferredCurrency?: SupportedCurrency
   createdAt: string
 }
 
@@ -100,15 +111,56 @@ export function useAuthSession() {
   return session
 }
 
+export async function updatePreferredCurrency(currency: SupportedCurrency): Promise<void> {
+  const session = getSession()
+  if (!session) return
+
+  const updatedSession: AuthSession = {
+    ...session,
+    user: {
+      ...session.user,
+      preferredCurrency: currency,
+    },
+  }
+  saveSession(updatedSession)
+
+  const supa = getSupabaseConfig()
+  if (supa && session.mode === 'supabase') {
+    await fetch(`${supa.url}/rest/v1/user_profiles?id=eq.${session.user.id}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supa.anonKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ preferred_currency: currency }),
+    }).catch(() => {})
+    return
+  }
+
+  if (typeof window !== 'undefined') {
+    const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
+    const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+    const nextProfiles = profiles.map((p) =>
+      p.id === session.user.id
+        ? { ...p, preferred_currency: currency, updated_at: new Date().toISOString() }
+        : p
+    )
+    window.localStorage.setItem(PROFILES_KEY, JSON.stringify(nextProfiles))
+  }
+}
+
 export async function signUpWithEmail(params: {
   email: string
   password: string
   confirmPassword: string
   fullName?: string
+  preferredCurrency?: SupportedCurrency
 }): Promise<{ session?: AuthSession; error?: string }> {
   const email = params.email.trim().toLowerCase()
   const { password, confirmPassword } = params
   const fullName = params.fullName?.trim() || email.split('@')[0]
+  const preferredCurrency = params.preferredCurrency || 'USD'
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: 'Please enter a valid email address.' }
@@ -136,7 +188,7 @@ export async function signUpWithEmail(params: {
       body: JSON.stringify({
         email,
         password,
-        data: { full_name: fullName },
+        data: { full_name: fullName, preferred_currency: preferredCurrency },
       }),
     })
     const data = await res.json()
@@ -151,6 +203,7 @@ export async function signUpWithEmail(params: {
           id: data.user.id,
           email: data.user.email,
           fullName: data.user.user_metadata?.full_name || fullName,
+          preferredCurrency,
           role: 'authenticated',
           createdAt: data.user.created_at || new Date().toISOString(),
         },
@@ -174,18 +227,19 @@ export async function signUpWithEmail(params: {
     email,
     fullName,
     passwordHash,
+    preferredCurrency,
     createdAt: now,
   }
   users.push(newUser)
   window.localStorage.setItem(USERS_KEY, JSON.stringify(users))
 
-  // Provision user_profiles row & starter grounded document
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
   const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
   profiles.push({
     id: newUser.id,
     email: newUser.email,
     full_name: newUser.fullName,
+    preferred_currency: preferredCurrency,
     created_at: now,
     updated_at: now,
   })
@@ -212,6 +266,7 @@ export async function signUpWithEmail(params: {
       id: newUser.id,
       email: newUser.email,
       fullName: newUser.fullName,
+      preferredCurrency,
       role: 'authenticated',
       createdAt: now,
     },
@@ -255,6 +310,7 @@ export async function signInWithEmail(params: {
         id: data.user.id,
         email: data.user.email,
         fullName: data.user.user_metadata?.full_name || email.split('@')[0],
+        preferredCurrency: data.user.user_metadata?.preferred_currency || 'USD',
         role: 'authenticated',
         createdAt: data.user.created_at || new Date().toISOString(),
       },
@@ -279,6 +335,7 @@ export async function signInWithEmail(params: {
       id: account.id,
       email: account.email,
       fullName: account.fullName,
+      preferredCurrency: account.preferredCurrency || 'USD',
       role: 'authenticated',
       createdAt: account.createdAt,
     },
@@ -298,10 +355,12 @@ export function signOutUser() {
 export async function fetchGroundedUserData(): Promise<{
   profile: UserProfile | null
   documents: UserDocument[]
+  listedProjects: UserListedProject[]
+  quoteRequests: QuoteRequestRecord[]
 }> {
   const session = getSession()
   if (!session) {
-    return { profile: null, documents: [] }
+    return { profile: null, documents: [], listedProjects: [], quoteRequests: [] }
   }
 
   const supa = getSupabaseConfig()
@@ -310,16 +369,26 @@ export async function fetchGroundedUserData(): Promise<{
       apikey: supa.anonKey,
       Authorization: `Bearer ${session.accessToken}`,
     }
-    const [profRes, docsRes] = await Promise.all([
+    const [profRes, docsRes, projRes, quotesRes] = await Promise.all([
       fetch(`${supa.url}/rest/v1/user_profiles?id=eq.${session.user.id}&select=*`, { headers }),
       fetch(
         `${supa.url}/rest/v1/user_documents?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
         { headers }
       ),
+      fetch(
+        `${supa.url}/rest/v1/user_projects?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
+        { headers }
+      ),
+      fetch(
+        `${supa.url}/rest/v1/quote_requests?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
+        { headers }
+      ),
     ])
     const profiles = profRes.ok ? ((await profRes.json()) as UserProfile[]) : []
     const documents = docsRes.ok ? ((await docsRes.json()) as UserDocument[]) : []
-    return { profile: profiles[0] ?? null, documents }
+    const listedProjects = projRes.ok ? ((await projRes.json()) as UserListedProject[]) : []
+    const quoteRequests = quotesRes.ok ? ((await quotesRes.json()) as QuoteRequestRecord[]) : []
+    return { profile: profiles[0] ?? null, documents, listedProjects, quoteRequests }
   }
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
@@ -328,22 +397,34 @@ export async function fetchGroundedUserData(): Promise<{
     id: session.user.id,
     email: session.user.email,
     full_name: session.user.fullName,
+    preferred_currency: session.user.preferredCurrency || 'USD',
     created_at: session.user.createdAt,
     updated_at: session.user.createdAt,
   }
 
   const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
   const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  // Enforce RLS policy: USING (auth.uid() = user_id)
   const documents = allDocs
     .filter((d) => d.user_id === session.user.id)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-  return { profile, documents }
+  const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
+  const allProjects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
+  const listedProjects = allProjects
+    .filter((p) => p.user_id === session.user.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
+  const allQuotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
+  const quoteRequests = allQuotes
+    .filter((q) => q.user_id === session.user.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  return { profile, documents, listedProjects, quoteRequests }
 }
 
 /**
- * RLS-Grounded Insert: Enforces `WITH CHECK (auth.uid() = user_id)`
+ * RLS-Grounded Insert for `user_documents`: Enforces `WITH CHECK (auth.uid() = user_id)`
  */
 export async function createGroundedDocument(input: {
   title: string
@@ -404,6 +485,141 @@ export async function createGroundedDocument(input: {
   allDocs.push(newDoc)
   window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(allDocs))
   return { document: newDoc }
+}
+
+/**
+ * Gated "List a Project" Insert (`user_projects`): Strictly requires active member session
+ */
+export async function createGroundedProject(input: {
+  title: string
+  mineral: string
+  region: string
+  licenceType: string
+  licenceReference: string
+  investmentUsd: number
+  submittedCurrency: SupportedCurrency
+  summary: string
+}): Promise<{ project?: UserListedProject; error?: string }> {
+  const session = getSession()
+  if (!session) {
+    return { error: 'Authentication required: Only registered members can list a project.' }
+  }
+
+  const supa = getSupabaseConfig()
+  if (supa && session.mode === 'supabase') {
+    const res = await fetch(`${supa.url}/rest/v1/user_projects`, {
+      method: 'POST',
+      headers: {
+        apikey: supa.anonKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({
+        user_id: session.user.id,
+        title: input.title,
+        mineral: input.mineral,
+        region: input.region,
+        licence_type: input.licenceType,
+        licence_reference: input.licenceReference,
+        investment_usd: input.investmentUsd,
+        submitted_currency: input.submittedCurrency,
+        summary: input.summary,
+      }),
+    })
+    if (!res.ok) {
+      return { error: 'Failed to submit project listing.' }
+    }
+    const created = (await res.json()) as UserListedProject[]
+    return { project: created[0] }
+  }
+
+  const now = new Date().toISOString()
+  const record: UserListedProject = {
+    id: generateUuid(),
+    user_id: session.user.id,
+    title: input.title,
+    mineral: input.mineral,
+    region: input.region,
+    licence_type: input.licenceType,
+    licence_reference: input.licenceReference,
+    investment_usd: input.investmentUsd,
+    submitted_currency: input.submittedCurrency,
+    summary: input.summary,
+    status: 'PENDING_VERIFICATION',
+    created_at: now,
+    updated_at: now,
+  }
+
+  const raw = window.localStorage.getItem(PROJECTS_KEY)
+  const list: UserListedProject[] = raw ? JSON.parse(raw) : []
+  list.push(record)
+  window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+  return { project: record }
+}
+
+/**
+ * Gated "Request a Quote" Insert (`quote_requests`): Strictly requires active member session
+ */
+export async function createGroundedQuoteRequest(input: {
+  providerId: string
+  providerName: string
+  serviceRequested: string
+  estimatedBudgetUsd: number
+  currencyCode: SupportedCurrency
+  scopeNotes: string
+}): Promise<{ quote?: QuoteRequestRecord; error?: string }> {
+  const session = getSession()
+  if (!session) {
+    return { error: 'Authentication required: Only registered members can request a service quote.' }
+  }
+
+  const supa = getSupabaseConfig()
+  if (supa && session.mode === 'supabase') {
+    const res = await fetch(`${supa.url}/rest/v1/quote_requests`, {
+      method: 'POST',
+      headers: {
+        apikey: supa.anonKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({
+        user_id: session.user.id,
+        provider_id: input.providerId,
+        provider_name: input.providerName,
+        service_requested: input.serviceRequested,
+        estimated_budget_usd: input.estimatedBudgetUsd,
+        currency_code: input.currencyCode,
+        scope_notes: input.scopeNotes,
+      }),
+    })
+    if (!res.ok) {
+      return { error: 'Failed to submit quote request.' }
+    }
+    const created = (await res.json()) as QuoteRequestRecord[]
+    return { quote: created[0] }
+  }
+
+  const now = new Date().toISOString()
+  const record: QuoteRequestRecord = {
+    id: generateUuid(),
+    user_id: session.user.id,
+    provider_id: input.providerId,
+    provider_name: input.providerName,
+    service_requested: input.serviceRequested,
+    estimated_budget_usd: input.estimatedBudgetUsd,
+    currency_code: input.currencyCode,
+    scope_notes: input.scopeNotes,
+    status: 'SUBMITTED',
+    created_at: now,
+  }
+
+  const raw = window.localStorage.getItem(QUOTES_KEY)
+  const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
+  list.push(record)
+  window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  return { quote: record }
 }
 
 /**

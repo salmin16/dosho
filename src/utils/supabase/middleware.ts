@@ -1,8 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard'];
-const AUTH_ROUTES = ['/login', '/signup'];
+/**
+ * PUBLIC_ROUTES: Only the landing page, authentication pages, and public exchange rate API
+ * are accessible without an active authenticated session.
+ * All other routes (e.g., /dashboard, /list-a-project, /request-quote, /services, /opportunities)
+ * sit behind a mandatory membership authentication wall.
+ */
+const PUBLIC_EXACT_ROUTES = ['/'];
+const PUBLIC_PREFIX_ROUTES = ['/login', '/signup', '/auth/callback', '/api/rates'];
+const AUTH_ONLY_ROUTES = ['/login', '/signup'];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -31,32 +38,35 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // SECURITY CRITICAL: Always use auth.getUser() instead of auth.getSession()
-  // inside server code / middleware. getUser() re-validates the JWT signature
-  // and session validity with the Supabase Auth server to prevent spoofing.
+  // SECURITY CRITICAL: Re-validate JWT token against Supabase Auth server
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
 
-  const isProtectedRoute = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-  const isAuthRoute = AUTH_ROUTES.some(
+  const isPublicRoute =
+    PUBLIC_EXACT_ROUTES.includes(pathname) ||
+    PUBLIC_PREFIX_ROUTES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    );
+
+  const isAuthPage = AUTH_ONLY_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  // Redirect unauthenticated users attempting to access private routes
-  if (isProtectedRoute && !user) {
+  // 1. Mandatory Membership Wall: Intercept any unauthenticated request to non-public routes
+  //    (including /list-a-project, /request-quote, /dashboard, /services, etc.)
+  if (!isPublicRoute && !user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     loginUrl.searchParams.set('next', pathname);
+    loginUrl.searchParams.set('reason', 'membership_required');
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect already-authenticated users away from login/signup pages
-  if (isAuthRoute && user) {
+  // 2. Redirect already-authenticated members away from /login and /signup to /dashboard
+  if (isAuthPage && user) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     dashboardUrl.search = '';
