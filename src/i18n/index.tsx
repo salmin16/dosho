@@ -3,6 +3,7 @@ import en from './locales/en.json'
 import sw from './locales/sw.json'
 import es from './locales/es.json'
 import { getLocalizedFixtures, localizeProject, translateValue } from './fixtures-translations'
+import { useCurrency } from '../lib/currency'
 import type { Project } from '../data/fixtures'
 
 export const LANGUAGES = [
@@ -46,6 +47,8 @@ const I18nContext = createContext<I18nContextValue | null>(null)
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<LanguageCode>('en')
+  // Subscribe LanguageProvider to active currency & exchange rates so all consumers re-render immediately on currency change
+  const { currency, rateForSelected, convertText } = useCurrency()
 
   useEffect(() => {
     try {
@@ -80,14 +83,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
           str = str.replaceAll(`{${k}}`, String(v))
         }
       }
-      return str
+      return convertText(str)
     },
-    [lang],
+    [lang, currency, rateForSelected, convertText],
   )
 
-  const tv = useCallback((value: string) => translateValue(value, lang), [lang])
+  const tv = useCallback(
+    (value: string) => convertText(translateValue(value, lang)),
+    [lang, currency, rateForSelected, convertText],
+  )
 
-  const locProject = useCallback((project: Project) => localizeProject(project, lang), [lang])
+  const locProject = useCallback(
+    (project: Project) => localizeProject(project, lang),
+    [lang, currency, rateForSelected],
+  )
 
   const formatDate = useCallback(
     (iso: string) => {
@@ -104,7 +113,29 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     [lang],
   )
 
-  const fixtures = useMemo(() => getLocalizedFixtures(lang), [lang])
+  const fixtures = useMemo(() => {
+    const base = getLocalizedFixtures(lang)
+    return {
+      ...base,
+      opportunityStreams: base.opportunityStreams.map((s) => ({
+        ...s,
+        typicalValue: convertText(s.typicalValue),
+      })),
+      plans: base.plans.map((p) => ({
+        ...p,
+        price: convertText(p.price),
+        yearly: 'yearly' in p && p.yearly ? convertText(p.yearly) : undefined,
+      })),
+      servicesPricing: base.servicesPricing.map((sp) => ({
+        ...sp,
+        price: convertText(sp.price),
+      })),
+      listPackages: base.listPackages.map((lp) => ({
+        ...lp,
+        price: convertText(lp.price),
+      })),
+    }
+  }, [lang, currency, rateForSelected, convertText])
 
   const value = useMemo<I18nContextValue>(
     () => ({
@@ -116,7 +147,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       formatDate,
       fixtures,
     }),
-    [lang, setLang, t, tv, locProject, formatDate, fixtures],
+    [lang, setLang, t, tv, locProject, formatDate, fixtures, currency, rateForSelected],
   )
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
@@ -125,7 +156,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 export function useI18n() {
   const ctx = useContext(I18nContext)
   if (!ctx) {
-    throw new Error('useI18n must be used within a LanguageProvider')
+    throw new Error('useI18n must be used within LanguageProvider')
   }
   return ctx
 }

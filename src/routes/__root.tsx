@@ -35,14 +35,14 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <LanguageProvider>
-      <CurrencyProvider>
+    <CurrencyProvider>
+      <LanguageProvider>
         <HeadContent />
         <Chrome>
           <Outlet />
         </Chrome>
-      </CurrencyProvider>
-    </LanguageProvider>
+      </LanguageProvider>
+    </CurrencyProvider>
   )
 }
 
@@ -88,9 +88,9 @@ function Chrome({ children }: { children: React.ReactNode }) {
 
   return (
     <div data-currency={currency} data-fx-rate={rateForSelected}>
-      <Header overlay={isHome} key={isHome ? 'home' : 'page'} />
-      <main>{children}</main>
-      <Footer />
+      <Header overlay={isHome} key={isHome ? `home-${currency}` : `page-${currency}`} />
+      <main key={`${currency}-${rateForSelected}`}>{children}</main>
+      <Footer key={`footer-${currency}`} />
     </div>
   )
 }
