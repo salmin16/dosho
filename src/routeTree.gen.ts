@@ -10,18 +10,26 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ListAProjectRouteImport } from './routes/list-a-project'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as OpportunitiesRouteImport } from './routes/opportunities'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ServicesRouteImport } from './routes/services'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as VerificationRouteImport } from './routes/verification'
 import { Route as OpportunitiesProjectIdRouteImport } from './routes/opportunities_.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqRoute = FaqRouteImport.update({
@@ -32,6 +40,11 @@ const FaqRoute = FaqRouteImport.update({
 const ListAProjectRoute = ListAProjectRouteImport.update({
   id: '/list-a-project',
   path: '/list-a-project',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MapRoute = MapRouteImport.update({
@@ -54,6 +67,11 @@ const ServicesRoute = ServicesRouteImport.update({
   path: '/services',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VerificationRoute = VerificationRouteImport.update({
   id: '/verification',
   path: '/verification',
@@ -67,35 +85,44 @@ const OpportunitiesProjectIdRoute = OpportunitiesProjectIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
+  '/signup': typeof SignupRoute
   '/verification': typeof VerificationRoute
   '/opportunities/$projectId': typeof OpportunitiesProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
+  '/signup': typeof SignupRoute
   '/verification': typeof VerificationRoute
   '/opportunities/$projectId': typeof OpportunitiesProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
+  '/login': typeof LoginRoute
   '/map': typeof MapRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
+  '/signup': typeof SignupRoute
   '/verification': typeof VerificationRoute
   '/opportunities_/$projectId': typeof OpportunitiesProjectIdRoute
 }
@@ -103,46 +130,58 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/dashboard'
     | '/faq'
     | '/list-a-project'
+    | '/login'
     | '/map'
     | '/opportunities'
     | '/pricing'
     | '/services'
+    | '/signup'
     | '/verification'
     | '/opportunities/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/dashboard'
     | '/faq'
     | '/list-a-project'
+    | '/login'
     | '/map'
     | '/opportunities'
     | '/pricing'
     | '/services'
+    | '/signup'
     | '/verification'
     | '/opportunities/$projectId'
   id:
     | '__root__'
     | '/'
+    | '/dashboard'
     | '/faq'
     | '/list-a-project'
+    | '/login'
     | '/map'
     | '/opportunities'
     | '/pricing'
     | '/services'
+    | '/signup'
     | '/verification'
     | '/opportunities_/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DashboardRoute: typeof DashboardRoute
   FaqRoute: typeof FaqRoute
   ListAProjectRoute: typeof ListAProjectRoute
+  LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
   OpportunitiesRoute: typeof OpportunitiesRoute
   PricingRoute: typeof PricingRoute
   ServicesRoute: typeof ServicesRoute
+  SignupRoute: typeof SignupRoute
   VerificationRoute: typeof VerificationRoute
   OpportunitiesProjectIdRoute: typeof OpportunitiesProjectIdRoute
 }
@@ -154,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -168,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/list-a-project'
       fullPath: '/list-a-project'
       preLoaderRoute: typeof ListAProjectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/map': {
@@ -198,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/verification': {
       id: '/verification'
       path: '/verification'
@@ -217,12 +277,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DashboardRoute: DashboardRoute,
   FaqRoute: FaqRoute,
   ListAProjectRoute: ListAProjectRoute,
+  LoginRoute: LoginRoute,
   MapRoute: MapRoute,
   OpportunitiesRoute: OpportunitiesRoute,
   PricingRoute: PricingRoute,
   ServicesRoute: ServicesRoute,
+  SignupRoute: SignupRoute,
   VerificationRoute: VerificationRoute,
   OpportunitiesProjectIdRoute: OpportunitiesProjectIdRoute,
 }

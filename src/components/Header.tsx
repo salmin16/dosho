@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Menu, X } from 'lucide-react'
+import { Menu, ShieldCheck, User, X } from 'lucide-react'
 import { useI18n, type TranslationKey } from '../i18n'
+import { useAuthSession } from '../lib/supabaseAuth'
 import LanguageSwitcher from './LanguageSwitcher'
 
 const NAV: { to: string; key: TranslationKey }[] = [
@@ -29,6 +30,7 @@ export function Logo({ light = false }: { light?: boolean }) {
 
 export default function Header({ overlay = false }: { overlay?: boolean }) {
   const { t } = useI18n()
+  const session = useAuthSession()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
@@ -66,9 +68,23 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <Link to="/pricing" className="whitespace-nowrap text-sm font-medium opacity-80 hover:opacity-100">
-            {t('nav.joinPilot')}
-          </Link>
+          {session ? (
+            <Link
+              to="/dashboard"
+              className="inline-flex items-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/10 px-3 py-2 text-xs font-semibold text-ochre transition hover:bg-ochre/20"
+            >
+              <ShieldCheck size={14} />
+              Vault ({session.user.fullName.split(' ')[0]})
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-medium opacity-80 hover:opacity-100"
+            >
+              <User size={15} />
+              Sign In
+            </Link>
+          )}
           <Link to="/list-a-project" className="btn-primary whitespace-nowrap !py-2.5">
             {t('nav.listProject')}
           </Link>
@@ -101,11 +117,11 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             </Link>
           ))}
           <Link
-            to="/pricing"
+            to={session ? '/dashboard' : '/login'}
             onClick={() => setOpen(false)}
-            className="block border-b border-ink/5 py-3.5 text-sm font-medium text-stone"
+            className="block border-b border-ink/5 py-3.5 text-sm font-semibold text-ochre"
           >
-            {t('nav.joinPilot')}
+            {session ? `Grounded Vault (${session.user.email})` : 'Sign In / Create Account'}
           </Link>
           <Link to="/list-a-project" onClick={() => setOpen(false)} className="btn-primary mt-5 w-full">
             {t('nav.listProject')}
