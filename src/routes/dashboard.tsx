@@ -16,7 +16,7 @@ import {
   signOutUser,
   useAuthSession,
 } from '../lib/supabaseAuth'
-import { useSavedIds } from '../lib/saved'
+import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
 import type {
   DocumentClassification,
@@ -31,7 +31,7 @@ export const Route = createFileRoute('/dashboard')({
 function DashboardRouteComponent() {
   const navigate = useNavigate()
   const session = useAuthSession()
-  const { ids: savedProjectIds } = useSavedIds()
+  const { saved: savedProjectIds } = useSavedProjects()
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [documents, setDocuments] = useState<UserDocument[]>([])
