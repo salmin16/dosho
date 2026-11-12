@@ -25,9 +25,11 @@ import type { MineralCategory, MineralPriceRecord } from '../types/database';
 function SparklineSvg({
   points,
   positive,
+  onLight = false,
 }: {
   points: number[];
   positive: boolean;
+  onLight?: boolean;
 }) {
   if (!points || points.length < 2) return null;
   const min = Math.min(...points);
@@ -42,8 +44,15 @@ function SparklineSvg({
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
 
-  const strokeColor = positive ? '#34d399' : '#fb7185';
-  const fillId = `spark-${positive ? 'pos' : 'neg'}-${points[0]}`;
+  // MineConnect palette: Gold/Moss for positive, Terracotta/Danger for negative
+  const strokeColor = positive
+    ? onLight
+      ? '#3e5c49'
+      : '#d6a443'
+    : onLight
+      ? '#a33a2a'
+      : '#d96b52';
+  const fillId = `spark-${onLight ? 'lt' : 'dk'}-${positive ? 'pos' : 'neg'}-${points[0]}`;
 
   return (
     <svg
@@ -55,7 +64,7 @@ function SparklineSvg({
     >
       <defs>
         <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={strokeColor} stopOpacity="0.32" />
+          <stop offset="0%" stopColor={strokeColor} stopOpacity="0.28" />
           <stop offset="100%" stopColor={strokeColor} stopOpacity="0.0" />
         </linearGradient>
       </defs>
@@ -182,35 +191,39 @@ export default function IndicativeMineralPrices({
   return (
     <section
       aria-label="Indicative Mineral Prices Board"
-      className="relative overflow-hidden bg-slate-950 py-16 text-slate-100 border-b border-amber-500/20"
+      className="grain relative isolate overflow-hidden border-b border-ink/15 bg-ink py-20 text-paper lg:py-24"
     >
-      {/* Subtle Radial Gold Ambient Glow */}
+      {/* Signature MineConnect Topographic Contour Texture */}
+      <div className="contours absolute inset-0 -z-10" aria-hidden="true" />
       <div
-        className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-96 w-[60rem] -translate-x-1/2 rounded-full bg-amber-500/10 blur-3xl"
+        className="pointer-events-none absolute -top-36 left-1/2 -z-10 h-80 w-[56rem] -translate-x-1/2 rounded-full bg-ochre/15 blur-3xl"
         aria-hidden="true"
       />
 
-      <div className="mx-auto max-w-7xl px-5 lg:px-8 space-y-8">
+      <div className="relative mx-auto max-w-7xl space-y-8 px-5 lg:px-8">
         {/* Top Header & Regulatory Board Masthead */}
-        <div className="flex flex-col justify-between gap-6 border-b border-amber-500/20 pb-6 lg:flex-row lg:items-end">
+        <div className="flex flex-col justify-between gap-6 border-b border-paper/12 pb-8 lg:flex-row lg:items-end">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-widest text-amber-400">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
                 <Sparkles size={12} />
                 Indicative Mineral Prices Board
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] text-emerald-400">
-                <Activity size={12} />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/50 bg-moss/25 px-3 py-1 font-mono text-[11px] text-paper/90">
+                <Activity size={12} className="text-gold" />
                 LBMA · LME · Tanzania Mining Commission Aligned
               </span>
             </div>
 
-            <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Global &amp; Regional Indicative Mineral Benchmarks
+            <h2 className="font-display mt-4 text-4xl font-light leading-[1.05] text-paper md:text-5xl">
+              Global &amp; Regional{' '}
+              <em className="italic text-gold">Indicative Mineral Benchmarks</em>
             </h2>
-            <p className="mt-2 max-w-3xl text-sm text-slate-400">
-              Live reference benchmarks comparing international spot markets with statutory Tanzania Mineral Market (Soko la Madini) and Buying Centre (Kituo cha Ununuzi) thresholds in{' '}
-              <strong className="font-mono text-amber-400">
+            <p className="mt-3 max-w-3xl text-base leading-relaxed text-paper/70">
+              Live reference benchmarks comparing international spot markets with statutory Tanzania Mineral Market (
+              <span className="text-paper/90">Soko la Madini</span>) and Buying Centre (
+              <span className="text-paper/90">Kituo cha Ununuzi</span>) thresholds in{' '}
+              <strong className="font-mono text-gold">
                 {currencyMeta.flag} {currency} ({currencyMeta.name})
               </strong>
               .
@@ -220,14 +233,14 @@ export default function IndicativeMineralPrices({
           <div className="flex flex-wrap items-center gap-3">
             <CurrencySwitcher dark />
 
-            <div className="inline-flex rounded-lg border border-amber-500/25 bg-slate-900/90 p-1 text-xs">
+            <div className="inline-flex rounded-lg border border-paper/15 bg-ink-2 p-1 text-xs">
               <button
                 type="button"
                 onClick={() => setUnitBasis('standard')}
                 className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
                   unitBasis === 'standard'
-                    ? 'bg-amber-500 text-slate-950 shadow-xs'
-                    : 'text-slate-300 hover:text-white'
+                    ? 'bg-ochre text-paper shadow-xs'
+                    : 'text-paper/70 hover:text-paper'
                 }`}
               >
                 Global Units (/toz, /t)
@@ -237,8 +250,8 @@ export default function IndicativeMineralPrices({
                 onClick={() => setUnitBasis('metric_local')}
                 className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
                   unitBasis === 'metric_local'
-                    ? 'bg-amber-500 text-slate-950 shadow-xs'
-                    : 'text-slate-300 hover:text-white'
+                    ? 'bg-ochre text-paper shadow-xs'
+                    : 'text-paper/70 hover:text-paper'
                 }`}
               >
                 Local Buying Units (/g, /kg)
@@ -248,7 +261,7 @@ export default function IndicativeMineralPrices({
             {showHeaderCta && (
               <Link
                 to="/admin"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/20"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gold/45 bg-moss/30 px-3.5 py-2 text-xs font-semibold text-gold transition hover:bg-moss/45"
               >
                 <SlidersHorizontal size={14} />
                 Admin Price Control
@@ -257,10 +270,10 @@ export default function IndicativeMineralPrices({
           </div>
         </div>
 
-        {/* 1. Live Market Ticker Grid */}
+        {/* 1. Live Market Ticker Grid (Warm Basalt & Laterite Cards) */}
         <div
           aria-label="Live Commodity Ticker Cards"
-          className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
         >
           {minerals.slice(0, 4).map((item) => {
             const isPositive = item.trend_percentage >= 0;
@@ -276,28 +289,28 @@ export default function IndicativeMineralPrices({
             return (
               <div
                 key={item.id}
-                className="group relative overflow-hidden rounded-xl border border-amber-500/20 bg-slate-900/75 p-4 shadow-lg backdrop-blur-md transition hover:border-amber-400/50"
+                className="group relative overflow-hidden rounded-2xl border border-paper/12 bg-ink-2/90 p-5 shadow-xl backdrop-blur-md transition duration-300 hover:-translate-y-0.5 hover:border-gold/45"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-400">
+                      <span className="rounded bg-ochre/25 px-2 py-0.5 font-mono text-[11px] font-bold text-gold">
                         {item.symbol}
                       </span>
-                      <span className="text-sm font-semibold text-white">
+                      <span className="font-display text-lg font-medium text-paper">
                         {item.mineral_name}
                       </span>
                     </div>
-                    <p className="mt-1 font-mono text-[10px] text-slate-400">
+                    <p className="mt-1 font-mono text-[10px] text-paper/55">
                       {item.purity_note}
                     </p>
                   </div>
 
                   <span
-                    className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 font-mono text-[11px] font-semibold ${
+                    className={`inline-flex items-center gap-0.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold ${
                       isPositive
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                        : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                        ? 'border-gold/35 bg-moss/35 text-gold'
+                        : 'border-danger/45 bg-danger/20 text-paper'
                     }`}
                   >
                     {isPositive ? (
@@ -310,20 +323,20 @@ export default function IndicativeMineralPrices({
                   </span>
                 </div>
 
-                <div className="mt-4 flex items-end justify-between gap-2">
+                <div className="mt-4 flex items-end justify-between gap-2 border-t border-paper/10 pt-3.5">
                   <div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
                       World Market ({currency})
                     </div>
-                    <div className="font-mono text-xl font-bold text-amber-400 tabular-nums">
+                    <div className="font-display text-2xl font-medium text-gold tabular-nums">
                       {formatConvertedCurrency(worldAdj)}
-                      <span className="ml-1 text-xs font-normal text-slate-400">
+                      <span className="ml-1 font-mono text-xs font-normal text-paper/55">
                         {unitSuffix}
                       </span>
                     </div>
-                    <div className="mt-1 font-mono text-[11px] text-slate-300 tabular-nums">
-                      Local Market:{' '}
-                      <span className="text-emerald-400">
+                    <div className="mt-1 font-mono text-[11px] text-paper/75 tabular-nums">
+                      Soko la Madini:{' '}
+                      <span className="font-semibold text-paper">
                         {formatConvertedCurrency(localAdj)}
                         {unitSuffix}
                       </span>
@@ -341,7 +354,7 @@ export default function IndicativeMineralPrices({
         </div>
 
         {/* Category Filter Tabs & Exchange Rate Telemetry Bar */}
-        <div className="flex flex-col justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col justify-between gap-4 rounded-xl border border-paper/12 bg-ink-2/85 px-4 py-3 sm:flex-row sm:items-center">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
@@ -356,10 +369,10 @@ export default function IndicativeMineralPrices({
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition ${
                   selectedCategory === cat
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-ochre text-paper shadow-xs'
+                    : 'text-paper/70 hover:bg-paper/10 hover:text-paper'
                 }`}
               >
                 {cat === 'ALL' ? `All Commodities (${minerals.length})` : cat}
@@ -367,8 +380,8 @@ export default function IndicativeMineralPrices({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 font-mono text-xs text-slate-400">
-            <span className="inline-flex items-center gap-1.5 text-amber-400">
+          <div className="flex flex-wrap items-center gap-4 font-mono text-xs text-paper/65">
+            <span className="inline-flex items-center gap-1.5 text-gold">
               <Coins size={13} />1 USD ={' '}
               {rateForSelected.toLocaleString('en-US', {
                 maximumFractionDigits: 2,
@@ -379,41 +392,43 @@ export default function IndicativeMineralPrices({
           </div>
         </div>
 
-        {/* 2. Detailed Breakdown Matrix Table */}
-        <div className="overflow-hidden rounded-2xl border border-amber-500/20 bg-slate-900/75 shadow-2xl backdrop-blur-md">
+        {/* 2. Detailed Breakdown Matrix Table (Warm Parchment Ledger inside Basalt Frame) */}
+        <div className="overflow-hidden rounded-2xl border border-sand/40 bg-paper text-ink shadow-[0_28px_60px_-28px_rgba(0,0,0,0.65)]">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-amber-500/20 bg-slate-950/90 font-mono text-[11px] uppercase tracking-wider text-amber-400/90">
+              <thead className="border-b border-ink/12 bg-paper-2 font-mono text-[11px] uppercase tracking-wider text-stone">
                 <tr>
-                  <th className="px-5 py-4">Commodity &amp; Standard</th>
+                  <th className="px-5 py-4 text-ink">Commodity &amp; Standard</th>
                   <th className="px-5 py-4">
-                    <div className="flex items-center gap-1.5">
-                      <Globe size={13} />
+                    <div className="flex items-center gap-1.5 text-ink">
+                      <Globe size={13} className="text-stone" />
                       <span>World Market (USD Base)</span>
                     </div>
                   </th>
                   <th className="px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-amber-300">
+                    <div className="flex items-center gap-1.5 text-ochre">
                       <Coins size={13} />
                       <span>World Market ({currency} Converted)</span>
                     </div>
                   </th>
                   <th className="px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-emerald-400">
+                    <div className="flex items-center gap-1.5 text-moss">
                       <Scale size={13} />
                       <span>Mineral Market (Soko la Madini)</span>
                     </div>
                   </th>
                   <th className="px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-sky-400">
-                      <ShieldCheck size={13} />
+                    <div className="flex items-center gap-1.5 text-ink">
+                      <ShieldCheck size={13} className="text-ochre" />
                       <span>Buying Centre (Kituo cha Ununuzi)</span>
                     </div>
                   </th>
-                  <th className="px-5 py-4 text-right">24h Trend &amp; 7d Chart</th>
+                  <th className="px-5 py-4 text-right text-ink">
+                    24h Trend &amp; 7d Chart
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80">
+              <tbody className="divide-y divide-ink/10">
                 {filteredMinerals.map((item) => {
                   const isPositive = item.trend_percentage >= 0;
                   const worldCalc = computeUnitAdjustedUsd(
@@ -432,19 +447,19 @@ export default function IndicativeMineralPrices({
                   return (
                     <tr
                       key={item.id}
-                      className="transition hover:bg-amber-500/[0.04]"
+                      className="transition hover:bg-paper-2/70"
                     >
                       {/* Commodity & Purity */}
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2.5">
-                          <span className="inline-flex h-8 w-11 shrink-0 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 font-mono text-xs font-bold text-amber-400">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-9 w-12 shrink-0 items-center justify-center rounded-lg bg-ink font-mono text-xs font-bold text-gold">
                             {item.symbol}
                           </span>
                           <div>
-                            <div className="font-semibold text-white text-sm">
+                            <div className="font-display text-base font-medium text-ink">
                               {item.mineral_name}
                             </div>
-                            <div className="font-mono text-[11px] text-slate-400">
+                            <div className="font-mono text-[11px] text-stone">
                               {item.purity_note} · Royalty:{' '}
                               {item.royalty_rate_pct}%
                             </div>
@@ -454,43 +469,43 @@ export default function IndicativeMineralPrices({
 
                       {/* World Market Price (Base USD) */}
                       <td className="whitespace-nowrap px-5 py-4 font-mono tabular-nums">
-                        <div className="text-sm font-semibold text-slate-200">
+                        <div className="text-sm font-semibold text-ink">
                           {formatConvertedCurrency(
                             worldCalc.adjustedUsd,
                             'USD',
                             1
                           )}
-                          <span className="ml-1 text-[11px] font-normal text-slate-400">
+                          <span className="ml-1 text-[11px] font-normal text-stone">
                             {worldCalc.unitSuffix}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-500">
+                        <div className="text-[10px] text-stone">
                           Spot Benchmark ({item.unit})
                         </div>
                       </td>
 
                       {/* World Market Price Converted (Active Currency) */}
                       <td className="whitespace-nowrap px-5 py-4 font-mono tabular-nums">
-                        <div className="text-sm font-bold text-amber-400">
+                        <div className="text-sm font-bold text-ochre">
                           {formatConvertedCurrency(worldCalc.adjustedUsd)}
-                          <span className="ml-1 text-[11px] font-normal text-amber-400/70">
+                          <span className="ml-1 text-[11px] font-normal text-stone">
                             {worldCalc.unitSuffix}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-stone">
                           {currencyMeta.flag} {currency} Mid-Market Parity
                         </div>
                       </td>
 
                       {/* Mineral Market Price (Local Benchmark) */}
                       <td className="whitespace-nowrap px-5 py-4 font-mono tabular-nums">
-                        <div className="text-sm font-bold text-emerald-400">
+                        <div className="text-sm font-bold text-moss">
                           {formatConvertedCurrency(localCalc.adjustedUsd)}
-                          <span className="ml-1 text-[11px] font-normal text-emerald-400/70">
+                          <span className="ml-1 text-[11px] font-normal text-stone">
                             {localCalc.unitSuffix}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-stone">
                           USD Equiv:{' '}
                           {formatConvertedCurrency(
                             localCalc.adjustedUsd,
@@ -503,13 +518,13 @@ export default function IndicativeMineralPrices({
 
                       {/* Buying Centre Price (Commercial Floor) */}
                       <td className="whitespace-nowrap px-5 py-4 font-mono tabular-nums">
-                        <div className="text-sm font-bold text-sky-400">
+                        <div className="text-sm font-bold text-ink">
                           {formatConvertedCurrency(buyingCalc.adjustedUsd)}
-                          <span className="ml-1 text-[11px] font-normal text-sky-400/70">
+                          <span className="ml-1 text-[11px] font-normal text-stone">
                             {buyingCalc.unitSuffix}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-stone">
                           USD Equiv:{' '}
                           {formatConvertedCurrency(
                             buyingCalc.adjustedUsd,
@@ -526,12 +541,13 @@ export default function IndicativeMineralPrices({
                           <SparklineSvg
                             points={item.sparkline_points}
                             positive={isPositive}
+                            onLight
                           />
                           <span
                             className={`inline-flex min-w-[68px] items-center justify-center gap-0.5 rounded-md border px-2 py-1 font-mono text-xs font-semibold ${
                               isPositive
-                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                                : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                                ? 'border-moss/35 bg-moss-light text-moss'
+                                : 'border-danger/35 bg-danger/10 text-danger'
                             }`}
                           >
                             {isPositive ? (
@@ -552,12 +568,12 @@ export default function IndicativeMineralPrices({
           </div>
 
           {/* Regulatory & Methodology Notice Footer */}
-          <div className="flex flex-col justify-between gap-2 border-t border-amber-500/20 bg-slate-950/80 px-5 py-3.5 text-[11px] text-slate-400 sm:flex-row sm:items-center">
+          <div className="flex flex-col justify-between gap-2 border-t border-ink/10 bg-paper-2 px-5 py-4 text-xs text-stone sm:flex-row sm:items-center">
             <p>
-              <strong className="text-amber-400">Regulatory Notice:</strong>{' '}
+              <strong className="text-ochre">Regulatory Notice:</strong>{' '}
               Indicative prices are published for market transparency and due-diligence modeling. Final settlement at licensed Mineral Markets (Soko la Madini) and Buying Centres depends on certified XRF/fire assay purity and statutory Mining Act royalties.
             </p>
-            <span className="shrink-0 font-mono text-[10px] text-slate-500">
+            <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-stone">
               SOURCE: LBMA / LME / `/api/mineral-prices`
             </span>
           </div>
