@@ -175,8 +175,15 @@ function ProjectDetail() {
           </Section>
 
           <Section title={t('detail.location')}>
-            <div className="grid items-center gap-6 rounded-xl border border-ink/10 bg-white/50 p-5 sm:grid-cols-[1fr_1.1fr]">
-              <TanzaniaMap projects={[p]} selectedId={p.id} className="w-full" />
+            <div className="grid items-center gap-6 rounded-xl border border-ink/10 bg-white/50 p-5 sm:grid-cols-[1.2fr_0.9fr]">
+              <TanzaniaMap
+                projects={[p]}
+                selectedId={p.id}
+                selectedRegion={p.region}
+                variant="dark"
+                className="w-full"
+                heightClass="h-[360px]"
+              />
               <div className="text-sm">
                 <p className="font-display text-2xl">
                   {p.district}, {p.region}

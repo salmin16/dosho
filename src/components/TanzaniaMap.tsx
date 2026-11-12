@@ -1,153 +1,664 @@
-import type { Project } from '../data/fixtures'
-import { useI18n } from '../i18n'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CircleMarker,
+  GeoJSON as LeafletGeoJSON,
+  MapContainer,
+  TileLayer,
+  Tooltip,
+  useMap,
+} from 'react-leaflet';
+import L from 'leaflet';
+import type { Feature, GeoJsonObject } from 'geojson';
+import 'leaflet/dist/leaflet.css';
+import {
+   Compass,
+  Layers,
+  Maximize2,
+  MapPin,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
+import type { Project } from '../data/fixtures';
+import { PROJECTS, formatUsd } from '../data/fixtures';
+import {
+  TANZANIA_ADM1_FALLBACK_GEOJSON,
+  TANZANIA_GEOBOUNDARIES_ADM1_URL,
+  resolveRegionMetadata,
+  type TanzaniaRegionProperties,
+  type TanzaniaRegionsFeatureCollection,
+} from '../data/tanzaniaRegionsGeoJson';
+import { useI18n } from '../i18n';
+
+const LEVEL_COLOR = ['#9a8f82', '#c9a35c', '#d6a443', '#c0612b', '#3e5c49'];
+
+const TANZANIA_CENTER: [number, number] = [-6.369, 34.8888];
+const TANZANIA_BOUNDS: L.LatLngBoundsExpression = [
+  [-11.85, 29.25],
+  [-0.85, 40.65],
+];
 
 /**
- * Stylised Tanzania map drawn from a simplified border outline (illustrative,
- * not survey-grade). A later milestone replaces this with a GIS map layer.
+ * Internal controller that syncs external region/project selection with Leaflet camera bounds
  */
-const W = 690
-const H = 660
-const project = (lng: number, lat: number) => [(lng - 29.2) * 60, (-0.9 - lat) * 60] as const
+function MapViewportController({
+  selectedProject,
+  activeRegionName,
+  geoJsonData,
+  resetTrigger,
+}: {
+  selectedProject?: Project | null;
+  activeRegionName: string | null;
+  geoJsonData: TanzaniaRegionsFeatureCollection;
+  resetTrigger: number;
+}) {
+  const map = useMap();
 
-const BORDER: [number, number][] = [
-  [30.48, -1.06], [30.75, -1.0], [33.9, -1.0], [34.07, -1.0], [35.6, -1.9], [36.9, -2.6], [37.7, -3.0],
-  [37.75, -3.6], [38.6, -4.1], [39.2, -4.67], [39.1, -5.1], [38.85, -5.9], [38.9, -6.5], [39.3, -6.85],
-  [39.45, -7.2], [39.3, -7.8], [39.4, -8.5], [39.55, -9.0], [39.75, -9.6], [39.9, -10.1], [40.45, -10.45],
-  [39.8, -10.9], [39.2, -11.15], [38.5, -11.35], [37.8, -11.6], [37.2, -11.7], [36.5, -11.7], [35.8, -11.45],
-  [34.95, -11.55], [34.7, -11.0], [34.6, -10.0], [34.35, -9.6], [33.95, -9.45], [33.4, -9.5], [32.95, -9.4],
-  [32.2, -8.95], [31.5, -8.65], [30.8, -8.25], [30.55, -7.6], [30.43, -6.82], [30.1, -6.3], [29.8, -6.1],
-  [29.9, -5.6], [29.63, -4.88], [29.6, -4.45], [30.05, -4.25], [30.45, -3.6], [30.85, -3.2], [30.65, -2.6],
-  [30.55, -2.4], [30.85, -1.65],
-]
+  useEffect(() => {
+    if (resetTrigger > 0) {
+      map.flyToBounds(TANZANIA_BOUNDS, {
+        padding: [20, 20],
+        duration: 0.9,
+      });
+    }
+  }, [resetTrigger, map]);
 
-const LAKE_VICTORIA: [number, number][] = [
-  [31.6, -1.0], [33.9, -1.0], [33.95, -1.6], [33.4, -2.1], [32.9, -2.5], [32.2, -2.6], [31.8, -2.0], [31.7, -1.4],
-]
+  useEffect(() => {
+    if (!activeRegionName) return;
+    const match = geoJsonData.features.find(
+      (f) =>
+        f.properties.shapeName.toLowerCase() === activeRegionName.toLowerCase()
+    );
+    if (match) {
+      try {
+        const geoLayer = L.geoJSON(match as unknown as GeoJsonObject);
+        const bounds = geoLayer.getBounds();
+        if (bounds.isValid()) {
+          map.flyToBounds(bounds, {
+            padding: [36, 36],
+            maxZoom: 8,
+            duration: 0.85,
+          });
+        }
+      } catch {
+        // Ignore invalid bounds
+      }
+    }
+  }, [activeRegionName, geoJsonData, map]);
 
-const CITIES = [
-  { name: 'Dar es Salaam', lng: 39.28, lat: -6.8 },
-  { name: 'Dodoma', lng: 35.74, lat: -6.17 },
-  { name: 'Mwanza', lng: 32.9, lat: -2.52 },
-  { name: 'Arusha', lng: 36.68, lat: -3.37 },
-  { name: 'Mbeya', lng: 33.46, lat: -8.9 },
-]
+  useEffect(() => {
+    if (!selectedProject) return;
+    map.flyTo([selectedProject.lat, selectedProject.lng], Math.max(map.getZoom(), 7), {
+      duration: 0.75,
+    });
+  }, [selectedProject, map]);
 
-const LEVEL_COLOR = ['#9a8f82', '#c9a35c', '#d6a443', '#c0612b', '#3e5c49']
+  return null;
+}
 
-const toPath = (pts: [number, number][]) =>
-  pts.map(([lng, lat], i) => `${i ? 'L' : 'M'}${project(lng, lat).map((v) => v.toFixed(1)).join(' ')}`).join(' ') + 'Z'
+export interface TanzaniaMapProps {
+  projects?: Project[];
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+  selectedRegion?: string | null;
+  onSelectRegion?: (regionName: string | null) => void;
+  variant?: 'light' | 'dark';
+  className?: string;
+  heightClass?: string;
+}
 
 export default function TanzaniaMap({
-  projects,
+  projects = PROJECTS,
   selectedId,
   onSelect,
-  variant = 'light',
+  selectedRegion = null,
+  onSelectRegion,
+  variant = 'dark',
   className = '',
-}: {
-  projects: Project[]
-  selectedId?: string | null
-  onSelect?: (id: string) => void
-  variant?: 'light' | 'dark'
-  className?: string
-}) {
-  const { t, localizeProject } = useI18n()
-  const dark = variant === 'dark'
-  const [zx, zy] = project(39.3, -6.15)
-  const [px, py] = project(39.75, -5.2)
+  heightClass = 'h-[580px]',
+}: TanzaniaMapProps) {
+  const { t, localizeProject } = useI18n();
+  const [isMounted, setIsMounted] = useState(false);
+  const [geoJsonData, setGeoJsonData] =
+    useState<TanzaniaRegionsFeatureCollection>(TANZANIA_ADM1_FALLBACK_GEOJSON);
+  const [boundarySource, setBoundarySource] = useState<
+    'ADM1 Embedded' | 'geoBoundaries ADM1 High-Res'
+  >('ADM1 Embedded');
+  const [hoveredRegion, setHoveredRegion] =
+    useState<TanzaniaRegionProperties | null>(null);
+  const [activeRegion, setActiveRegion] = useState<string | null>(
+    selectedRegion
+  );
+  const [showRegionLabels, setShowRegionLabels] = useState<boolean>(true);
+  const [resetCounter, setResetCounter] = useState(0);
+  const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (selectedRegion !== undefined) {
+      setActiveRegion(selectedRegion);
+    }
+  }, [selectedRegion]);
+
+  // Fetch high-precision official Level-1 administrative GeoJSON boundaries for Tanzania
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOfficialAdm1Boundaries() {
+      try {
+        const res = await fetch(TANZANIA_GEOBOUNDARIES_ADM1_URL);
+        if (!res.ok) return;
+        const raw = (await res.json()) as {
+          type?: string;
+          features?: Array<{
+            type: 'Feature';
+            properties?: Record<string, unknown>;
+            geometry: TanzaniaRegionsFeatureCollection['features'][number]['geometry'];
+          }>;
+        };
+
+        if (
+          !cancelled &&
+          raw &&
+          Array.isArray(raw.features) &&
+          raw.features.length >= 20
+        ) {
+          const enrichedFeatures = raw.features.map((feat) => {
+            const rawName = String(
+              feat.properties?.shapeName ||
+                feat.properties?.NAME_1 ||
+                feat.properties?.name ||
+                'Dodoma'
+            );
+            return {
+              type: 'Feature' as const,
+              properties: resolveRegionMetadata(rawName),
+              geometry: feat.geometry,
+            };
+          });
+
+          setGeoJsonData({
+            type: 'FeatureCollection',
+            features: enrichedFeatures,
+          });
+          setBoundarySource('geoBoundaries ADM1 High-Res');
+        }
+      } catch {
+        // Fallback 31-region ADM1 GeoJSON remains active
+      }
+    }
+
+    void loadOfficialAdm1Boundaries();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Count active listings per region
+  const projectCountsByRegion = useMemo(() => {
+    const map = new Map<string, number>();
+    projects.forEach((p) => {
+      map.set(p.region, (map.get(p.region) ?? 0) + 1);
+    });
+    return map;
+  }, [projects]);
+
+  const selectedProjectObj = useMemo(
+    () => projects.find((p) => p.id === selectedId) ?? null,
+    [projects, selectedId]
+  );
+
+  const activeRegionMeta = useMemo(() => {
+    if (!activeRegion) return null;
+    return resolveRegionMetadata(activeRegion);
+  }, [activeRegion]);
+
+  const handleResetView = useCallback(() => {
+    setActiveRegion(null);
+    setHoveredRegion(null);
+    onSelectRegion?.(null);
+    setResetCounter((c) => c + 1);
+  }, [onSelectRegion]);
+
+  // Dynamic polygon styling matching classic dark engineering & gold/amber borders (#d97706)
+  const styleFeature = useCallback(
+    (feature?: Feature): L.PathOptions => {
+      const regionName = String(
+        (feature?.properties as TanzaniaRegionProperties | undefined)
+          ?.shapeName ?? ''
+      );
+      const isSelected =
+        activeRegion !== null &&
+        activeRegion.toLowerCase() === regionName.toLowerCase();
+      const isHovered =
+        hoveredRegion !== null &&
+        hoveredRegion.shapeName.toLowerCase() === regionName.toLowerCase();
+      const regionProjects = projectCountsByRegion.get(regionName) ?? 0;
+
+      if (isSelected) {
+        return {
+          fillColor: '#d97706', // Rich amber-600 highlight
+          fillOpacity: 0.42,
+          color: '#fbbf24', // Gold border highlight
+          weight: 2.6,
+          opacity: 1,
+        };
+      }
+
+      if (isHovered) {
+        return {
+          fillColor: '#d97706',
+          fillOpacity: 0.3,
+          color: '#fbbf24',
+          weight: 2.2,
+          opacity: 1,
+        };
+      }
+
+      return {
+        fillColor: regionProjects > 0 ? '#1e293b' : '#151922', // Slate-800 / deep basalt fill
+        fillOpacity: regionProjects > 0 ? 0.62 : 0.45,
+        color: '#d97706', // Classic gold/amber regional border (#d97706)
+        weight: 1.35,
+        opacity: 0.82,
+      };
+    },
+    [activeRegion, hoveredRegion, projectCountsByRegion]
+  );
+
+  // Bind hover tooltip, highlight states, and click-to-zoom bounding box per region ("Mkoa")
+  const onEachRegionFeature = useCallback(
+    (feature: Feature, layer: L.Layer) => {
+      const props = feature.properties as TanzaniaRegionProperties;
+      if (!props || !props.shapeName) return;
+
+      const projectCount = projectCountsByRegion.get(props.shapeName) ?? 0;
+      const mineralsList = (props.keyMinerals || []).slice(0, 3).join(' · ');
+
+      const tooltipHtml = `
+        <div style="min-width: 190px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span style="font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#d6a443;">
+              MKOA WA ${props.shapeName.toUpperCase()} (${props.regionCode})
+            </span>
+          </div>
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:600;color:#f6f1e7;margin-top:2px;">
+            ${props.shapeName} Region
+          </div>
+          <div style="font-size:11px;color:rgba(246,241,231,0.75);margin-top:2px;">
+            Capital: <strong style="color:#f6f1e7;">${props.capital}</strong> · ${props.zone}
+          </div>
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(214,164,67,0.25);font-family:var(--font-mono);font-size:10px;color:#d6a443;">
+            Minerals: ${mineralsList}
+          </div>
+          <div style="margin-top:3px;font-family:var(--font-mono);font-size:10px;color:rgba(246,241,231,0.7);">
+            ${projectCount} Active Platform Listing${projectCount === 1 ? '' : 's'} · Click to Zoom
+          </div>
+        </div>
+      `;
+
+      layer.bindTooltip(tooltipHtml, {
+        sticky: true,
+        direction: 'top',
+        offset: [0, -10],
+        className: 'mineconnect-leaflet-tooltip',
+      });
+
+      layer.on({
+        mouseover: (e: L.LeafletEvent) => {
+          const target = e.target as L.Path;
+          setHoveredRegion(props);
+          target.setStyle({
+            fillColor: '#d97706',
+            fillOpacity: 0.34,
+            color: '#fbbf24',
+            weight: 2.4,
+            opacity: 1,
+          });
+          target.bringToFront();
+        },
+        mouseout: (e: L.LeafletEvent) => {
+          setHoveredRegion((prev) =>
+            prev?.shapeName === props.shapeName ? null : prev
+          );
+          const target = e.target as L.Path;
+          target.setStyle(styleFeature(feature));
+        },
+        click: (e: L.LeafletEvent) => {
+          const target = e.target as L.Polygon;
+          const nextRegion =
+            activeRegion?.toLowerCase() === props.shapeName.toLowerCase()
+              ? null
+              : props.shapeName;
+          setActiveRegion(nextRegion);
+          onSelectRegion?.(nextRegion);
+
+          const mapInstance = (target as unknown as { _map?: L.Map })._map;
+          if (mapInstance && nextRegion) {
+            const bounds = target.getBounds();
+            if (bounds.isValid()) {
+              mapInstance.fitBounds(bounds, {
+                padding: [36, 36],
+                maxZoom: 8,
+                animate: true,
+              });
+            }
+          }
+        },
+      });
+    },
+    [activeRegion, onSelectRegion, projectCountsByRegion, styleFeature]
+  );
+
+  // Re-key GeoJSON layer when data or active state updates so styles refresh cleanly
+  const geoJsonKey = useMemo(
+    () =>
+      `${boundarySource}-${geoJsonData.features.length}-${activeRegion ?? 'all'}-${projects.length}`,
+    [boundarySource, geoJsonData.features.length, activeRegion, projects.length]
+  );
+
+  const displayedRegionInfo = hoveredRegion ?? activeRegionMeta;
 
   return (
-    <svg viewBox={`-20 -20 ${W + 40} ${H + 40}`} className={className} role="img" aria-label={t('map.ariaLabel')}>
-      <defs>
-        <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="7" stroke={dark ? '#d6a443' : '#c0612b'} strokeOpacity="0.12" strokeWidth="1.5" />
-        </pattern>
-        <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="10" stdDeviation="14" floodColor="#15120f" floodOpacity={dark ? 0.5 : 0.18} />
-        </filter>
-      </defs>
+    <div
+      className={`relative overflow-hidden rounded-2xl border border-gold/25 bg-ink text-paper shadow-2xl ${className}`}
+      role="region"
+      aria-label={t('map.ariaLabel')}
+    >
+      {/* Top Glassmorphism GIS Status & Regional Telemetry Overlay */}
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex flex-wrap items-start justify-between gap-2.5">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-xl border border-gold/35 bg-ink/85 px-3.5 py-2 shadow-lg backdrop-blur-md">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
+          </span>
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-gold">
+            Interactive GIS · 31 Mikoa ADM1
+          </span>
+          <span className="hidden text-paper/30 sm:inline">|</span>
+          <span className="hidden font-mono text-[10px] text-paper/75 sm:inline">
+            {boundarySource}
+          </span>
+        </div>
 
-      {/* graticule */}
-      <g stroke={dark ? '#f6f1e7' : '#15120f'} strokeOpacity="0.06" strokeDasharray="2 6">
-        {[30, 32, 34, 36, 38, 40].map((lng) => {
-          const [x] = project(lng, 0)
-          return <line key={lng} x1={x} x2={x} y1={-20} y2={H + 20} />
-        })}
-        {[-2, -4, -6, -8, -10].map((lat) => {
-          const [, y] = project(0, lat)
-          return <line key={lat} x1={-20} x2={W + 20} y1={y} y2={y} />
-        })}
-      </g>
+        {/* Interactive Region Quick-Select & Reset Controls */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Jump to Tanzanian Region (Mkoa)"
+            value={activeRegion ?? ''}
+            onChange={(e) => {
+              const val = e.target.value || null;
+              setActiveRegion(val);
+              onSelectRegion?.(val);
+              if (!val) {
+                setResetCounter((c) => c + 1);
+              }
+            }}
+            className="h-8 rounded-lg border border-gold/35 bg-ink/90 px-2.5 font-mono text-[11px] text-paper outline-none backdrop-blur-md transition focus:border-gold"
+          >
+            <option value="">All 31 Regions (Mikoa)</option>
+            {geoJsonData.features
+              .map((f) => f.properties.shapeName)
+              .sort((a, b) => a.localeCompare(b))
+              .map((name) => (
+                <option key={name} value={name}>
+                  {name} ({projectCountsByRegion.get(name) ?? 0})
+                </option>
+              ))}
+          </select>
 
-      <path d={toPath(BORDER)} fill={dark ? '#231e1a' : '#ede5d6'} stroke={dark ? '#d6a443' : '#3a322b'} strokeOpacity={dark ? 0.55 : 0.5} strokeWidth="1.4" filter="url(#soft)" />
-      <path d={toPath(BORDER)} fill="url(#hatch)" />
-      <path d={toPath(LAKE_VICTORIA)} fill={dark ? '#15120f' : '#f6f1e7'} stroke={dark ? '#d6a443' : '#3a322b'} strokeOpacity="0.25" />
-      <ellipse cx={zx} cy={zy} rx="9" ry="18" fill={dark ? '#231e1a' : '#ede5d6'} stroke={dark ? '#d6a443' : '#3a322b'} strokeOpacity="0.4" />
-      <ellipse cx={px} cy={py} rx="5" ry="12" fill={dark ? '#231e1a' : '#ede5d6'} stroke={dark ? '#d6a443' : '#3a322b'} strokeOpacity="0.4" />
+          <button
+            type="button"
+            onClick={() => setShowRegionLabels((s) => !s)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider backdrop-blur-md transition ${
+              showRegionLabels
+                ? 'border-gold/45 bg-ochre/30 text-gold'
+                : 'border-paper/20 bg-ink/85 text-paper/70 hover:text-paper'
+            }`}
+            title="Toggle Regional Labels"
+          >
+            <Layers size={12} />
+            <span className="hidden sm:inline">Labels</span>
+          </button>
 
-      <text x={project(32.6, -1.75)[0]} y={project(32.6, -1.75)[1]} className="font-mono" fontSize="11" letterSpacing="2" fill={dark ? '#f6f1e7' : '#15120f'} fillOpacity="0.3" textAnchor="middle">
-        {t('map.lakeVictoria')}
-      </text>
-      <text x={project(40.2, -7.6)[0]} y={project(40.2, -7.6)[1]} className="font-mono" fontSize="11" letterSpacing="2" fill={dark ? '#f6f1e7' : '#15120f'} fillOpacity="0.25" transform={`rotate(70 ${project(40.2, -7.6).join(' ')})`}>
-        {t('map.indianOcean')}
-      </text>
+          <button
+            type="button"
+            onClick={handleResetView}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gold/35 bg-ink/90 px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold backdrop-blur-md transition hover:bg-ochre/30 hover:text-paper"
+            title="Reset Tanzania Bounds"
+          >
+            <RotateCcw size={12} />
+            <span>Reset View</span>
+          </button>
+        </div>
+      </div>
 
-      {CITIES.map((c) => {
-        const [x, y] = project(c.lng, c.lat)
-        return (
-          <g key={c.name}>
-            <rect x={x - 2.5} y={y - 2.5} width="5" height="5" fill={dark ? '#f6f1e7' : '#15120f'} fillOpacity="0.5" />
-            <text x={x + 8} y={y + 4} fontSize="12" fill={dark ? '#f6f1e7' : '#15120f'} fillOpacity="0.55" className="font-sans">
-              {c.name}
-            </text>
-          </g>
-        )
-      })}
+      {/* Bottom-Left Live Region Telemetry Pill */}
+      {displayedRegionInfo && (
+        <div className="pointer-events-none absolute bottom-4 left-3 z-[500] max-w-xs sm:max-w-sm">
+          <div className="pointer-events-auto rounded-xl border border-gold/40 bg-ink/90 p-3.5 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+                <Sparkles size={11} />
+                {displayedRegionInfo.regionCode} · {displayedRegionInfo.zone}
+              </span>
+              {activeRegion && (
+                <button
+                  type="button"
+                  onClick={handleResetView}
+                  className="font-mono text-[10px] text-paper/60 underline hover:text-gold"
+                >
+                  Clear Zoom
+                </button>
+              )}
+            </div>
+            <div className="mt-1 flex items-baseline justify-between gap-3">
+              <h4 className="font-display text-lg font-medium text-paper">
+                Mkoa wa {displayedRegionInfo.shapeName}
+              </h4>
+              <span className="font-mono text-[11px] text-paper/70">
+                HQ: {displayedRegionInfo.capital}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {displayedRegionInfo.keyMinerals.map((m) => (
+                <span
+                  key={m}
+                  className="rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold"
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-      {projects.map((raw) => {
-        const p = localizeProject(raw)
-        const [x, y] = project(p.lng, p.lat)
-        const selected = p.id === selectedId
-        const color = LEVEL_COLOR[p.verification.level]
-        return (
-          <g
-            key={p.id}
-            transform={`translate(${x} ${y})`}
-            className={onSelect ? 'cursor-pointer' : ''}
-            onClick={() => onSelect?.(p.id)}
-            role={onSelect ? 'button' : undefined}
-            tabIndex={onSelect ? 0 : undefined}
-            aria-label={onSelect ? `${p.title}, ${p.region}` : undefined}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') onSelect?.(p.id)
+      {/* Main Interactive Leaflet Map Canvas (SSR-safe) */}
+      <div className={`w-full ${heightClass}`}>
+        {!isMounted ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-ink-2 p-8 text-center">
+            <Compass size={28} className="animate-spin text-gold" />
+            <div className="font-mono text-xs uppercase tracking-widest text-gold">
+              Initializing Tanzania Regional GIS Engine (31 Mikoa)...
+            </div>
+          </div>
+        ) : (
+          <MapContainer
+            center={TANZANIA_CENTER}
+            zoom={6}
+            minZoom={5}
+            maxZoom={12}
+            scrollWheelZoom={true}
+            zoomControl={false}
+            className="h-full w-full"
+            style={{
+              height: '100%',
+              width: '100%',
+              background: variant === 'dark' ? '#0f141c' : '#15120f',
             }}
           >
-            {(p.featured || selected) && <circle r="9" fill={color} className="marker-ping" />}
-            <circle r={selected ? 12 : 8} fill={color} stroke={dark ? '#15120f' : '#f6f1e7'} strokeWidth="2.5" style={{ transition: 'r 0.2s' }} />
-            {selected && <circle r="3.5" fill={dark ? '#15120f' : '#f6f1e7'} />}
-          </g>
-        )
-      })}
-    </svg>
-  )
+            {/* Classic CartoDB Dark Matter Basemap Tile Layer */}
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a> · geoBoundaries ADM1'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              subdomains="abcd"
+              maxZoom={19}
+            />
+
+            {/* Level-1 Administrative Boundaries ("Mikoa") GeoJSON Polygon Layer */}
+            <LeafletGeoJSON
+              key={geoJsonKey}
+              ref={(ref) => {
+                geoJsonLayerRef.current = ref;
+              }}
+              data={geoJsonData as unknown as GeoJsonObject}
+              style={styleFeature}
+              onEachFeature={onEachRegionFeature}
+            />
+
+            {/* Regional Name Labels at Each Mkoa Centroid */}
+            {showRegionLabels &&
+              geoJsonData.features.map((feat) => {
+                const { shapeName, center } = feat.properties;
+                if (!center || center.length < 2) return null;
+                return (
+                  <CircleMarker
+                    key={`label-${shapeName}`}
+                    center={center}
+                    radius={1}
+                    pathOptions={{
+                      opacity: 0,
+                      fillOpacity: 0,
+                    }}
+                    interactive={false}
+                  >
+                    <Tooltip
+                      permanent
+                      direction="center"
+                      className="mineconnect-region-label"
+                    >
+                      {shapeName}
+                    </Tooltip>
+                  </CircleMarker>
+                );
+              })}
+
+            {/* Verified Opportunity Project Markers */}
+            {projects.map((raw) => {
+              const p = localizeProject(raw);
+              const isSelected = p.id === selectedId;
+              const color = LEVEL_COLOR[p.verification.level] ?? '#d6a443';
+
+              return (
+                <CircleMarker
+                  key={p.id}
+                  center={[p.lat, p.lng]}
+                  radius={isSelected ? 10 : 7}
+                  pathOptions={{
+                    fillColor: color,
+                    fillOpacity: 0.95,
+                    color: isSelected ? '#ffffff' : '#15120f',
+                    weight: isSelected ? 3 : 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      onSelect?.(p.id);
+                      setActiveRegion(p.region);
+                      onSelectRegion?.(p.region);
+                    },
+                  }}
+                >
+                  <Tooltip
+                    direction="top"
+                    offset={[0, -8]}
+                    className="mineconnect-leaflet-tooltip"
+                  >
+                    <div className="space-y-1">
+                      <div className="font-mono text-[10px] uppercase tracking-wider text-gold">
+                        {p.id} · Level L{p.verification.level} · {p.region}
+                      </div>
+                      <div className="font-display text-sm font-semibold text-paper">
+                        {p.title}
+                      </div>
+                      <div className="font-mono text-[11px] text-paper/80">
+                        {p.minerals.join(', ')} · Seeking{' '}
+                        <strong className="text-gold">
+                          {formatUsd(p.investmentUsd)}
+                        </strong>
+                      </div>
+                    </div>
+                  </Tooltip>
+                </CircleMarker>
+              );
+            })}
+
+            <MapViewportController
+              selectedProject={selectedProjectObj}
+              activeRegionName={activeRegion}
+              geoJsonData={geoJsonData}
+              resetTrigger={resetCounter}
+            />
+          </MapContainer>
+        )}
+      </div>
+
+      {/* Bottom Interactive Status Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gold/20 bg-ink-2 px-4 py-2.5 font-mono text-[11px] text-paper/70">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-1.5 text-gold">
+            <MapPin size={12} />
+            {activeRegion
+              ? `Filtered Region: Mkoa wa ${activeRegion}`
+              : 'All 31 Tanzanian Regions (Mikoa) Active'}
+          </span>
+          <span className="text-paper/30">·</span>
+          <span>
+            {projects.length} Mapped Opportunities
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-paper/55">
+          <Maximize2 size={11} className="text-gold" />
+          <span>Scroll to zoom · Hover region for dossier · Click region to fit bounds</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function MapLegend({ dark = false }: { dark?: boolean }) {
-  const { t } = useI18n()
+  const { t } = useI18n();
   const labels = [
     t('map.legend.l0'),
     t('map.legend.l1'),
     t('map.legend.l2'),
     t('map.legend.l3'),
     t('map.legend.l4'),
-  ]
+  ];
   return (
-    <ul className={`flex flex-wrap gap-x-4 gap-y-2 font-mono text-[10px] uppercase tracking-wider ${dark ? 'text-paper/60' : 'text-stone'}`}>
+    <ul
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[10px] uppercase tracking-wider ${
+        dark ? 'text-paper/70' : 'text-stone'
+      }`}
+    >
+      <li className="flex items-center gap-1.5">
+        <span
+          className="h-2.5 w-3.5 shrink-0 rounded-xs border border-[#d97706] bg-[#1e293b]"
+          aria-hidden="true"
+        />
+        <span>ADM1 Mkoa Boundary (#d97706)</span>
+      </li>
       {labels.map((l, i) => (
         <li key={l} className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: LEVEL_COLOR[i] }} />
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ background: LEVEL_COLOR[i] }}
+          />
           {l}
         </li>
       ))}
     </ul>
-  )
+  );
 }
