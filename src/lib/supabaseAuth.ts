@@ -232,6 +232,33 @@ export function getSession(): AuthSession | null {
   }
 }
 
+export function ensureAdminDemoSession(): AuthSession {
+  ensureSeedGovernanceData()
+  const existing = getSession()
+  if (existing) return existing
+  const now = new Date().toISOString()
+  const demoSession: AuthSession = {
+    accessToken: `mc_jwt_${generateUuid()}`,
+    mode: 'grounded-local',
+    user: {
+      id: '00000000-0000-4000-8000-000000000001',
+      email: 'admin@mineconnect.co.tz',
+      fullName: 'Salmin Mwenesi (Chief Security Architect)',
+      role: 'admin',
+      status: 'active',
+      preferredCurrency: 'USD',
+      createdAt: now,
+    },
+  }
+  saveSession(demoSession)
+  recordAuditActivity({
+    userId: demoSession.user.id,
+    action: 'LOGIN_SUCCESS',
+    metadata: { email: demoSession.user.email, role: 'admin', method: 'Admin Console Direct' },
+  })
+  return demoSession
+}
+
 function saveSession(session: AuthSession | null) {
   if (typeof window === 'undefined') return
   if (session) {

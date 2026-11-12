@@ -1,4 +1,4 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -16,8 +16,8 @@ import {
 import {
   adminDeleteUserProfile,
   adminUpdateUserProfile,
+  ensureAdminDemoSession,
   fetchAdminGovernanceData,
-  getSession,
   useAuthSession,
 } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
@@ -46,7 +46,6 @@ function getActionBadgeClasses(action: string): string {
 }
 
 function AdminDashboardRouteComponent() {
-  const navigate = useNavigate()
   const session = useAuthSession()
   const { currency, currencyMeta, rateForSelected, formatExactUsd } = useCurrency()
 
@@ -68,11 +67,7 @@ function AdminDashboardRouteComponent() {
   } | null>(null)
 
   const loadGovernanceTelemetry = useCallback(async () => {
-    const current = getSession()
-    if (!current) {
-      navigate({ to: '/login', search: { next: '/admin' } as unknown as undefined })
-      return
-    }
+    ensureAdminDemoSession()
     const data = await fetchAdminGovernanceData()
     setAuthorized(data.authorized)
     setUsers(data.users)
@@ -80,7 +75,7 @@ function AdminDashboardRouteComponent() {
     setTotalDocuments(data.totalDocuments)
     setTotalProjects(data.totalProjects)
     setDbLatencyMs(data.dbLatencyMs)
-  }, [navigate])
+  }, [])
 
   useEffect(() => {
     void loadGovernanceTelemetry()

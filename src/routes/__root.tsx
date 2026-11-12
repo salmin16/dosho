@@ -60,6 +60,8 @@ function Chrome({ children }: { children: React.ReactNode }) {
       : pathname
 
   const isHome = normalizedPath === '/' || normalizedPath === ''
+  const isAdminPage =
+    normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')
   const isAuthPage =
     normalizedPath === '/login' ||
     normalizedPath === '/signup' ||
@@ -67,10 +69,10 @@ function Chrome({ children }: { children: React.ReactNode }) {
     normalizedPath.startsWith('/signup/')
 
   // Strict Mandatory Membership Guard:
-  // Unauthenticated visitors may only view the public Landing Page (`/`) and Auth Pages (`/login`, `/signup`).
+  // Unauthenticated visitors may only view the public Landing Page (`/`), Auth Pages (`/login`, `/signup`), and `/admin` (which enforces its own RBAC guard).
   useEffect(() => {
     const activeSession = getSession()
-    if (!isHome && !isAuthPage && !activeSession) {
+    if (!isHome && !isAuthPage && !isAdminPage && !activeSession) {
       navigate({
         to: '/signup',
         search: {
@@ -84,7 +86,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
         } as unknown as undefined,
       })
     }
-  }, [isHome, isAuthPage, normalizedPath, navigate, session])
+  }, [isHome, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
     <div data-currency={currency} data-fx-rate={rateForSelected}>
