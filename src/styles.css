@@ -147,17 +147,11 @@ body {
   border-top-color: rgba(217, 119, 6, 0.55) !important;
 }
 
-.mineconnect-region-label {
+.mineconnect-region-label,
+.mineconnect-region-divicon {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  color: rgba(246, 241, 231, 0.72) !important;
-  font-family: var(--font-mono) !important;
-  font-size: 9px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.85) !important;
   pointer-events: none !important;
 }
 

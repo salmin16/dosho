@@ -62,6 +62,8 @@ function Chrome({ children }: { children: React.ReactNode }) {
   const isHome = normalizedPath === '/' || normalizedPath === ''
   const isMarketsPage =
     normalizedPath === '/markets' || normalizedPath.startsWith('/markets/')
+  const isMapPage =
+    normalizedPath === '/map' || normalizedPath.startsWith('/map/')
   const isAdminPage =
     normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')
   const isAuthPage =
@@ -71,10 +73,10 @@ function Chrome({ children }: { children: React.ReactNode }) {
     normalizedPath.startsWith('/signup/')
 
   // Strict Mandatory Membership Guard:
-  // Unauthenticated visitors may only view the public Landing Page (`/`), Markets Board (`/markets`), Auth Pages (`/login`, `/signup`), and `/admin` (which enforces its own RBAC guard).
+  // Unauthenticated visitors may only view the public Landing Page (`/`), Markets Board (`/markets`), Regional GIS Map (`/map`), Auth Pages (`/login`, `/signup`), and `/admin` (which enforces its own RBAC guard).
   useEffect(() => {
     const activeSession = getSession()
-    if (!isHome && !isMarketsPage && !isAuthPage && !isAdminPage && !activeSession) {
+    if (!isHome && !isMarketsPage && !isMapPage && !isAuthPage && !isAdminPage && !activeSession) {
       navigate({
         to: '/signup',
         search: {
@@ -88,7 +90,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
         } as unknown as undefined,
       })
     }
-  }, [isHome, isMarketsPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
+  }, [isHome, isMarketsPage, isMapPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
     <div data-currency={currency} data-fx-rate={rateForSelected}>
