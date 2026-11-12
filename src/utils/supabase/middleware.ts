@@ -12,6 +12,8 @@ const PUBLIC_PREFIX_ROUTES = [
   '/auth/callback',
   '/api/rates',
   '/api/exchange-rates',
+  '/api/mineral-prices',
+  '/markets',
 ];
 const AUTH_ONLY_ROUTES = ['/login', '/signup'];
 

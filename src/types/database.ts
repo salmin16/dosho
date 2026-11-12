@@ -34,6 +34,28 @@ export type ContentStatus =
   | 'flagged'
   | 'rejected';
 
+export type MineralCategory =
+  | 'Precious Metals'
+  | 'Base & Industrial Metals'
+  | 'Critical & Battery Minerals'
+  | 'Gemstones';
+
+export interface MineralPriceRecord {
+  id: string;
+  mineral_name: string;
+  symbol: string;
+  category: MineralCategory;
+  unit: string;
+  purity_note: string;
+  world_market_price_usd: number;
+  local_market_price_usd: number;
+  buying_centre_price_usd: number;
+  royalty_rate_pct: number;
+  trend_percentage: number;
+  sparkline_points: number[];
+  updated_at: string;
+}
+
 export type AuditAction =
   | 'LOGIN_SUCCESS'
   | 'LOGIN_FAILED'
@@ -52,6 +74,7 @@ export type AuditAction =
   | 'ADMIN_REJECT_SUBMISSION'
   | 'ADMIN_EDIT_CONTENT'
   | 'ADMIN_PURGE_CONTENT'
+  | 'ADMIN_UPDATE_MINERAL_PRICE'
   | 'UNAUTHORIZED_ADMIN_ATTEMPT'
   | (string & {});
 
@@ -157,6 +180,38 @@ export interface UnifiedContentRecord {
 export interface Database {
   public: {
     Tables: {
+      mineral_prices: {
+        Row: MineralPriceRecord;
+        Insert: {
+          id?: string;
+          mineral_name: string;
+          symbol: string;
+          category?: MineralCategory;
+          unit?: string;
+          purity_note?: string;
+          world_market_price_usd: number;
+          local_market_price_usd: number;
+          buying_centre_price_usd: number;
+          royalty_rate_pct?: number;
+          trend_percentage?: number;
+          sparkline_points?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          mineral_name?: string;
+          symbol?: string;
+          category?: MineralCategory;
+          unit?: string;
+          purity_note?: string;
+          world_market_price_usd?: number;
+          local_market_price_usd?: number;
+          buying_centre_price_usd?: number;
+          royalty_rate_pct?: number;
+          trend_percentage?: number;
+          sparkline_points?: Json;
+          updated_at?: string;
+        };
+      };
       user_profiles: {
         Row: UserProfile;
         Insert: {

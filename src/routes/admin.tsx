@@ -31,9 +31,16 @@ import {
 } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import CurrencySwitcher from '../components/CurrencySwitcher'
+import {
+  adminSyncLiveMarketBenchmarks,
+  adminUpdateMineralPrice,
+  getStoredMineralPrices,
+  subscribeMineralPrices,
+} from '../data/mineralPrices'
 import type {
   AuditLog,
   ContentStatus,
+  MineralPriceRecord,
   UnifiedContentRecord,
   UnifiedContentType,
   UserProfile,
@@ -45,6 +52,7 @@ export type MasterAdminSection =
   | 'approvals'
   | 'content'
   | 'users'
+  | 'minerals'
   | 'audit'
   | 'health'
 
@@ -128,6 +136,16 @@ export function MasterAdminDashboard({
   const [userSearch, setUserSearch] = useState('')
   const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null)
 
+  // Mineral Prices (`mineral_prices`) Benchmark State
+  const [mineralBenchmarks, setMineralBenchmarks] = useState<MineralPriceRecord[]>(
+    () => getStoredMineralPrices()
+  )
+  const [editingMineral, setEditingMineral] = useState<MineralPriceRecord | null>(null)
+  const [editWorldPrice, setEditWorldPrice] = useState('')
+  const [editLocalPrice, setEditLocalPrice] = useState('')
+  const [editBuyingPrice, setEditBuyingPrice] = useState('')
+  const [editTrendPct, setEditTrendPct] = useState('')
+
   // Audit Log Filters
   const [logSearch, setLogSearch] = useState('')
   const [actionFilter, setActionFilter] = useState('ALL')
@@ -158,6 +176,13 @@ export function MasterAdminDashboard({
   useEffect(() => {
     void loadGovernanceTelemetry()
   }, [loadGovernanceTelemetry])
+
+  useEffect(() => {
+    setMineralBenchmarks(getStoredMineralPrices())
+    return subscribeMineralPrices(() => {
+      setMineralBenchmarks(getStoredMineralPrices())
+    })
+  }, [])
 
   const userEmailMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -412,6 +437,74 @@ export function MasterAdminDashboard({
     await loadGovernanceTelemetry()
   }
 
+  const handleOpenEditMineral = (mineral: MineralPriceRecord) => {
+    setEditingMineral(mineral)
+    setEditWorldPrice(String(mineral.world_market_price_usd))
+    setEditLocalPrice(String(mineral.local_market_price_usd))
+    setEditBuyingPrice(String(mineral.buying_centre_price_usd))
+    setEditTrendPct(String(mineral.trend_percentage))
+  }
+
+  const handleSaveMineralEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingMineral) return
+    const worldPrice = Number(editWorldPrice)
+    const localPrice = Number(editLocalPrice)
+    const buyingPrice = Number(editBuyingPrice)
+    const trendPct = Number(editTrendPct)
+
+    if (
+      !Number.isFinite(worldPrice) ||
+      !Number.isFinite(localPrice) ||
+      !Number.isFinite(buyingPrice) ||
+      worldPrice <= 0
+    ) {
+      setFeedback({
+        type: 'error',
+        message: 'Invalid benchmark numeric values.',
+      })
+      return
+    }
+
+    const res = await adminUpdateMineralPrice({
+      id: editingMineral.id,
+      world_market_price_usd: worldPrice,
+      local_market_price_usd: localPrice,
+      buying_centre_price_usd: buyingPrice,
+      trend_percentage: Number.isFinite(trendPct) ? trendPct : 0,
+    })
+
+    if (res.error || !res.record) {
+      setFeedback({
+        type: 'error',
+        message: res.error || 'Could not locate mineral benchmark row.',
+      })
+      return
+    }
+
+    setMineralBenchmarks(getStoredMineralPrices())
+    setEditingMineral(null)
+    setFeedback({
+      type: 'success',
+      message: `Updated ${res.record.mineral_name} (${res.record.symbol}) indicative benchmark rates in public.mineral_prices. Audit event ADMIN_UPDATE_MINERAL_PRICE recorded.`,
+    })
+    await loadGovernanceTelemetry()
+  }
+
+  const handleSyncMineralBenchmarks = async () => {
+    const res = await adminSyncLiveMarketBenchmarks()
+    if (res.error) {
+      setFeedback({ type: 'error', message: res.error })
+      return
+    }
+    setMineralBenchmarks(res.records)
+    setFeedback({
+      type: 'success',
+      message: `Synchronized ${res.records.length} commodities in public.mineral_prices with global LME/LBMA ticks and TMC local market floors.`,
+    })
+    await loadGovernanceTelemetry()
+  }
+
   return (
     <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
       <div className="mx-auto max-w-7xl space-y-8 px-5 lg:px-8">
@@ -581,6 +674,18 @@ export function MasterAdminDashboard({
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('minerals')}
+              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
+                activeTab === 'minerals'
+                  ? 'bg-ink text-paper'
+                  : 'bg-paper-2 text-ink hover:bg-ink/10'
+              }`}
+            >
+              <Coins size={14} />
+              Mineral Prices ({mineralBenchmarks.length})
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('audit')}
               className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
                 activeTab === 'audit'
@@ -617,6 +722,10 @@ export function MasterAdminDashboard({
             <span>·</span>
             <Link to="/admin/users" className="text-ochre hover:underline">
               /admin/users
+            </Link>
+            <span>·</span>
+            <Link to="/markets" className="text-ochre hover:underline">
+              /markets
             </Link>
           </div>
         </div>
@@ -1276,6 +1385,114 @@ export function MasterAdminDashboard({
         )}
 
         {/* ===================================================================
+            MODULE 4B: INDICATIVE MINERAL PRICES BENCHMARK CONSOLE (`mineral_prices`)
+           =================================================================== */}
+        {activeTab === 'minerals' && (
+          <section className="rounded-xl border border-ink/10 bg-paper-2/60 p-6">
+            <div className="flex flex-col justify-between gap-4 border-b border-ink/10 pb-5 lg:flex-row lg:items-center">
+              <div>
+                <h2 className="font-display text-xl font-semibold text-ink">
+                  Indicative Mineral Prices Benchmark Console (`public.mineral_prices`)
+                </h2>
+                <p className="text-xs text-stone">
+                  Update World Market (`world_market_price_usd`), Local Mineral Market (`local_market_price_usd`), and Buying Centre (`buying_centre_price_usd`) benchmarks. Changes propagate in real time to `/markets` and the Homepage board.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleSyncMineralBenchmarks}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/15 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-ochre transition hover:bg-ochre/25"
+                >
+                  <RefreshCw size={13} />
+                  Sync LME / LBMA Tickers
+                </button>
+                <Link
+                  to="/markets"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-ink px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-ink/90"
+                >
+                  <Eye size={13} />
+                  Open Public `/markets` Board
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-ink/10 font-mono text-[11px] uppercase tracking-wider text-stone">
+                    <th className="px-3 py-3">Commodity &amp; Symbol</th>
+                    <th className="px-3 py-3">World Market (USD)</th>
+                    <th className="px-3 py-3">Converted ({currency})</th>
+                    <th className="px-3 py-3">Mineral Market ({currency})</th>
+                    <th className="px-3 py-3">Buying Centre ({currency})</th>
+                    <th className="px-3 py-3">24h Trend</th>
+                    <th className="px-3 py-3 text-right">Admin Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink/10">
+                  {mineralBenchmarks.map((m) => (
+                    <tr key={m.id} className="hover:bg-paper/60">
+                      <td className="px-3 py-3">
+                        <div className="font-semibold text-ink">
+                          {m.mineral_name}{' '}
+                          <span className="rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-gold">
+                            {m.symbol}
+                          </span>
+                        </div>
+                        <div className="font-mono text-[10px] text-stone">
+                          {m.category} · {m.unit} · {m.purity_note}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
+                        ${m.world_market_price_usd.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{' '}
+                        <span className="text-[10px] text-stone">
+                          {m.unit.replace('USD', '')}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ochre">
+                        {formatExactUsd(m.world_market_price_usd)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-moss">
+                        {formatExactUsd(m.local_market_price_usd)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-ink">
+                        {formatExactUsd(m.buying_centre_price_usd)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
+                        <span
+                          className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                            m.trend_percentage >= 0
+                              ? 'border-moss/40 bg-moss-light text-moss'
+                              : 'border-danger/40 bg-danger/15 text-danger'
+                          }`}
+                        >
+                          {m.trend_percentage >= 0 ? '+' : ''}
+                          {m.trend_percentage.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditMineral(m)}
+                          className="inline-flex items-center gap-1 rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-ink hover:text-paper"
+                        >
+                          <Edit3 size={12} />
+                          Edit Benchmark
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* ===================================================================
             MODULE 5: SYSTEM HEALTH & ACTIVITY MONITOR
            =================================================================== */}
         {activeTab === 'health' && (
@@ -1544,6 +1761,112 @@ export function MasterAdminDashboard({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal 4: Edit Mineral Benchmark Rates (`mineral_prices`) */}
+      {editingMineral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-xs">
+          <form
+            onSubmit={(e) => void handleSaveMineralEdit(e)}
+            className="w-full max-w-xl space-y-4 rounded-xl border border-ink/15 bg-paper p-6 text-ink shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
+                  {editingMineral.symbol} · {editingMineral.unit}
+                </span>
+                <h3 className="mt-1 font-display text-xl font-semibold">
+                  Update Benchmark — {editingMineral.mineral_name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingMineral(null)}
+                className="text-stone hover:text-ink"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label">
+                  World Market Price ({editingMineral.unit})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  value={editWorldPrice}
+                  onChange={(e) => setEditWorldPrice(e.target.value)}
+                  className="field font-mono"
+                />
+              </div>
+              <div>
+                <label className="label">
+                  Mineral Market Price ({editingMineral.unit})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  value={editLocalPrice}
+                  onChange={(e) => setEditLocalPrice(e.target.value)}
+                  className="field font-mono"
+                />
+              </div>
+              <div>
+                <label className="label">
+                  Buying Centre Price ({editingMineral.unit})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  value={editBuyingPrice}
+                  onChange={(e) => setEditBuyingPrice(e.target.value)}
+                  className="field font-mono"
+                />
+              </div>
+              <div>
+                <label className="label">24h Trend Change (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={editTrendPct}
+                  onChange={(e) => setEditTrendPct(e.target.value)}
+                  className="field font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-ink/10 bg-paper-2 p-3 font-mono text-[11px] text-stone">
+              Preview in active currency ({currency}):{' '}
+              <strong className="text-ink">
+                {formatExactUsd(Number(editWorldPrice) || 0)}
+              </strong>{' '}
+              World ·{' '}
+              <strong className="text-moss">
+                {formatExactUsd(Number(editLocalPrice) || 0)}
+              </strong>{' '}
+              Mineral Market
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingMineral(null)}
+                className="btn-ghost !py-2 !px-4 text-xs"
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary !py-2 !px-4 text-xs">
+                Save Benchmark &amp; Log Audit
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

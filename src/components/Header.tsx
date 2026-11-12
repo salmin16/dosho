@@ -85,6 +85,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           className="hidden items-center gap-5 xl:gap-7 lg:flex"
           aria-label={t('nav.mainAria')}
         >
+          <Link
+            to="/markets"
+            className="link-underline flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-gold opacity-95 transition hover:opacity-100"
+            activeProps={{ className: 'opacity-100 !bg-[length:100%_1px]' }}
+          >
+            Markets
+          </Link>
           {NAV.map((n) => (
             <Link
               key={n.to}
@@ -173,6 +180,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
 
       {open && (
         <div className="border-t border-ink/10 bg-paper px-5 pb-6 pt-2 text-ink lg:hidden">
+          <Link
+            to="/markets"
+            onClick={() => setOpen(false)}
+            className="flex items-center justify-between border-b border-ink/5 py-3.5 font-display text-xl text-ochre"
+          >
+            <span>Indicative Mineral Markets</span>
+          </Link>
           {NAV.map((n) => (
             <Link
               key={n.to}

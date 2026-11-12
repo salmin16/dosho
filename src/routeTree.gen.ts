@@ -19,6 +19,7 @@ import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ListAProjectRouteImport } from './routes/list-a-project'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MapRouteImport } from './routes/map'
+import { Route as MarketsRouteImport } from './routes/markets'
 import { Route as OpportunitiesRouteImport } from './routes/opportunities'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ServicesRouteImport } from './routes/services'
@@ -76,6 +77,11 @@ const MapRoute = MapRouteImport.update({
   path: '/map',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketsRoute = MarketsRouteImport.update({
+  id: '/markets',
+  path: '/markets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OpportunitiesRoute = OpportunitiesRouteImport.update({
   id: '/opportunities',
   path: '/opportunities',
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
+  '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/list-a-project'
     | '/login'
     | '/map'
+    | '/markets'
     | '/opportunities'
     | '/pricing'
     | '/services'
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/list-a-project'
     | '/login'
     | '/map'
+    | '/markets'
     | '/opportunities'
     | '/pricing'
     | '/services'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/list-a-project'
     | '/login'
     | '/map'
+    | '/markets'
     | '/opportunities'
     | '/pricing'
     | '/services'
@@ -230,6 +242,7 @@ export interface RootRouteChildren {
   ListAProjectRoute: typeof ListAProjectRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
+  MarketsRoute: typeof MarketsRoute
   OpportunitiesRoute: typeof OpportunitiesRoute
   PricingRoute: typeof PricingRoute
   ServicesRoute: typeof ServicesRoute
@@ -310,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/markets': {
+      id: '/markets'
+      path: '/markets'
+      fullPath: '/markets'
+      preLoaderRoute: typeof MarketsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/opportunities': {
       id: '/opportunities'
       path: '/opportunities'
@@ -366,6 +386,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListAProjectRoute: ListAProjectRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
+  MarketsRoute: MarketsRoute,
   OpportunitiesRoute: OpportunitiesRoute,
   PricingRoute: PricingRoute,
   ServicesRoute: ServicesRoute,
