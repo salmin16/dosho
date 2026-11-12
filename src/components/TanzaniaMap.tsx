@@ -5,10 +5,10 @@ import 'leaflet/dist/leaflet.css';
 import {
   Compass,
   Layers,
-  Maximize2,
   MapPin,
   RotateCcw,
   Sparkles,
+  X,
 } from 'lucide-react';
 import type { Project } from '../data/fixtures';
 import { PROJECTS, formatUsd } from '../data/fixtures';
@@ -25,6 +25,71 @@ const TANZANIA_BOUNDS: L.LatLngBoundsExpression = [
   [-11.75, 29.3],
   [-0.95, 40.55],
 ];
+
+// Coastal/island regions whose labels only appear when zoomed in (zoom >= 7) to prevent crowding
+const COMPACT_REGIONS = new Set([
+  'Dar es Salaam',
+  'Kilimanjaro',
+  'Kaskazini Unguja',
+  'Kusini Unguja',
+  'Mjini Magharibi',
+  'Kaskazini Pemba',
+  'Kusini Pemba',
+]);
+
+/**
+ * Watermark-free custom Leaflet Canvas GridLayer that renders a dark engineering
+ * GIS coordinate grid and subtle bathymetric/topographic texture with zero external API keys.
+ */
+function createEngineeringGridLayer(): L.GridLayer {
+  const GridLayerClass = L.GridLayer.extend({
+    createTile: function (coords: L.Coords) {
+      const tile = document.createElement('canvas');
+      const size = this.getTileSize();
+      tile.width = size.x;
+      tile.height = size.y;
+      const ctx = tile.getContext('2d');
+      if (!ctx) return tile;
+
+      // Deep basalt engineering background
+      ctx.fillStyle = '#111318';
+      ctx.fillRect(0, 0, size.x, size.y);
+
+      // Subtle technical sub-grid
+      ctx.strokeStyle = 'rgba(214, 164, 67, 0.045)';
+      ctx.lineWidth = 1;
+      const step = 64;
+      for (let x = 0; x <= size.x; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, size.y);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= size.y; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(size.x, y);
+        ctx.stroke();
+      }
+
+      // Primary tile border graticule
+      ctx.strokeStyle = 'rgba(214, 164, 67, 0.09)';
+      ctx.strokeRect(0, 0, size.x, size.y);
+
+      // Subtle coordinate crosshairs at tile corners
+      ctx.strokeStyle = 'rgba(214, 164, 67, 0.22)';
+      ctx.beginPath();
+      ctx.moveTo(0, 6);
+      ctx.lineTo(0, 0);
+      ctx.lineTo(6, 0);
+      ctx.stroke();
+
+      void coords;
+      return tile;
+    },
+  });
+  return new GridLayerClass();
+}
 
 export interface TanzaniaMapProps {
   projects?: Project[];
@@ -55,14 +120,15 @@ export default function TanzaniaMap({
   const markersLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const [isMounted, setIsMounted] = useState(false);
-  const [hoveredRegion, setHoveredRegion] =
-    useState<TanzaniaRegionProperties | null>(null);
+  const [hoveredRegionName, setHoveredRegionName] = useState<string | null>(
+    null
+  );
   const [activeRegion, setActiveRegion] = useState<string | null>(
     selectedRegion
   );
+  const [currentZoom, setCurrentZoom] = useState<number>(6);
   const [showRegionLabels, setShowRegionLabels] = useState<boolean>(true);
 
-  // Keep latest callbacks in refs so Leaflet event listeners never go stale
   const activeRegionRef = useRef<string | null>(activeRegion);
   activeRegionRef.current = activeRegion;
   const onSelectRegionRef = useRef(onSelectRegion);
@@ -97,35 +163,35 @@ export default function TanzaniaMap({
       if (isSelected) {
         return {
           fillColor: '#d97706',
-          fillOpacity: 0.44,
+          fillOpacity: 0.48,
           color: '#fbbf24',
-          weight: 2.6,
+          weight: 2.5,
           opacity: 1,
         };
       }
 
       if (isHovered) {
         return {
-          fillColor: '#d97706',
-          fillOpacity: 0.32,
+          fillColor: '#c0612b',
+          fillOpacity: 0.34,
           color: '#fbbf24',
-          weight: 2.2,
+          weight: 2,
           opacity: 1,
         };
       }
 
       return {
-        fillColor: regionProjects > 0 ? '#1e293b' : '#131822',
-        fillOpacity: regionProjects > 0 ? 0.65 : 0.48,
+        fillColor: regionProjects > 0 ? '#1e2430' : '#171b24',
+        fillOpacity: regionProjects > 0 ? 0.88 : 0.75,
         color: '#d97706', // Classic gold/amber regional border (#d97706)
-        weight: 1.35,
+        weight: 1.25,
         opacity: 0.85,
       };
     },
     []
   );
 
-  // Initialize Leaflet Map instance once on client mount
+  // Initialize Leaflet Map instance once on client mount (zero API-key watermarks)
   useEffect(() => {
     if (!isMounted || !mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
@@ -134,26 +200,29 @@ export default function TanzaniaMap({
       center: [-6.369, 34.8888],
       zoom: 6,
       minZoom: 5,
-      maxZoom: 12,
+      maxZoom: 11,
       scrollWheelZoom: true,
       zoomControl: false,
-      attributionControl: true,
+      attributionControl: false, // Clean UI without watermark clutter
     });
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Classic CartoDB Dark Matter basemap tiles
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a> · Tanzania ADM1 GIS',
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }
-    ).addTo(map);
+    // 1. Watermark-free Engineering Coordinate Grid Layer
+    createEngineeringGridLayer().addTo(map);
 
-    // Create Official 31-Region ("Mikoa") GeoJSON Polygon Layer
+    // 2. Watermark-free OpenStreetMap geographic reference layer (dark-filtered via CSS)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      opacity: 0.22,
+      className: 'mineconnect-osm-dark-tiles',
+    }).addTo(map);
+
+    map.on('zoomend', () => {
+      setCurrentZoom(map.getZoom());
+    });
+
+    // 3. Official 31-Region ("Mikoa") GeoJSON Polygon Layer
     const geoLayer = L.geoJSON(
       TANZANIA_ADM1_GEOJSON as unknown as GeoJsonObject,
       {
@@ -168,40 +237,11 @@ export default function TanzaniaMap({
           const props = feature.properties as TanzaniaRegionProperties;
           if (!props || !props.shapeName) return;
 
-          const count = projectCountsRef.current.get(props.shapeName) ?? 0;
-          const mineralsList = (props.keyMinerals || []).slice(0, 3).join(' · ');
-
-          const tooltipHtml = `
-            <div style="min-width: 195px;">
-              <div style="font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#d6a443;">
-                MKOA WA ${props.shapeName.toUpperCase()} (${props.regionCode})
-              </div>
-              <div style="font-family:var(--font-display);font-size:16px;font-weight:600;color:#f6f1e7;margin-top:2px;">
-                ${props.shapeName} Region
-              </div>
-              <div style="font-size:11px;color:rgba(246,241,231,0.78);margin-top:2px;">
-                Capital: <strong style="color:#f6f1e7;">${props.capital}</strong> · ${props.zone}
-              </div>
-              <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(214,164,67,0.28);font-family:var(--font-mono);font-size:10px;color:#d6a443;">
-                Minerals: ${mineralsList}
-              </div>
-              <div style="margin-top:3px;font-family:var(--font-mono);font-size:10px;color:rgba(246,241,231,0.7);">
-                ${count} Active Platform Listing${count === 1 ? '' : 's'} · Click to Zoom
-              </div>
-            </div>
-          `;
-
-          layer.bindTooltip(tooltipHtml, {
-            sticky: true,
-            direction: 'top',
-            offset: [0, -10],
-            className: 'mineconnect-leaflet-tooltip',
-          });
-
+          // Keep hover super clean: no large popup following the mouse when panning!
           layer.on({
             mouseover: (e: L.LeafletEvent) => {
               const pathLayer = e.target as L.Path;
-              setHoveredRegion(props);
+              setHoveredRegionName(props.shapeName);
               pathLayer.setStyle(getRegionStyle(props.shapeName, true));
               pathLayer.bringToFront();
               markersLayerGroupRef.current?.eachLayer((m) => {
@@ -212,12 +252,13 @@ export default function TanzaniaMap({
             },
             mouseout: (e: L.LeafletEvent) => {
               const pathLayer = e.target as L.Path;
-              setHoveredRegion((prev) =>
-                prev?.shapeName === props.shapeName ? null : prev
+              setHoveredRegionName((prev) =>
+                prev === props.shapeName ? null : prev
               );
               pathLayer.setStyle(getRegionStyle(props.shapeName, false));
             },
             click: (e: L.LeafletEvent) => {
+              L.DomEvent.stopPropagation(e);
               const polyLayer = e.target as L.Polygon;
               const currentlyActive = activeRegionRef.current;
               const isSame =
@@ -233,15 +274,15 @@ export default function TanzaniaMap({
                 const bounds = polyLayer.getBounds();
                 if (bounds.isValid()) {
                   map.flyToBounds(bounds, {
-                    padding: [40, 40],
+                    padding: [48, 48],
                     maxZoom: 8,
-                    duration: 0.85,
+                    duration: 0.8,
                   });
                 }
               } else {
                 map.flyToBounds(TANZANIA_BOUNDS, {
                   padding: [20, 20],
-                  duration: 0.85,
+                  duration: 0.8,
                 });
               }
             },
@@ -258,10 +299,8 @@ export default function TanzaniaMap({
     markersLayerGroupRef.current = markersGroup;
     mapInstanceRef.current = map;
 
-    // Fit full Tanzania bounds on initial mount
     map.fitBounds(TANZANIA_BOUNDS, { padding: [18, 18] });
 
-    // Ensure container size is recalculated cleanly after layout
     const timer = window.setTimeout(() => {
       map.invalidateSize();
     }, 150);
@@ -276,7 +315,7 @@ export default function TanzaniaMap({
     };
   }, [isMounted, getRegionStyle]);
 
-  // Sync external `selectedRegion` prop changes and fly to that region's polygon bounds
+  // Sync external `selectedRegion` prop changes
   useEffect(() => {
     setActiveRegion(selectedRegion ?? null);
     activeRegionRef.current = selectedRegion ?? null;
@@ -285,7 +324,6 @@ export default function TanzaniaMap({
     const geoLayer = geoJsonLayerRef.current;
     if (!map || !geoLayer) return;
 
-    // Update all polygon styles
     geoLayer.eachLayer((layer) => {
       const feat = (layer as L.Layer & { feature?: Feature }).feature;
       const name = String(
@@ -312,9 +350,9 @@ export default function TanzaniaMap({
           const bounds = (layer as L.Polygon).getBounds();
           if (bounds.isValid()) {
             map.flyToBounds(bounds, {
-              padding: [40, 40],
+              padding: [48, 48],
               maxZoom: 8,
-              duration: 0.85,
+              duration: 0.8,
             });
           }
         }
@@ -322,7 +360,7 @@ export default function TanzaniaMap({
     }
   }, [selectedRegion, getRegionStyle]);
 
-  // Refresh polygon styles whenever activeRegion or project counts change
+  // Update polygon styles whenever activeRegion or projectCounts change
   useEffect(() => {
     const geoLayer = geoJsonLayerRef.current;
     if (!geoLayer) return;
@@ -338,7 +376,7 @@ export default function TanzaniaMap({
     });
   }, [activeRegion, projectCountsByRegion, getRegionStyle]);
 
-  // Render crisp regional name labels using lightweight L.divIcon markers
+  // Render clean, non-overlapping regional name labels
   useEffect(() => {
     const labelsGroup = labelsLayerGroupRef.current;
     if (!labelsGroup) return;
@@ -349,9 +387,15 @@ export default function TanzaniaMap({
     TANZANIA_ADM1_GEOJSON.features.forEach((feat) => {
       const { shapeName, center } = feat.properties;
       if (!center || center.length < 2) return;
+
       const isSelected =
         activeRegion !== null &&
         activeRegion.toLowerCase() === shapeName.toLowerCase();
+
+      // Hide tiny island/coastal labels at low zoom unless specifically selected
+      if (COMPACT_REGIONS.has(shapeName) && currentZoom < 7 && !isSelected) {
+        return;
+      }
 
       const icon = L.divIcon({
         className: 'mineconnect-region-divicon',
@@ -359,12 +403,12 @@ export default function TanzaniaMap({
           display:inline-block;
           transform:translate(-50%, -50%);
           font-family:var(--font-mono);
-          font-size:${isSelected ? '11px' : '9.5px'};
+          font-size:${isSelected ? '11px' : '9px'};
           font-weight:${isSelected ? '700' : '600'};
           letter-spacing:0.06em;
           text-transform:uppercase;
           white-space:nowrap;
-          color:${isSelected ? '#fbbf24' : 'rgba(246, 241, 231, 0.78)'};
+          color:${isSelected ? '#fbbf24' : 'rgba(246, 241, 231, 0.72)'};
           text-shadow:0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.9);
           pointer-events:none;
         ">${shapeName}</span>`,
@@ -373,9 +417,9 @@ export default function TanzaniaMap({
 
       L.marker(center, { icon, interactive: false }).addTo(labelsGroup);
     });
-  }, [isMounted, showRegionLabels, activeRegion]);
+  }, [isMounted, showRegionLabels, activeRegion, currentZoom]);
 
-  // Render verified project markers (`L.circleMarker`)
+  // Render verified project markers (`L.circleMarker`) — details open cleanly when clicked
   useEffect(() => {
     const markersGroup = markersLayerGroupRef.current;
     if (!markersGroup) return;
@@ -394,29 +438,18 @@ export default function TanzaniaMap({
         weight: isSelected ? 3 : 2,
       });
 
-      const tooltipHtml = `
-        <div style="min-width: 180px;">
-          <div style="font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#d6a443;">
-            ${p.id} · Level L${p.verification.level} · ${p.region}
-          </div>
-          <div style="font-family:var(--font-display);font-size:14px;font-weight:600;color:#f6f1e7;margin-top:2px;">
-            ${p.title}
-          </div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:rgba(246,241,231,0.82);margin-top:3px;">
-            ${p.minerals.join(', ')} · Seeking <strong style="color:#d6a443;">${formatUsd(
-              p.investmentUsd
-            )}</strong>
-          </div>
-        </div>
-      `;
+      // Compact single-line label on hover; full details appear when clicked
+      marker.bindTooltip(
+        `<span style="font-family:var(--font-mono);font-size:10px;color:#fbbf24;font-weight:600;">${p.title} (${p.region})</span>`,
+        {
+          direction: 'top',
+          offset: [0, -8],
+          className: 'mineconnect-leaflet-tooltip',
+        }
+      );
 
-      marker.bindTooltip(tooltipHtml, {
-        direction: 'top',
-        offset: [0, -8],
-        className: 'mineconnect-leaflet-tooltip',
-      });
-
-      marker.on('click', () => {
+      marker.on('click', (e: L.LeafletEvent) => {
+        L.DomEvent.stopPropagation(e);
         onSelectProjectRef.current?.(p.id);
         activeRegionRef.current = p.region;
         setActiveRegion(p.region);
@@ -428,19 +461,27 @@ export default function TanzaniaMap({
     });
   }, [isMounted, projects, selectedId, localizeProject]);
 
-  const activeRegionMeta = useMemo(() => {
+  // Organized details card ONLY appears when a region is actively CLICKED/SELECTED
+  const clickedRegionMeta = useMemo(() => {
     if (!activeRegion) return null;
     return resolveRegionMetadata(activeRegion);
   }, [activeRegion]);
 
+  const clickedRegionProjects = useMemo(() => {
+    if (!activeRegion) return [];
+    return projects.filter(
+      (p) => p.region.toLowerCase() === activeRegion.toLowerCase()
+    );
+  }, [projects, activeRegion]);
+
   const handleResetView = useCallback(() => {
     activeRegionRef.current = null;
     setActiveRegion(null);
-    setHoveredRegion(null);
+    setHoveredRegionName(null);
     onSelectRegionRef.current?.(null);
     mapInstanceRef.current?.flyToBounds(TANZANIA_BOUNDS, {
       padding: [20, 20],
-      duration: 0.85,
+      duration: 0.8,
     });
   }, []);
 
@@ -454,7 +495,7 @@ export default function TanzaniaMap({
     if (!map || !geoLayer) return;
 
     if (!val) {
-      map.flyToBounds(TANZANIA_BOUNDS, { padding: [20, 20], duration: 0.85 });
+      map.flyToBounds(TANZANIA_BOUNDS, { padding: [20, 20], duration: 0.8 });
       return;
     }
 
@@ -472,16 +513,14 @@ export default function TanzaniaMap({
         const bounds = (layer as L.Polygon).getBounds();
         if (bounds.isValid()) {
           map.flyToBounds(bounds, {
-            padding: [40, 40],
+            padding: [48, 48],
             maxZoom: 8,
-            duration: 0.85,
+            duration: 0.8,
           });
         }
       }
     });
   };
-
-  const displayedRegionInfo = hoveredRegion ?? activeRegionMeta;
 
   return (
     <div
@@ -489,33 +528,33 @@ export default function TanzaniaMap({
       role="region"
       aria-label={t('map.ariaLabel')}
     >
-      {/* Top Glassmorphism GIS Status & Regional Telemetry Overlay */}
-      <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex flex-wrap items-start justify-between gap-2.5">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-xl border border-gold/35 bg-ink/90 px-3.5 py-2 shadow-lg backdrop-blur-md">
+      {/* Top Bar: Clean Status Pill + Region Selector + Reset */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-gold/20 bg-ink-2 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
           </span>
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-gold">
-            Interactive GIS · 31 Mikoa ADM1
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">
+            Tanzania Regional GIS (31 Mikoa)
           </span>
-          <span className="hidden text-paper/30 sm:inline">|</span>
-          <span className="hidden font-mono text-[10px] text-paper/75 sm:inline">
-            GADM 4.1 Official Boundaries
-          </span>
+          {hoveredRegionName && (
+            <span className="rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold">
+              Hover: {hoveredRegionName} (Click for details)
+            </span>
+          )}
         </div>
 
-        {/* Interactive Region Quick-Select & Reset Controls */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
-            aria-label="Jump to Tanzanian Region (Mkoa)"
+            aria-label="Select a Tanzanian Region (Mkoa)"
             value={activeRegion ?? ''}
             onChange={(e) =>
               handleSelectRegionFromDropdown(e.target.value || null)
             }
-            className="h-8 rounded-lg border border-gold/35 bg-ink/90 px-2.5 font-mono text-[11px] text-paper outline-none backdrop-blur-md transition focus:border-gold"
+            className="h-8 rounded-lg border border-gold/35 bg-ink px-2.5 font-mono text-[11px] text-paper outline-none transition focus:border-gold"
           >
-            <option value="">All 31 Regions (Mikoa)</option>
+            <option value="">Select Region (All 31 Mikoa)</option>
             {TANZANIA_ADM1_GEOJSON.features
               .map((f) => f.properties.shapeName)
               .sort((a, b) => a.localeCompare(b))
@@ -529,10 +568,10 @@ export default function TanzaniaMap({
           <button
             type="button"
             onClick={() => setShowRegionLabels((s) => !s)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider backdrop-blur-md transition ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition ${
               showRegionLabels
                 ? 'border-gold/45 bg-ochre/30 text-gold'
-                : 'border-paper/20 bg-ink/85 text-paper/70 hover:text-paper'
+                : 'border-paper/20 bg-ink text-paper/70 hover:text-paper'
             }`}
             title="Toggle Regional Labels"
           >
@@ -540,58 +579,19 @@ export default function TanzaniaMap({
             <span className="hidden sm:inline">Labels</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleResetView}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gold/35 bg-ink/90 px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold backdrop-blur-md transition hover:bg-ochre/30 hover:text-paper"
-            title="Reset Tanzania Bounds"
-          >
-            <RotateCcw size={12} />
-            <span>Reset View</span>
-          </button>
+          {activeRegion && (
+            <button
+              type="button"
+              onClick={handleResetView}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gold/40 bg-ochre px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-paper transition hover:bg-ochre-dark"
+              title="Reset Tanzania Bounds"
+            >
+              <RotateCcw size={12} />
+              <span>Reset Map</span>
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Bottom-Left Live Region Telemetry Pill */}
-      {displayedRegionInfo && (
-        <div className="pointer-events-none absolute bottom-12 left-3 z-[500] max-w-xs sm:max-w-sm">
-          <div className="pointer-events-auto rounded-xl border border-gold/40 bg-ink/90 p-3.5 shadow-xl backdrop-blur-md">
-            <div className="flex items-center justify-between gap-3">
-              <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                <Sparkles size={11} />
-                {displayedRegionInfo.regionCode} · {displayedRegionInfo.zone}
-              </span>
-              {activeRegion && (
-                <button
-                  type="button"
-                  onClick={handleResetView}
-                  className="font-mono text-[10px] text-paper/60 underline hover:text-gold"
-                >
-                  Clear Zoom
-                </button>
-              )}
-            </div>
-            <div className="mt-1 flex items-baseline justify-between gap-3">
-              <h4 className="font-display text-lg font-medium text-paper">
-                Mkoa wa {displayedRegionInfo.shapeName}
-              </h4>
-              <span className="font-mono text-[11px] text-paper/70">
-                HQ: {displayedRegionInfo.capital}
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {displayedRegionInfo.keyMinerals.map((m) => (
-                <span
-                  key={m}
-                  className="rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold"
-                >
-                  {m}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Interactive Leaflet Map Canvas */}
       <div className={`relative w-full ${heightClass}`}>
@@ -609,9 +609,99 @@ export default function TanzaniaMap({
           style={{
             height: '100%',
             width: '100%',
-            background: variant === 'dark' ? '#0f141c' : '#15120f',
+            background: variant === 'dark' ? '#111318' : '#15120f',
           }}
         />
+
+        {/* Organized Clicked-Region Dossier Card (ONLY visible when a region is clicked) */}
+        {clickedRegionMeta && (
+          <div className="pointer-events-auto absolute bottom-4 left-4 z-[450] w-[calc(100%-2rem)] max-w-sm rounded-xl border border-gold/45 bg-ink/95 p-4 shadow-2xl backdrop-blur-md">
+            <div className="flex items-start justify-between gap-3 border-b border-paper/10 pb-2.5">
+              <div>
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+                  <Sparkles size={11} />
+                  {clickedRegionMeta.regionCode} · {clickedRegionMeta.zone}
+                </span>
+                <h4 className="font-display mt-0.5 text-xl font-medium text-paper">
+                  Mkoa wa {clickedRegionMeta.shapeName}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetView}
+                className="rounded-md border border-paper/15 bg-paper/5 p-1 text-paper/70 transition hover:border-gold/40 hover:text-gold"
+                title="Close Region Details & Reset Zoom"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-paper/10 bg-ink-2/90 p-2.5 font-mono text-[11px]">
+              <div>
+                <div className="text-[9px] uppercase text-paper/50">
+                  Regional Capital
+                </div>
+                <div className="font-semibold text-paper">
+                  {clickedRegionMeta.capital}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase text-paper/50">
+                  Platform Listings
+                </div>
+                <div className="font-semibold text-gold">
+                  {clickedRegionProjects.length} Active (Est. ~
+                  {clickedRegionMeta.activeLicencesEstimate} Licences)
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
+                Primary Mineral Endowments
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {clickedRegionMeta.keyMinerals.map((m) => (
+                  <span
+                    key={m}
+                    className="rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold"
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {clickedRegionProjects.length > 0 && (
+              <div className="mt-3 border-t border-paper/10 pt-2.5">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
+                  Opportunities in {clickedRegionMeta.shapeName}
+                </div>
+                <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto pr-1">
+                  {clickedRegionProjects.map((rawProj) => {
+                    const p = localizeProject(rawProj);
+                    return (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onClick={() => onSelect?.(p.id)}
+                          className="flex w-full items-center justify-between rounded bg-paper/5 px-2 py-1 text-left text-xs text-paper hover:bg-ochre/25 hover:text-gold"
+                        >
+                          <span className="truncate font-medium">
+                            {p.title}
+                          </span>
+                          <span className="ml-2 shrink-0 font-mono text-[10px] text-gold">
+                            {formatUsd(p.investmentUsd)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom Interactive Status Strip */}
@@ -620,18 +710,15 @@ export default function TanzaniaMap({
           <span className="inline-flex items-center gap-1.5 text-gold">
             <MapPin size={12} />
             {activeRegion
-              ? `Active Region: Mkoa wa ${activeRegion}`
-              : 'All 31 Tanzanian Regions (Mikoa) Visible'}
+              ? `Selected: Mkoa wa ${activeRegion}`
+              : 'Click any Region (Mkoa) or Project Pin to inspect'}
           </span>
           <span className="text-paper/30">·</span>
           <span>{projects.length} Mapped Opportunities</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-paper/55">
-          <Maximize2 size={11} className="text-gold" />
-          <span>
-            Scroll to zoom · Hover region for dossier · Click region to fit bounds
-          </span>
-        </div>
+        <span className="text-[10px] text-paper/55">
+          Scroll to zoom · Drag to pan · Click region for organized dossier
+        </span>
       </div>
     </div>
   );
@@ -654,7 +741,7 @@ export function MapLegend({ dark = false }: { dark?: boolean }) {
     >
       <li className="flex items-center gap-1.5">
         <span
-          className="h-2.5 w-3.5 shrink-0 rounded-xs border border-[#d97706] bg-[#1e293b]"
+          className="h-2.5 w-3.5 shrink-0 rounded-xs border border-[#d97706] bg-[#1e2430]"
           aria-hidden="true"
         />
         <span>ADM1 Mkoa Boundary (#d97706)</span>
