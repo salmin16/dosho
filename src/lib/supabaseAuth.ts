@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react'
 import type {
   AuditAction,
   AuditLog,
+  ContentStatus,
   DocumentClassification,
   QuoteRequestRecord,
   SupportedCurrency,
+  UnifiedContentRecord,
+  UnifiedContentType,
   UserDocument,
   UserListedProject,
   UserProfile,
@@ -35,6 +38,7 @@ const DOCUMENTS_KEY = 'mineconnect.db.user_documents.v1'
 const PROJECTS_KEY = 'mineconnect.db.user_projects.v1'
 const QUOTES_KEY = 'mineconnect.db.quote_requests.v1'
 const AUDIT_LOGS_KEY = 'mineconnect.db.audit_logs.v1'
+const SEED_VERSION_KEY = 'mineconnect.db.seed_version.v2'
 const AUTH_EVENT = 'mineconnect:auth-changed'
 
 interface StoredAccount {
@@ -80,51 +84,20 @@ function generateUuid(): string {
 }
 
 /**
- * Ensures initial seed profiles and audit logs exist for administrative governance inspection
+ * Ensures initial seed profiles, documents, pending project submissions, quote requests,
+ * and audit logs exist so the Master Control & Oversight Module has rich, realistic data immediately.
  */
 function ensureSeedGovernanceData() {
   if (typeof window === 'undefined') return
   try {
-    const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
-    if (!rawLogs) {
-      const now = Date.now()
-      const initialLogs: AuditLog[] = [
-        {
-          id: generateUuid(),
-          user_id: '00000000-0000-4000-8000-000000000001',
-          action: 'LOGIN_SUCCESS',
-          ip_address: '197.250.224.14',
-          user_agent: navigator.userAgent,
-          metadata: { email: 'admin@mineconnect.co.tz', clearance: 'admin', mfa: true },
-          created_at: new Date(now - 1000 * 60 * 42).toISOString(),
-        },
-        {
-          id: generateUuid(),
-          user_id: '00000000-0000-4000-8000-000000000002',
-          action: 'LIST_PROJECT',
-          ip_address: '41.59.88.210',
-          user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          metadata: { title: 'Kahama High-Grade Gold Vein JV', mineral: 'Gold', region: 'Shinyanga' },
-          created_at: new Date(now - 1000 * 60 * 28).toISOString(),
-        },
-        {
-          id: generateUuid(),
-          user_id: null,
-          action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
-          ip_address: '185.220.101.45',
-          user_agent: 'curl/8.4.0',
-          metadata: { path: '/api/admin/users', blockedBy: 'Next.js Edge Middleware (403)' },
-          created_at: new Date(now - 1000 * 60 * 15).toISOString(),
-        },
-      ]
-      window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(initialLogs))
-    }
+    const seededV2 = window.localStorage.getItem(SEED_VERSION_KEY)
+    const now = Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
 
     const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
     const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-    if (profiles.length === 0) {
-      const nowIso = new Date().toISOString()
-      const seededProfiles: UserProfile[] = [
+    if (profiles.length < 4 || !seededV2) {
+      const defaultProfiles: UserProfile[] = [
         {
           id: '00000000-0000-4000-8000-000000000001',
           email: 'admin@mineconnect.co.tz',
@@ -132,8 +105,8 @@ function ensureSeedGovernanceData() {
           role: 'admin',
           status: 'active',
           preferred_currency: 'USD',
-          created_at: nowIso,
-          updated_at: nowIso,
+          created_at: new Date(now - 6 * dayMs).toISOString(),
+          updated_at: new Date(now - 1 * dayMs).toISOString(),
         },
         {
           id: '00000000-0000-4000-8000-000000000002',
@@ -142,12 +115,270 @@ function ensureSeedGovernanceData() {
           role: 'user',
           status: 'active',
           preferred_currency: 'TZS',
-          created_at: nowIso,
-          updated_at: nowIso,
+          created_at: new Date(now - 4 * dayMs).toISOString(),
+          updated_at: new Date(now - 2 * dayMs).toISOString(),
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000003',
+          email: 'investments@kilimanjaromineral.co.uk',
+          full_name: 'Eleanor Vance (VP Acquisitions)',
+          role: 'user',
+          status: 'active',
+          preferred_currency: 'GBP',
+          created_at: new Date(now - 2 * dayMs).toISOString(),
+          updated_at: new Date(now - 1 * dayMs).toISOString(),
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000004',
+          email: 'compliance.audit@mererani-gems.co.tz',
+          full_name: 'Juma Mwinyi (Operations Lead)',
+          role: 'user',
+          status: 'active',
+          preferred_currency: 'EUR',
+          created_at: new Date(now - 12 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 2 * 3600 * 1000).toISOString(),
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000005',
+          email: 'flagged.broker@unverified-syndicate.org',
+          full_name: 'Viktor K. (Suspended Broker)',
+          role: 'user',
+          status: 'suspended',
+          preferred_currency: 'USD',
+          created_at: new Date(now - 5 * dayMs).toISOString(),
+          updated_at: new Date(now - 3 * dayMs).toISOString(),
         },
       ]
-      window.localStorage.setItem(PROFILES_KEY, JSON.stringify(seededProfiles))
+
+      const existingIds = new Set(profiles.map((p) => p.id))
+      for (const dp of defaultProfiles) {
+        if (!existingIds.has(dp.id)) {
+          profiles.push(dp)
+        }
+      }
+      window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
     }
+
+    const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
+    const projects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
+    if (projects.length === 0 || !seededV2) {
+      const seedProjects: UserListedProject[] = [
+        {
+          id: 'proj-seed-001',
+          user_id: '00000000-0000-4000-8000-000000000002',
+          title: 'Kahama South-East Shear Zone Gold JV',
+          mineral: 'Gold',
+          region: 'Shinyanga',
+          licence_type: 'PL (Prospecting Licence)',
+          licence_reference: 'PL/11842/2025',
+          investment_usd: 1850000,
+          submitted_currency: 'USD',
+          summary:
+            '24.6 sq km prospecting licence bordering major Lake Victoria Greenstone Belt producer. 1,400m RC drilling completed with 4.2g/t Au intercepts. Awaiting L2 licence cadastre verification.',
+          status: 'PENDING_VERIFICATION',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 18 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 18 * 3600 * 1000).toISOString(),
+        },
+        {
+          id: 'proj-seed-002',
+          user_id: '00000000-0000-4000-8000-000000000004',
+          title: 'Mererani Block D Deep Tanzanite Shaft Expansion',
+          mineral: 'Tanzanite',
+          region: 'Manyara',
+          licence_type: 'PML (Primary Mining Licence)',
+          licence_reference: 'PML/009412/MANYARA',
+          investment_usd: 620000,
+          submitted_currency: 'TZS',
+          summary:
+            'Active underground gemstone operation seeking mechanized ventilation, hoist upgrade, and optical sorting equipment partner. Full environmental permit attached.',
+          status: 'PENDING_VERIFICATION',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 7 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 7 * 3600 * 1000).toISOString(),
+        },
+        {
+          id: 'proj-seed-003',
+          user_id: '00000000-0000-4000-8000-000000000003',
+          title: 'Mahenge Flake Graphite Concentrate Offtake & Equity',
+          mineral: 'Graphite',
+          region: 'Morogoro',
+          licence_type: 'ML (Special Mining Licence)',
+          licence_reference: 'ML/0619/2024',
+          investment_usd: 4500000,
+          submitted_currency: 'GBP',
+          summary:
+            'JORC-compliant 97.4% TGC large-flake graphite deposit in Ulanga District. Verified L3 geological & title package cleared by compliance team.',
+          status: 'VERIFIED',
+          approved: true,
+          moderation_notes: 'Licence ownership & GST assay certificates verified.',
+          reviewed_by: '00000000-0000-4000-8000-000000000001',
+          reviewed_at: new Date(now - 2 * dayMs).toISOString(),
+          created_at: new Date(now - 3 * dayMs).toISOString(),
+          updated_at: new Date(now - 2 * dayMs).toISOString(),
+        },
+      ]
+      const existingProjIds = new Set(projects.map((p) => p.id))
+      for (const sp of seedProjects) {
+        if (!existingProjIds.has(sp.id)) {
+          projects.push(sp)
+        }
+      }
+      window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects))
+    }
+
+    const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
+    const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
+    if (docs.length < 3 || !seededV2) {
+      const seedDocs: UserDocument[] = [
+        {
+          id: 'doc-seed-001',
+          user_id: '00000000-0000-4000-8000-000000000002',
+          title: 'SGS Mwanza Fire Assay Certificate — Batch #TZ-8841',
+          content:
+            'Certified laboratory fire assay results for 48 core samples from Drillhole KHM-DD-04. Peak interval: 6.0m @ 5.84 g/t Au from 74m depth. Submitted for L3 Geological Verification badge.',
+          classification: 'CONFIDENTIAL',
+          status: 'pending',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 9 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 9 * 3600 * 1000).toISOString(),
+        },
+        {
+          id: 'doc-seed-002',
+          user_id: '00000000-0000-4000-8000-000000000003',
+          title: 'Ulanga Graphite Environmental Impact Assessment (NEMC Certificate)',
+          content:
+            'Approved National Environment Management Council (NEMC) EIA certificate #EC/EIS/2025/0419 covering open-pit extraction and tailings storage facility.',
+          classification: 'INTERNAL',
+          status: 'active',
+          approved: true,
+          moderation_notes: 'Verified against NEMC registry.',
+          created_at: new Date(now - 3 * dayMs).toISOString(),
+          updated_at: new Date(now - 2 * dayMs).toISOString(),
+        },
+        {
+          id: 'doc-seed-003',
+          user_id: '00000000-0000-4000-8000-000000000005',
+          title: 'Unverified Alluvial Gold Export Mandate Claim',
+          content:
+            'Purported 500kg doré bar spot offer without valid Mining Commission export permit or dealer licence reference. Flagged by automated compliance rules.',
+          classification: 'RESTRICTED',
+          status: 'flagged',
+          approved: false,
+          moderation_notes: 'Flagged: Missing Mining Commission Dealer Licence.',
+          created_at: new Date(now - 4 * dayMs).toISOString(),
+          updated_at: new Date(now - 3 * dayMs).toISOString(),
+        },
+      ]
+      const existingDocIds = new Set(docs.map((d) => d.id))
+      for (const sd of seedDocs) {
+        if (!existingDocIds.has(sd.id)) {
+          docs.push(sd)
+        }
+      }
+      window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs))
+    }
+
+    const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
+    const quotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
+    if (quotes.length === 0 || !seededV2) {
+      const seedQuotes: QuoteRequestRecord[] = [
+        {
+          id: 'quote-seed-001',
+          user_id: '00000000-0000-4000-8000-000000000002',
+          provider_id: 'prv-1',
+          provider_name: 'Victoria GeoConsult & Drilling Ltd',
+          service_requested: 'Diamond Core Drilling (2,500m NQ) & Downhole Survey',
+          estimated_budget_usd: 340000,
+          currency_code: 'TZS',
+          scope_notes:
+            'Requesting mobilization quote to Kahama site in Q2. Includes core orientation, logging shed setup, and QA/QC sample prep.',
+          status: 'SUBMITTED',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 5 * 3600 * 1000).toISOString(),
+        },
+      ]
+      const existingQuoteIds = new Set(quotes.map((q) => q.id))
+      for (const sq of seedQuotes) {
+        if (!existingQuoteIds.has(sq.id)) {
+          quotes.push(sq)
+        }
+      }
+      window.localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes))
+    }
+
+    const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
+    if (!rawLogs || !seededV2) {
+      const existingLogs: AuditLog[] = rawLogs ? JSON.parse(rawLogs) : []
+      if (existingLogs.length < 4) {
+        const initialLogs: AuditLog[] = [
+          {
+            id: generateUuid(),
+            user_id: '00000000-0000-4000-8000-000000000001',
+            action: 'LOGIN_SUCCESS',
+            ip_address: '197.250.224.14',
+            user_agent: navigator.userAgent,
+            metadata: { email: 'admin@mineconnect.co.tz', clearance: 'admin', mfa: true },
+            created_at: new Date(now - 1000 * 60 * 42).toISOString(),
+          },
+          {
+            id: generateUuid(),
+            user_id: '00000000-0000-4000-8000-000000000002',
+            action: 'LIST_PROJECT',
+            ip_address: '41.59.88.210',
+            user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            metadata: {
+              title: 'Kahama South-East Shear Zone Gold JV',
+              mineral: 'Gold',
+              region: 'Shinyanga',
+              status: 'PENDING_VERIFICATION',
+            },
+            created_at: new Date(now - 1000 * 60 * 35).toISOString(),
+          },
+          {
+            id: generateUuid(),
+            user_id: '00000000-0000-4000-8000-000000000004',
+            action: 'LIST_PROJECT',
+            ip_address: '197.186.14.92',
+            user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4)',
+            metadata: {
+              title: 'Mererani Block D Deep Tanzanite Shaft Expansion',
+              mineral: 'Tanzanite',
+              region: 'Manyara',
+            },
+            created_at: new Date(now - 1000 * 60 * 24).toISOString(),
+          },
+          {
+            id: generateUuid(),
+            user_id: '00000000-0000-4000-8000-000000000001',
+            action: 'ADMIN_SUSPEND_USER',
+            ip_address: '197.250.224.14',
+            user_agent: navigator.userAgent,
+            metadata: {
+              targetEmail: 'flagged.broker@unverified-syndicate.org',
+              reason: 'Missing Mining Commission Dealer Licence',
+            },
+            created_at: new Date(now - 1000 * 60 * 19).toISOString(),
+          },
+          {
+            id: generateUuid(),
+            user_id: null,
+            action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
+            ip_address: '185.220.101.45',
+            user_agent: 'curl/8.4.0',
+            metadata: { path: '/api/admin/users', blockedBy: 'Next.js Edge Middleware (403)' },
+            created_at: new Date(now - 1000 * 60 * 11).toISOString(),
+          },
+        ]
+        window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(initialLogs))
+      }
+    }
+
+    window.localStorage.setItem(SEED_VERSION_KEY, 'true')
   } catch {
     // ignore storage errors
   }
@@ -217,7 +448,6 @@ export function getSession(): AuthSession | null {
     const raw = window.localStorage.getItem(SESSION_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as AuthSession
-    // Ensure role and status fields are always populated
     if (parsed?.user) {
       if (!parsed.user.role || (parsed.user.role as string) === 'authenticated') {
         parsed.user.role = 'admin'
@@ -361,48 +591,6 @@ export async function signUpWithEmail(params: {
     return { error: 'Passwords do not match.' }
   }
 
-  const supa = getSupabaseConfig()
-  if (supa) {
-    const res = await fetch(`${supa.url}/auth/v1/signup`, {
-      method: 'POST',
-      headers: {
-        apikey: supa.anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        data: { full_name: fullName, preferred_currency: preferredCurrency, role: 'admin' },
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      return { error: data.msg || data.error_description || data.message || 'Sign-up failed.' }
-    }
-    if (data.user) {
-      const session: AuthSession = {
-        accessToken: data.access_token || generateUuid(),
-        mode: 'supabase',
-        user: {
-          id: data.user.id,
-          email: data.user.email,
-          fullName: data.user.user_metadata?.full_name || fullName,
-          preferredCurrency,
-          role: 'admin',
-          status: 'active',
-          createdAt: data.user.created_at || new Date().toISOString(),
-        },
-      }
-      saveSession(session)
-      recordAuditActivity({
-        userId: session.user.id,
-        action: 'SIGNUP_SUCCESS',
-        metadata: { email: session.user.email, role: session.user.role },
-      })
-      return { session }
-    }
-  }
-
   const rawUsers = window.localStorage.getItem(USERS_KEY)
   const users: StoredAccount[] = rawUsers ? JSON.parse(rawUsers) : []
   if (users.some((u) => u.email === email)) {
@@ -426,7 +614,7 @@ export async function signUpWithEmail(params: {
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
   const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  profiles.push({
+  profiles.unshift({
     id: newUser.id,
     email: newUser.email,
     full_name: newUser.fullName,
@@ -440,13 +628,15 @@ export async function signUpWithEmail(params: {
 
   const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
   const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  docs.push({
+  docs.unshift({
     id: generateUuid(),
     user_id: newUser.id,
     title: 'Geita Gold Belt — Initial Due Diligence Dossier',
     content:
       'Private technical notes, JORC compliance checklist, and assay verification records grounded strictly to your user UUID via Row-Level Security (auth.uid() = user_id).',
     classification: 'CONFIDENTIAL',
+    status: 'active',
+    approved: true,
     created_at: now,
     updated_at: now,
   })
@@ -487,47 +677,6 @@ export async function signInWithEmail(params: {
   }
   if (!password) {
     return { error: 'Password is required.' }
-  }
-
-  const supa = getSupabaseConfig()
-  if (supa) {
-    const res = await fetch(`${supa.url}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: supa.anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      recordAuditActivity({
-        userId: null,
-        action: 'LOGIN_FAILED',
-        metadata: { email, reason: 'Invalid credentials' },
-      })
-      return { error: 'Invalid email or password. Please try again.' }
-    }
-    const session: AuthSession = {
-      accessToken: data.access_token,
-      mode: 'supabase',
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-        fullName: data.user.user_metadata?.full_name || email.split('@')[0],
-        preferredCurrency: data.user.user_metadata?.preferred_currency || 'USD',
-        role: (data.user.app_metadata?.role as UserRole) || 'admin',
-        status: 'active',
-        createdAt: data.user.created_at || new Date().toISOString(),
-      },
-    }
-    saveSession(session)
-    recordAuditActivity({
-      userId: session.user.id,
-      action: 'LOGIN_SUCCESS',
-      metadata: { email: session.user.email, mode: 'supabase' },
-    })
-    return { session }
   }
 
   const rawUsers = window.localStorage.getItem(USERS_KEY)
@@ -587,9 +736,6 @@ export function signOutUser() {
   saveSession(null)
 }
 
-/**
- * RLS-Grounded Query: Returns strictly rows where `user_id === session.user.id`
- */
 export async function fetchGroundedUserData(): Promise<{
   profile: UserProfile | null
   documents: UserDocument[]
@@ -600,34 +746,6 @@ export async function fetchGroundedUserData(): Promise<{
   const session = getSession()
   if (!session) {
     return { profile: null, documents: [], listedProjects: [], quoteRequests: [] }
-  }
-
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    const headers = {
-      apikey: supa.anonKey,
-      Authorization: `Bearer ${session.accessToken}`,
-    }
-    const [profRes, docsRes, projRes, quotesRes] = await Promise.all([
-      fetch(`${supa.url}/rest/v1/user_profiles?id=eq.${session.user.id}&select=*`, { headers }),
-      fetch(
-        `${supa.url}/rest/v1/user_documents?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
-        { headers }
-      ),
-      fetch(
-        `${supa.url}/rest/v1/user_projects?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
-        { headers }
-      ),
-      fetch(
-        `${supa.url}/rest/v1/quote_requests?user_id=eq.${session.user.id}&select=*&order=created_at.desc`,
-        { headers }
-      ),
-    ])
-    const profiles = profRes.ok ? ((await profRes.json()) as UserProfile[]) : []
-    const documents = docsRes.ok ? ((await docsRes.json()) as UserDocument[]) : []
-    const listedProjects = projRes.ok ? ((await projRes.json()) as UserListedProject[]) : []
-    const quoteRequests = quotesRes.ok ? ((await quotesRes.json()) as QuoteRequestRecord[]) : []
-    return { profile: profiles[0] ?? null, documents, listedProjects, quoteRequests }
   }
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
@@ -669,16 +787,36 @@ export async function fetchGroundedUserData(): Promise<{
   return { profile, documents, listedProjects, quoteRequests }
 }
 
+function normalizeProjectStatus(status: UserListedProject['status'], approved?: boolean): ContentStatus {
+  if (status === 'REJECTED') return 'rejected'
+  if (status === 'FLAGGED') return 'flagged'
+  if (status === 'ARCHIVED') return 'archived'
+  if (status === 'VERIFIED' || approved) return 'active'
+  return 'pending'
+}
+
+function normalizeQuoteStatus(status: QuoteRequestRecord['status'], approved?: boolean): ContentStatus {
+  if (status === 'REJECTED') return 'rejected'
+  if (status === 'FLAGGED') return 'flagged'
+  if (status === 'CLOSED') return 'archived'
+  if (status === 'QUOTED' || approved) return 'active'
+  return 'pending'
+}
+
 /**
- * Admin-Only Governance Query (`public.is_admin()`):
- * Returns all `user_profiles`, `audit_logs`, and platform counts for `/admin`.
+ * Master Control & Oversight Query (`public.is_admin()`):
+ * Aggregates all platform users, audit logs, and unified content records across
+ * `user_documents`, `user_projects`, and `quote_requests`.
  */
 export async function fetchAdminGovernanceData(): Promise<{
   authorized: boolean
   users: UserProfile[]
   auditLogs: AuditLog[]
+  unifiedContent: UnifiedContentRecord[]
   totalDocuments: number
   totalProjects: number
+  totalQuotes: number
+  pendingApprovalsCount: number
   dbLatencyMs: number
 }> {
   const start = performance.now()
@@ -695,17 +833,21 @@ export async function fetchAdminGovernanceData(): Promise<{
       authorized: false,
       users: [],
       auditLogs: [],
+      unifiedContent: [],
       totalDocuments: 0,
       totalProjects: 0,
+      totalQuotes: 0,
+      pendingApprovalsCount: 0,
       dbLatencyMs: 1,
     }
   }
 
-  // Ensure current admin profile is in the profiles table
   await fetchGroundedUserData()
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
   const users: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+  const profileMap = new Map<string, UserProfile>()
+  users.forEach((u) => profileMap.set(u.id, u))
 
   const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
   const auditLogs: AuditLog[] = rawLogs ? JSON.parse(rawLogs) : []
@@ -716,16 +858,325 @@ export async function fetchAdminGovernanceData(): Promise<{
   const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
   const projects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
 
+  const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
+  const quotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
+
+  const unifiedContent: UnifiedContentRecord[] = [
+    ...projects.map((p): UnifiedContentRecord => {
+      const owner = profileMap.get(p.user_id)
+      const normalizedStatus = normalizeProjectStatus(p.status, p.approved)
+      return {
+        id: p.id,
+        type: 'PROJECT',
+        user_id: p.user_id,
+        owner_email: owner?.email ?? 'member@mineconnect.co.tz',
+        owner_name: owner?.full_name ?? 'Registered Licence Holder',
+        title: p.title,
+        details: p.summary,
+        category_badge: `${p.mineral} · ${p.region}`,
+        reference_code: `${p.licence_type} (${p.licence_reference})`,
+        value_usd: p.investment_usd,
+        status: normalizedStatus,
+        raw_status: p.status,
+        approved: Boolean(p.approved || p.status === 'VERIFIED'),
+        moderation_notes: p.moderation_notes ?? null,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+      }
+    }),
+    ...docs.map((d): UnifiedContentRecord => {
+      const owner = profileMap.get(d.user_id)
+      const docStatus: ContentStatus = d.status ?? (d.approved === false ? 'pending' : 'active')
+      return {
+        id: d.id,
+        type: 'DOCUMENT',
+        user_id: d.user_id,
+        owner_email: owner?.email ?? 'member@mineconnect.co.tz',
+        owner_name: owner?.full_name ?? 'Vault Member',
+        title: d.title,
+        details: d.content,
+        category_badge: `CLASSIFICATION: ${d.classification}`,
+        reference_code: `DOC-${d.id.slice(0, 8).toUpperCase()}`,
+        value_usd: null,
+        status: docStatus,
+        raw_status: docStatus.toUpperCase(),
+        approved: d.approved ?? docStatus === 'active',
+        moderation_notes: d.moderation_notes ?? null,
+        created_at: d.created_at,
+        updated_at: d.updated_at,
+      }
+    }),
+    ...quotes.map((q): UnifiedContentRecord => {
+      const owner = profileMap.get(q.user_id)
+      const normalizedStatus = normalizeQuoteStatus(q.status, q.approved)
+      return {
+        id: q.id,
+        type: 'QUOTE',
+        user_id: q.user_id,
+        owner_email: owner?.email ?? 'member@mineconnect.co.tz',
+        owner_name: owner?.full_name ?? 'Project Operator',
+        title: q.service_requested,
+        details: q.scope_notes,
+        category_badge: `PROVIDER: ${q.provider_name}`,
+        reference_code: `RFQ-${q.id.slice(0, 8).toUpperCase()}`,
+        value_usd: q.estimated_budget_usd,
+        status: normalizedStatus,
+        raw_status: q.status,
+        approved: Boolean(q.approved || q.status === 'QUOTED'),
+        moderation_notes: q.moderation_notes ?? null,
+        created_at: q.created_at,
+        updated_at: q.created_at,
+      }
+    }),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const pendingApprovalsCount = unifiedContent.filter(
+    (item) => item.status === 'pending' || item.status === 'flagged' || !item.approved
+  ).length
+
   const dbLatencyMs = Math.max(1, Math.round(performance.now() - start))
 
   return {
     authorized: true,
     users,
     auditLogs,
+    unifiedContent,
     totalDocuments: docs.length,
     totalProjects: projects.length,
+    totalQuotes: quotes.length,
+    pendingApprovalsCount,
     dbLatencyMs,
   }
+}
+
+/**
+ * Moderation Action Handler: Approve or Reject a pending submission (`/admin/approvals`)
+ */
+export async function adminModerateSubmission(params: {
+  id: string
+  type: UnifiedContentType
+  decision: 'APPROVE' | 'REJECT'
+  notes?: string
+}): Promise<{ success?: boolean; error?: string }> {
+  const session = getSession()
+  if (!session || session.user.role !== 'admin') {
+    return { error: '403 Forbidden: Administrative clearance required.' }
+  }
+
+  const nowIso = new Date().toISOString()
+  const isApproved = params.decision === 'APPROVE'
+  const notes =
+    params.notes?.trim() ||
+    (isApproved
+      ? 'Approved and verified by Admin Governance Console.'
+      : 'Rejected during administrative compliance review.')
+
+  if (params.type === 'PROJECT') {
+    const raw = window.localStorage.getItem(PROJECTS_KEY)
+    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((p) => p.id === params.id)
+    if (idx === -1) return { error: 'Project submission not found.' }
+    list[idx] = {
+      ...list[idx],
+      status: isApproved ? 'VERIFIED' : 'REJECTED',
+      approved: isApproved,
+      moderation_notes: notes,
+      reviewed_by: session.user.id,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+  } else if (params.type === 'DOCUMENT') {
+    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
+    const list: UserDocument[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((d) => d.id === params.id)
+    if (idx === -1) return { error: 'Document record not found.' }
+    list[idx] = {
+      ...list[idx],
+      status: isApproved ? 'active' : 'rejected',
+      approved: isApproved,
+      moderation_notes: notes,
+      reviewed_by: session.user.id,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(list))
+  } else if (params.type === 'QUOTE') {
+    const raw = window.localStorage.getItem(QUOTES_KEY)
+    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((q) => q.id === params.id)
+    if (idx === -1) return { error: 'Quote request not found.' }
+    list[idx] = {
+      ...list[idx],
+      status: isApproved ? 'QUOTED' : 'REJECTED',
+      approved: isApproved,
+      moderation_notes: notes,
+      reviewed_by: session.user.id,
+      reviewed_at: nowIso,
+    }
+    window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  }
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: isApproved ? 'ADMIN_APPROVE_SUBMISSION' : 'ADMIN_REJECT_SUBMISSION',
+    metadata: {
+      recordId: params.id,
+      contentType: params.type,
+      decision: params.decision,
+      notes,
+    },
+  })
+
+  return { success: true }
+}
+
+/**
+ * Direct Content Explorer Edit Action (`/admin/content`)
+ */
+export async function adminUpdateContentItem(params: {
+  id: string
+  type: UnifiedContentType
+  title: string
+  details: string
+  status: ContentStatus
+  moderationNotes?: string
+}): Promise<{ success?: boolean; error?: string }> {
+  const session = getSession()
+  if (!session || session.user.role !== 'admin') {
+    return { error: '403 Forbidden: Administrative clearance required.' }
+  }
+
+  const nowIso = new Date().toISOString()
+  const isApproved = params.status === 'active'
+
+  if (params.type === 'PROJECT') {
+    const raw = window.localStorage.getItem(PROJECTS_KEY)
+    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((p) => p.id === params.id)
+    if (idx === -1) return { error: 'Project not found.' }
+    const mappedStatus: UserListedProject['status'] =
+      params.status === 'active'
+        ? 'VERIFIED'
+        : params.status === 'archived'
+          ? 'ARCHIVED'
+          : params.status === 'flagged'
+            ? 'FLAGGED'
+            : params.status === 'rejected'
+              ? 'REJECTED'
+              : 'PENDING_VERIFICATION'
+    list[idx] = {
+      ...list[idx],
+      title: params.title.trim(),
+      summary: params.details.trim(),
+      status: mappedStatus,
+      approved: isApproved,
+      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+  } else if (params.type === 'DOCUMENT') {
+    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
+    const list: UserDocument[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((d) => d.id === params.id)
+    if (idx === -1) return { error: 'Document not found.' }
+    list[idx] = {
+      ...list[idx],
+      title: params.title.trim(),
+      content: params.details.trim(),
+      status: params.status,
+      approved: isApproved,
+      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(list))
+  } else if (params.type === 'QUOTE') {
+    const raw = window.localStorage.getItem(QUOTES_KEY)
+    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((q) => q.id === params.id)
+    if (idx === -1) return { error: 'Quote request not found.' }
+    const mappedStatus: QuoteRequestRecord['status'] =
+      params.status === 'active'
+        ? 'QUOTED'
+        : params.status === 'archived'
+          ? 'CLOSED'
+          : params.status === 'flagged'
+            ? 'FLAGGED'
+            : params.status === 'rejected'
+              ? 'REJECTED'
+              : 'SUBMITTED'
+    list[idx] = {
+      ...list[idx],
+      service_requested: params.title.trim(),
+      scope_notes: params.details.trim(),
+      status: mappedStatus,
+      approved: isApproved,
+      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
+    }
+    window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  }
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'ADMIN_EDIT_CONTENT',
+    metadata: {
+      recordId: params.id,
+      contentType: params.type,
+      title: params.title,
+      newStatus: params.status,
+    },
+  })
+
+  return { success: true }
+}
+
+/**
+ * Direct Content Explorer Purge Action (`/admin/content`)
+ */
+export async function adminPurgeContentItem(params: {
+  id: string
+  type: UnifiedContentType
+  title: string
+}): Promise<{ success?: boolean; error?: string }> {
+  const session = getSession()
+  if (!session || session.user.role !== 'admin') {
+    return { error: '403 Forbidden: Administrative clearance required.' }
+  }
+
+  if (params.type === 'PROJECT') {
+    const raw = window.localStorage.getItem(PROJECTS_KEY)
+    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
+    window.localStorage.setItem(
+      PROJECTS_KEY,
+      JSON.stringify(list.filter((p) => p.id !== params.id))
+    )
+  } else if (params.type === 'DOCUMENT') {
+    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
+    const list: UserDocument[] = raw ? JSON.parse(raw) : []
+    window.localStorage.setItem(
+      DOCUMENTS_KEY,
+      JSON.stringify(list.filter((d) => d.id !== params.id))
+    )
+  } else if (params.type === 'QUOTE') {
+    const raw = window.localStorage.getItem(QUOTES_KEY)
+    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
+    window.localStorage.setItem(
+      QUOTES_KEY,
+      JSON.stringify(list.filter((q) => q.id !== params.id))
+    )
+  }
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'ADMIN_PURGE_CONTENT',
+    metadata: {
+      recordId: params.id,
+      contentType: params.type,
+      title: params.title,
+    },
+  })
+
+  return { success: true }
 }
 
 export async function adminUpdateUserProfile(params: {
@@ -840,13 +1291,15 @@ export async function createGroundedDocument(input: {
     title,
     content,
     classification: input.classification,
+    status: 'pending',
+    approved: false,
     created_at: now,
     updated_at: now,
   }
 
   const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
   const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  allDocs.push(newDoc)
+  allDocs.unshift(newDoc)
   window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(allDocs))
 
   recordAuditActivity({
@@ -886,13 +1339,14 @@ export async function createGroundedProject(input: {
     submitted_currency: input.submittedCurrency,
     summary: input.summary,
     status: 'PENDING_VERIFICATION',
+    approved: false,
     created_at: now,
     updated_at: now,
   }
 
   const raw = window.localStorage.getItem(PROJECTS_KEY)
   const list: UserListedProject[] = raw ? JSON.parse(raw) : []
-  list.push(record)
+  list.unshift(record)
   window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
 
   recordAuditActivity({
@@ -933,12 +1387,13 @@ export async function createGroundedQuoteRequest(input: {
     currency_code: input.currencyCode,
     scope_notes: input.scopeNotes,
     status: 'SUBMITTED',
+    approved: false,
     created_at: now,
   }
 
   const raw = window.localStorage.getItem(QUOTES_KEY)
   const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
-  list.push(record)
+  list.unshift(record)
   window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
 
   recordAuditActivity({

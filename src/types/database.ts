@@ -27,6 +27,13 @@ export type DocumentClassification =
   | 'CONFIDENTIAL'
   | 'RESTRICTED';
 
+export type ContentStatus =
+  | 'pending'
+  | 'active'
+  | 'archived'
+  | 'flagged'
+  | 'rejected';
+
 export type AuditAction =
   | 'LOGIN_SUCCESS'
   | 'LOGIN_FAILED'
@@ -41,6 +48,10 @@ export type AuditAction =
   | 'ADMIN_SUSPEND_USER'
   | 'ADMIN_ACTIVATE_USER'
   | 'ADMIN_DELETE_USER'
+  | 'ADMIN_APPROVE_SUBMISSION'
+  | 'ADMIN_REJECT_SUBMISSION'
+  | 'ADMIN_EDIT_CONTENT'
+  | 'ADMIN_PURGE_CONTENT'
   | 'UNAUTHORIZED_ADMIN_ATTEMPT'
   | (string & {});
 
@@ -71,6 +82,11 @@ export interface UserDocument {
   title: string;
   content: string;
   classification: DocumentClassification;
+  status?: ContentStatus;
+  approved?: boolean;
+  moderation_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -86,7 +102,16 @@ export interface UserListedProject {
   investment_usd: number;
   submitted_currency: SupportedCurrency;
   summary: string;
-  status: 'PENDING_VERIFICATION' | 'VERIFIED' | 'ARCHIVED';
+  status:
+    | 'PENDING_VERIFICATION'
+    | 'VERIFIED'
+    | 'ARCHIVED'
+    | 'FLAGGED'
+    | 'REJECTED';
+  approved?: boolean;
+  moderation_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,8 +125,33 @@ export interface QuoteRequestRecord {
   estimated_budget_usd: number;
   currency_code: SupportedCurrency;
   scope_notes: string;
-  status: 'SUBMITTED' | 'QUOTED' | 'CLOSED';
+  status: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+  approved?: boolean;
+  moderation_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at: string;
+}
+
+export type UnifiedContentType = 'DOCUMENT' | 'PROJECT' | 'QUOTE';
+
+export interface UnifiedContentRecord {
+  id: string;
+  type: UnifiedContentType;
+  user_id: string;
+  owner_email: string;
+  owner_name: string;
+  title: string;
+  details: string;
+  category_badge: string;
+  reference_code: string;
+  value_usd: number | null;
+  status: ContentStatus;
+  raw_status: string;
+  approved: boolean;
+  moderation_notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Database {
@@ -148,6 +198,9 @@ export interface Database {
           title: string;
           content: string;
           classification?: DocumentClassification;
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -155,6 +208,11 @@ export interface Database {
           title?: string;
           content?: string;
           classification?: DocumentClassification;
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
           updated_at?: string;
         };
       };
@@ -171,7 +229,14 @@ export interface Database {
           investment_usd: number;
           submitted_currency?: SupportedCurrency;
           summary: string;
-          status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'ARCHIVED';
+          status?:
+            | 'PENDING_VERIFICATION'
+            | 'VERIFIED'
+            | 'ARCHIVED'
+            | 'FLAGGED'
+            | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -179,7 +244,16 @@ export interface Database {
           title?: string;
           summary?: string;
           investment_usd?: number;
-          status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'ARCHIVED';
+          status?:
+            | 'PENDING_VERIFICATION'
+            | 'VERIFIED'
+            | 'ARCHIVED'
+            | 'FLAGGED'
+            | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
           updated_at?: string;
         };
       };
@@ -194,11 +268,20 @@ export interface Database {
           estimated_budget_usd: number;
           currency_code?: SupportedCurrency;
           scope_notes: string;
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED';
+          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
           created_at?: string;
         };
         Update: {
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED';
+          service_requested?: string;
+          scope_notes?: string;
+          estimated_budget_usd?: number;
+          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
         };
       };
     };

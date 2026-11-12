@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdminContentRouteImport } from './routes/admin_.content'
+import { Route as AdminApprovalsRouteImport } from './routes/admin_.approvals'
+import { Route as AdminUsersRouteImport } from './routes/admin_.users'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ListAProjectRouteImport } from './routes/list-a-project'
@@ -31,6 +34,21 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminContentRoute = AdminContentRouteImport.update({
+  id: '/admin_/content',
+  path: '/admin/content',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminApprovalsRoute = AdminApprovalsRouteImport.update({
+  id: '/admin_/approvals',
+  path: '/admin/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin_/users',
+  path: '/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -92,6 +110,9 @@ const OpportunitiesProjectIdRoute = OpportunitiesProjectIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin/content': typeof AdminContentRoute
+  '/admin/approvals': typeof AdminApprovalsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
@@ -107,6 +128,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin/content': typeof AdminContentRoute
+  '/admin/approvals': typeof AdminApprovalsRoute
+  '/admin/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
@@ -123,6 +147,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin_/content': typeof AdminContentRoute
+  '/admin_/approvals': typeof AdminApprovalsRoute
+  '/admin_/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
@@ -140,6 +167,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/admin/content'
+    | '/admin/approvals'
+    | '/admin/users'
     | '/dashboard'
     | '/faq'
     | '/list-a-project'
@@ -155,6 +185,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/admin/content'
+    | '/admin/approvals'
+    | '/admin/users'
     | '/dashboard'
     | '/faq'
     | '/list-a-project'
@@ -170,6 +203,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/admin_/content'
+    | '/admin_/approvals'
+    | '/admin_/users'
     | '/dashboard'
     | '/faq'
     | '/list-a-project'
@@ -186,6 +222,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  AdminContentRoute: typeof AdminContentRoute
+  AdminApprovalsRoute: typeof AdminApprovalsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   DashboardRoute: typeof DashboardRoute
   FaqRoute: typeof FaqRoute
   ListAProjectRoute: typeof ListAProjectRoute
@@ -213,6 +252,27 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/content': {
+      id: '/admin_/content'
+      path: '/admin/content'
+      fullPath: '/admin/content'
+      preLoaderRoute: typeof AdminContentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/approvals': {
+      id: '/admin_/approvals'
+      path: '/admin/approvals'
+      fullPath: '/admin/approvals'
+      preLoaderRoute: typeof AdminApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/users': {
+      id: '/admin_/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -298,6 +358,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  AdminContentRoute: AdminContentRoute,
+  AdminApprovalsRoute: AdminApprovalsRoute,
+  AdminUsersRoute: AdminUsersRoute,
   DashboardRoute: DashboardRoute,
   FaqRoute: FaqRoute,
   ListAProjectRoute: ListAProjectRoute,
