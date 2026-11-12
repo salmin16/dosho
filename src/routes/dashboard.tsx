@@ -119,7 +119,7 @@ function DashboardRouteComponent() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
                 <ShieldCheck size={14} />
-                RLS Policy Active: auth.uid() = user_id
+                RLS Policy Active: auth.uid() = user_id · Role: {session.user.role.toUpperCase()}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
                 <Coins size={13} className="text-gold" />
@@ -142,6 +142,15 @@ function DashboardRouteComponent() {
 
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <CurrencySwitcher dark />
+            {session.user.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"
+              >
+                <ShieldCheck size={15} />
+                Admin Console
+              </Link>
+            )}
             <Link to="/list-a-project" className="btn-primary !py-2.5 !px-4 text-xs">
               + List a Project
             </Link>

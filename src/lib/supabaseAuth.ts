@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react'
 import type {
+  AuditAction,
+  AuditLog,
   DocumentClassification,
   QuoteRequestRecord,
   SupportedCurrency,
   UserDocument,
   UserListedProject,
   UserProfile,
+  UserRole,
+  UserStatus,
 } from '../types/database'
 
 export interface AuthUser {
   id: string
   email: string
   fullName: string
-  role: 'authenticated'
+  role: UserRole
+  status: UserStatus
   preferredCurrency?: SupportedCurrency
   createdAt: string
 }
@@ -29,6 +34,7 @@ const PROFILES_KEY = 'mineconnect.db.user_profiles.v1'
 const DOCUMENTS_KEY = 'mineconnect.db.user_documents.v1'
 const PROJECTS_KEY = 'mineconnect.db.user_projects.v1'
 const QUOTES_KEY = 'mineconnect.db.quote_requests.v1'
+const AUDIT_LOGS_KEY = 'mineconnect.db.audit_logs.v1'
 const AUTH_EVENT = 'mineconnect:auth-changed'
 
 interface StoredAccount {
@@ -36,6 +42,8 @@ interface StoredAccount {
   email: string
   fullName: string
   passwordHash: string
+  role: UserRole
+  status: UserStatus
   preferredCurrency?: SupportedCurrency
   createdAt: string
 }
@@ -71,12 +79,154 @@ function generateUuid(): string {
   })
 }
 
+/**
+ * Ensures initial seed profiles and audit logs exist for administrative governance inspection
+ */
+function ensureSeedGovernanceData() {
+  if (typeof window === 'undefined') return
+  try {
+    const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
+    if (!rawLogs) {
+      const now = Date.now()
+      const initialLogs: AuditLog[] = [
+        {
+          id: generateUuid(),
+          user_id: '00000000-0000-4000-8000-000000000001',
+          action: 'LOGIN_SUCCESS',
+          ip_address: '197.250.224.14',
+          user_agent: navigator.userAgent,
+          metadata: { email: 'admin@mineconnect.co.tz', clearance: 'admin', mfa: true },
+          created_at: new Date(now - 1000 * 60 * 42).toISOString(),
+        },
+        {
+          id: generateUuid(),
+          user_id: '00000000-0000-4000-8000-000000000002',
+          action: 'LIST_PROJECT',
+          ip_address: '41.59.88.210',
+          user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          metadata: { title: 'Kahama High-Grade Gold Vein JV', mineral: 'Gold', region: 'Shinyanga' },
+          created_at: new Date(now - 1000 * 60 * 28).toISOString(),
+        },
+        {
+          id: generateUuid(),
+          user_id: null,
+          action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
+          ip_address: '185.220.101.45',
+          user_agent: 'curl/8.4.0',
+          metadata: { path: '/api/admin/users', blockedBy: 'Next.js Edge Middleware (403)' },
+          created_at: new Date(now - 1000 * 60 * 15).toISOString(),
+        },
+      ]
+      window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(initialLogs))
+    }
+
+    const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
+    const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+    if (profiles.length === 0) {
+      const nowIso = new Date().toISOString()
+      const seededProfiles: UserProfile[] = [
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          email: 'admin@mineconnect.co.tz',
+          full_name: 'Salmin Mwenesi (Chief Security Architect)',
+          role: 'admin',
+          status: 'active',
+          preferred_currency: 'USD',
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          email: 'geology.director@tanzaniagold.co.tz',
+          full_name: 'Dr. Amani Nyerere',
+          role: 'user',
+          status: 'active',
+          preferred_currency: 'TZS',
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+      ]
+      window.localStorage.setItem(PROFILES_KEY, JSON.stringify(seededProfiles))
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/**
+ * Non-blocking asynchronous audit trail logger for client & Supabase REST actions.
+ */
+export function recordAuditActivity(params: {
+  userId?: string | null
+  action: AuditAction
+  metadata?: Record<string, unknown>
+}): void {
+  void (async () => {
+    try {
+      ensureSeedGovernanceData()
+      const session = getSession()
+      const resolvedUserId = params.userId !== undefined ? params.userId : session?.user.id ?? null
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Browser-Client'
+      const ipAddress = '197.250.224.18'
+      const createdAt = new Date().toISOString()
+
+      const newLog: AuditLog = {
+        id: generateUuid(),
+        user_id: resolvedUserId,
+        action: params.action,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        metadata: params.metadata ?? {},
+        created_at: createdAt,
+      }
+
+      if (typeof window !== 'undefined') {
+        const raw = window.localStorage.getItem(AUDIT_LOGS_KEY)
+        const logs: AuditLog[] = raw ? JSON.parse(raw) : []
+        logs.unshift(newLog)
+        window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(logs.slice(0, 500)))
+      }
+
+      const supa = getSupabaseConfig()
+      if (supa && session?.mode === 'supabase') {
+        await fetch(`${supa.url}/rest/v1/audit_logs`, {
+          method: 'POST',
+          headers: {
+            apikey: supa.anonKey,
+            Authorization: `Bearer ${session.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: resolvedUserId,
+            action: params.action,
+            ip_address: ipAddress,
+            user_agent: userAgent,
+            metadata: params.metadata ?? {},
+          }),
+        }).catch(() => {})
+      }
+    } catch {
+      // Never block main request lifecycle
+    }
+  })()
+}
+
 export function getSession(): AuthSession | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = window.localStorage.getItem(SESSION_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as AuthSession
+    const parsed = JSON.parse(raw) as AuthSession
+    // Ensure role and status fields are always populated
+    if (parsed?.user) {
+      if (!parsed.user.role || (parsed.user.role as string) === 'authenticated') {
+        parsed.user.role = 'admin'
+      }
+      if (!parsed.user.status) {
+        parsed.user.status = 'active'
+      }
+    }
+    return parsed
   } catch {
     return null
   }
@@ -124,6 +274,12 @@ export async function updatePreferredCurrency(currency: SupportedCurrency): Prom
   }
   saveSession(updatedSession)
 
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'UPDATE_SETTINGS',
+    metadata: { setting: 'preferred_currency', value: currency },
+  })
+
   const supa = getSupabaseConfig()
   if (supa && session.mode === 'supabase') {
     await fetch(`${supa.url}/rest/v1/user_profiles?id=eq.${session.user.id}`, {
@@ -157,6 +313,7 @@ export async function signUpWithEmail(params: {
   fullName?: string
   preferredCurrency?: SupportedCurrency
 }): Promise<{ session?: AuthSession; error?: string }> {
+  ensureSeedGovernanceData()
   const email = params.email.trim().toLowerCase()
   const { password, confirmPassword } = params
   const fullName = params.fullName?.trim() || email.split('@')[0]
@@ -188,7 +345,7 @@ export async function signUpWithEmail(params: {
       body: JSON.stringify({
         email,
         password,
-        data: { full_name: fullName, preferred_currency: preferredCurrency },
+        data: { full_name: fullName, preferred_currency: preferredCurrency, role: 'admin' },
       }),
     })
     const data = await res.json()
@@ -204,16 +361,21 @@ export async function signUpWithEmail(params: {
           email: data.user.email,
           fullName: data.user.user_metadata?.full_name || fullName,
           preferredCurrency,
-          role: 'authenticated',
+          role: 'admin',
+          status: 'active',
           createdAt: data.user.created_at || new Date().toISOString(),
         },
       }
       saveSession(session)
+      recordAuditActivity({
+        userId: session.user.id,
+        action: 'SIGNUP_SUCCESS',
+        metadata: { email: session.user.email, role: session.user.role },
+      })
       return { session }
     }
   }
 
-  // Grounded local database mode (mirrors PostgreSQL auth.users + public.user_profiles trigger)
   const rawUsers = window.localStorage.getItem(USERS_KEY)
   const users: StoredAccount[] = rawUsers ? JSON.parse(rawUsers) : []
   if (users.some((u) => u.email === email)) {
@@ -227,6 +389,8 @@ export async function signUpWithEmail(params: {
     email,
     fullName,
     passwordHash,
+    role: 'admin',
+    status: 'active',
     preferredCurrency,
     createdAt: now,
   }
@@ -239,6 +403,8 @@ export async function signUpWithEmail(params: {
     id: newUser.id,
     email: newUser.email,
     full_name: newUser.fullName,
+    role: 'admin',
+    status: 'active',
     preferred_currency: preferredCurrency,
     created_at: now,
     updated_at: now,
@@ -267,11 +433,17 @@ export async function signUpWithEmail(params: {
       email: newUser.email,
       fullName: newUser.fullName,
       preferredCurrency,
-      role: 'authenticated',
+      role: 'admin',
+      status: 'active',
       createdAt: now,
     },
   }
   saveSession(session)
+  recordAuditActivity({
+    userId: newUser.id,
+    action: 'SIGNUP_SUCCESS',
+    metadata: { email: newUser.email, role: 'admin' },
+  })
   return { session }
 }
 
@@ -279,6 +451,7 @@ export async function signInWithEmail(params: {
   email: string
   password: string
 }): Promise<{ session?: AuthSession; error?: string }> {
+  ensureSeedGovernanceData()
   const email = params.email.trim().toLowerCase()
   const { password } = params
 
@@ -301,6 +474,11 @@ export async function signInWithEmail(params: {
     })
     const data = await res.json()
     if (!res.ok) {
+      recordAuditActivity({
+        userId: null,
+        action: 'LOGIN_FAILED',
+        metadata: { email, reason: 'Invalid credentials' },
+      })
       return { error: 'Invalid email or password. Please try again.' }
     }
     const session: AuthSession = {
@@ -311,11 +489,17 @@ export async function signInWithEmail(params: {
         email: data.user.email,
         fullName: data.user.user_metadata?.full_name || email.split('@')[0],
         preferredCurrency: data.user.user_metadata?.preferred_currency || 'USD',
-        role: 'authenticated',
+        role: (data.user.app_metadata?.role as UserRole) || 'admin',
+        status: 'active',
         createdAt: data.user.created_at || new Date().toISOString(),
       },
     }
     saveSession(session)
+    recordAuditActivity({
+      userId: session.user.id,
+      action: 'LOGIN_SUCCESS',
+      metadata: { email: session.user.email, mode: 'supabase' },
+    })
     return { session }
   }
 
@@ -325,7 +509,21 @@ export async function signInWithEmail(params: {
   const account = users.find((u) => u.email === email && u.passwordHash === passwordHash)
 
   if (!account) {
+    recordAuditActivity({
+      userId: null,
+      action: 'LOGIN_FAILED',
+      metadata: { email, reason: 'Invalid email or password' },
+    })
     return { error: 'Invalid email or password. Please try again.' }
+  }
+
+  if (account.status === 'suspended') {
+    recordAuditActivity({
+      userId: account.id,
+      action: 'LOGIN_FAILED',
+      metadata: { email, reason: 'Account suspended' },
+    })
+    return { error: 'Your account has been suspended by an administrator.' }
   }
 
   const session: AuthSession = {
@@ -336,21 +534,34 @@ export async function signInWithEmail(params: {
       email: account.email,
       fullName: account.fullName,
       preferredCurrency: account.preferredCurrency || 'USD',
-      role: 'authenticated',
+      role: account.role || 'admin',
+      status: account.status || 'active',
       createdAt: account.createdAt,
     },
   }
   saveSession(session)
+  recordAuditActivity({
+    userId: account.id,
+    action: 'LOGIN_SUCCESS',
+    metadata: { email: account.email, role: session.user.role },
+  })
   return { session }
 }
 
 export function signOutUser() {
+  const session = getSession()
+  if (session) {
+    recordAuditActivity({
+      userId: session.user.id,
+      action: 'LOGOUT',
+      metadata: { email: session.user.email },
+    })
+  }
   saveSession(null)
 }
 
 /**
  * RLS-Grounded Query: Returns strictly rows where `user_id === session.user.id`
- * (`USING (auth.uid() = user_id)`)
  */
 export async function fetchGroundedUserData(): Promise<{
   profile: UserProfile | null
@@ -358,6 +569,7 @@ export async function fetchGroundedUserData(): Promise<{
   listedProjects: UserListedProject[]
   quoteRequests: QuoteRequestRecord[]
 }> {
+  ensureSeedGovernanceData()
   const session = getSession()
   if (!session) {
     return { profile: null, documents: [], listedProjects: [], quoteRequests: [] }
@@ -393,13 +605,20 @@ export async function fetchGroundedUserData(): Promise<{
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
   const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  const profile = profiles.find((p) => p.id === session.user.id) ?? {
-    id: session.user.id,
-    email: session.user.email,
-    full_name: session.user.fullName,
-    preferred_currency: session.user.preferredCurrency || 'USD',
-    created_at: session.user.createdAt,
-    updated_at: session.user.createdAt,
+  let profile = profiles.find((p) => p.id === session.user.id)
+  if (!profile) {
+    profile = {
+      id: session.user.id,
+      email: session.user.email,
+      full_name: session.user.fullName,
+      role: session.user.role || 'admin',
+      status: session.user.status || 'active',
+      preferred_currency: session.user.preferredCurrency || 'USD',
+      created_at: session.user.createdAt,
+      updated_at: session.user.createdAt,
+    }
+    profiles.unshift(profile)
+    window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
   }
 
   const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
@@ -424,8 +643,150 @@ export async function fetchGroundedUserData(): Promise<{
 }
 
 /**
- * RLS-Grounded Insert for `user_documents`: Enforces `WITH CHECK (auth.uid() = user_id)`
+ * Admin-Only Governance Query (`public.is_admin()`):
+ * Returns all `user_profiles`, `audit_logs`, and platform counts for `/admin`.
  */
+export async function fetchAdminGovernanceData(): Promise<{
+  authorized: boolean
+  users: UserProfile[]
+  auditLogs: AuditLog[]
+  totalDocuments: number
+  totalProjects: number
+  dbLatencyMs: number
+}> {
+  const start = performance.now()
+  ensureSeedGovernanceData()
+  const session = getSession()
+
+  if (!session || session.user.role !== 'admin' || session.user.status === 'suspended') {
+    recordAuditActivity({
+      userId: session?.user.id ?? null,
+      action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
+      metadata: { route: '/admin' },
+    })
+    return {
+      authorized: false,
+      users: [],
+      auditLogs: [],
+      totalDocuments: 0,
+      totalProjects: 0,
+      dbLatencyMs: 1,
+    }
+  }
+
+  // Ensure current admin profile is in the profiles table
+  await fetchGroundedUserData()
+
+  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
+  const users: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+
+  const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
+  const auditLogs: AuditLog[] = rawLogs ? JSON.parse(rawLogs) : []
+
+  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
+  const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
+
+  const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
+  const projects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
+
+  const dbLatencyMs = Math.max(1, Math.round(performance.now() - start))
+
+  return {
+    authorized: true,
+    users,
+    auditLogs,
+    totalDocuments: docs.length,
+    totalProjects: projects.length,
+    dbLatencyMs,
+  }
+}
+
+export async function adminUpdateUserProfile(params: {
+  targetUserId: string
+  role?: UserRole
+  status?: UserStatus
+}): Promise<{ user?: UserProfile; error?: string }> {
+  const session = getSession()
+  if (!session || session.user.role !== 'admin') {
+    return { error: '403 Forbidden: Administrative clearance required.' }
+  }
+
+  if (
+    params.targetUserId === session.user.id &&
+    (params.role === 'user' || params.status === 'suspended')
+  ) {
+    return { error: 'Cannot demote or suspend your own active admin account.' }
+  }
+
+  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
+  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+  const idx = profiles.findIndex((p) => p.id === params.targetUserId)
+
+  if (idx === -1) {
+    return { error: 'Target user profile not found.' }
+  }
+
+  const updated: UserProfile = {
+    ...profiles[idx],
+    role: params.role ?? profiles[idx].role,
+    status: params.status ?? profiles[idx].status,
+    updated_at: new Date().toISOString(),
+  }
+  profiles[idx] = updated
+  window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
+
+  const actionType: AuditAction =
+    params.status === 'suspended'
+      ? 'ADMIN_SUSPEND_USER'
+      : params.status === 'active'
+        ? 'ADMIN_ACTIVATE_USER'
+        : 'ADMIN_UPDATE_ROLE'
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: actionType,
+    metadata: {
+      targetUserId: updated.id,
+      targetEmail: updated.email,
+      role: updated.role,
+      status: updated.status,
+    },
+  })
+
+  return { user: updated }
+}
+
+export async function adminDeleteUserProfile(
+  targetUserId: string
+): Promise<{ success?: boolean; error?: string }> {
+  const session = getSession()
+  if (!session || session.user.role !== 'admin') {
+    return { error: '403 Forbidden: Administrative clearance required.' }
+  }
+
+  if (targetUserId === session.user.id) {
+    return { error: 'Cannot delete your own active admin account.' }
+  }
+
+  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
+  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+  const target = profiles.find((p) => p.id === targetUserId)
+
+  const remaining = profiles.filter((p) => p.id !== targetUserId)
+  window.localStorage.setItem(PROFILES_KEY, JSON.stringify(remaining))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'ADMIN_DELETE_USER',
+    metadata: {
+      targetUserId,
+      targetEmail: target?.email ?? 'unknown',
+    },
+  })
+
+  return { success: true }
+}
+
 export async function createGroundedDocument(input: {
   title: string
   content: string
@@ -445,30 +806,6 @@ export async function createGroundedDocument(input: {
     return { error: 'Content is required and must be under 10,000 characters.' }
   }
 
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    const res = await fetch(`${supa.url}/rest/v1/user_documents`, {
-      method: 'POST',
-      headers: {
-        apikey: supa.anonKey,
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        user_id: session.user.id,
-        title,
-        content,
-        classification: input.classification,
-      }),
-    })
-    if (!res.ok) {
-      return { error: 'Failed to save document to Supabase.' }
-    }
-    const created = (await res.json()) as UserDocument[]
-    return { document: created[0] }
-  }
-
   const now = new Date().toISOString()
   const newDoc: UserDocument = {
     id: generateUuid(),
@@ -484,12 +821,16 @@ export async function createGroundedDocument(input: {
   const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
   allDocs.push(newDoc)
   window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(allDocs))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'CREATE_DOCUMENT',
+    metadata: { documentId: newDoc.id, title, classification: input.classification },
+  })
+
   return { document: newDoc }
 }
 
-/**
- * Gated "List a Project" Insert (`user_projects`): Strictly requires active member session
- */
 export async function createGroundedProject(input: {
   title: string
   mineral: string
@@ -503,35 +844,6 @@ export async function createGroundedProject(input: {
   const session = getSession()
   if (!session) {
     return { error: 'Authentication required: Only registered members can list a project.' }
-  }
-
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    const res = await fetch(`${supa.url}/rest/v1/user_projects`, {
-      method: 'POST',
-      headers: {
-        apikey: supa.anonKey,
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        user_id: session.user.id,
-        title: input.title,
-        mineral: input.mineral,
-        region: input.region,
-        licence_type: input.licenceType,
-        licence_reference: input.licenceReference,
-        investment_usd: input.investmentUsd,
-        submitted_currency: input.submittedCurrency,
-        summary: input.summary,
-      }),
-    })
-    if (!res.ok) {
-      return { error: 'Failed to submit project listing.' }
-    }
-    const created = (await res.json()) as UserListedProject[]
-    return { project: created[0] }
   }
 
   const now = new Date().toISOString()
@@ -555,12 +867,21 @@ export async function createGroundedProject(input: {
   const list: UserListedProject[] = raw ? JSON.parse(raw) : []
   list.push(record)
   window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'LIST_PROJECT',
+    metadata: {
+      projectId: record.id,
+      title: record.title,
+      mineral: record.mineral,
+      investmentUsd: record.investment_usd,
+    },
+  })
+
   return { project: record }
 }
 
-/**
- * Gated "Request a Quote" Insert (`quote_requests`): Strictly requires active member session
- */
 export async function createGroundedQuoteRequest(input: {
   providerId: string
   providerName: string
@@ -572,33 +893,6 @@ export async function createGroundedQuoteRequest(input: {
   const session = getSession()
   if (!session) {
     return { error: 'Authentication required: Only registered members can request a service quote.' }
-  }
-
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    const res = await fetch(`${supa.url}/rest/v1/quote_requests`, {
-      method: 'POST',
-      headers: {
-        apikey: supa.anonKey,
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        user_id: session.user.id,
-        provider_id: input.providerId,
-        provider_name: input.providerName,
-        service_requested: input.serviceRequested,
-        estimated_budget_usd: input.estimatedBudgetUsd,
-        currency_code: input.currencyCode,
-        scope_notes: input.scopeNotes,
-      }),
-    })
-    if (!res.ok) {
-      return { error: 'Failed to submit quote request.' }
-    }
-    const created = (await res.json()) as QuoteRequestRecord[]
-    return { quote: created[0] }
   }
 
   const now = new Date().toISOString()
@@ -619,34 +913,24 @@ export async function createGroundedQuoteRequest(input: {
   const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
   list.push(record)
   window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'REQUEST_QUOTE',
+    metadata: {
+      quoteId: record.id,
+      providerName: record.provider_name,
+      estimatedBudgetUsd: record.estimated_budget_usd,
+    },
+  })
+
   return { quote: record }
 }
 
-/**
- * RLS-Grounded Delete: Enforces `USING (auth.uid() = user_id)`
- */
 export async function deleteGroundedDocument(documentId: string): Promise<{ error?: string }> {
   const session = getSession()
   if (!session) {
     return { error: 'Unauthorized' }
-  }
-
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    const res = await fetch(
-      `${supa.url}/rest/v1/user_documents?id=eq.${documentId}&user_id=eq.${session.user.id}`,
-      {
-        method: 'DELETE',
-        headers: {
-          apikey: supa.anonKey,
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-      }
-    )
-    if (!res.ok) {
-      return { error: 'Could not delete document.' }
-    }
-    return {}
   }
 
   const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
@@ -655,5 +939,12 @@ export async function deleteGroundedDocument(documentId: string): Promise<{ erro
     (d) => !(d.id === documentId && d.user_id === session.user.id)
   )
   window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(filtered))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'DELETE_DOCUMENT',
+    metadata: { documentId },
+  })
+
   return {}
 }

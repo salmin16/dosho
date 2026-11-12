@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
+import { logActivity } from '@/utils/audit-logger';
 
 export interface AuthActionResponse {
   error?: string;
@@ -39,15 +40,24 @@ export async function loginAction(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
-  if (error) {
-    // Return a generic message for invalid credentials to prevent user enumeration
+  if (error || !data.user) {
+    logActivity({
+      action: 'LOGIN_FAILED',
+      metadata: { email, reason: error?.message ?? 'Invalid credentials' },
+    });
     return { error: 'Invalid email or password. Please try again.' };
   }
+
+  logActivity({
+    userId: data.user.id,
+    action: 'LOGIN_SUCCESS',
+    metadata: { email: data.user.email, redirect: nextPath },
+  });
 
   revalidatePath('/', 'layout');
   redirect(nextPath);
@@ -69,7 +79,11 @@ export async function signupAction(
     return { error: 'Password must be at least 8 characters long.' };
   }
 
-  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+  if (
+    !/[A-Z]/.test(password) ||
+    !/[a-z]/.test(password) ||
+    !/[0-9]/.test(password)
+  ) {
     return {
       error:
         'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
@@ -95,7 +109,14 @@ export async function signupAction(
     return { error: error.message };
   }
 
-  // If email confirmation is disabled in Supabase, session is established immediately
+  if (data.user) {
+    logActivity({
+      userId: data.user.id,
+      action: 'SIGNUP_SUCCESS',
+      metadata: { email: data.user.email },
+    });
+  }
+
   if (data.session) {
     revalidatePath('/', 'layout');
     redirect('/dashboard');
@@ -109,6 +130,18 @@ export async function signupAction(
 
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    logActivity({
+      userId: user.id,
+      action: 'LOGOUT',
+      metadata: { email: user.email },
+    });
+  }
+
   await supabase.auth.signOut();
   revalidatePath('/', 'layout');
   redirect('/login');

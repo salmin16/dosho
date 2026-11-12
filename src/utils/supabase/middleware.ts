@@ -2,13 +2,17 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * PUBLIC_ROUTES: Only the landing page, authentication pages, and public exchange rate API
+ * PUBLIC_ROUTES: Only the landing page, authentication pages, and public exchange rate APIs
  * are accessible without an active authenticated session.
- * All other routes (e.g., /dashboard, /list-a-project, /request-quote, /services, /opportunities)
- * sit behind a mandatory membership authentication wall.
  */
 const PUBLIC_EXACT_ROUTES = ['/'];
-const PUBLIC_PREFIX_ROUTES = ['/login', '/signup', '/auth/callback', '/api/rates'];
+const PUBLIC_PREFIX_ROUTES = [
+  '/login',
+  '/signup',
+  '/auth/callback',
+  '/api/rates',
+  '/api/exchange-rates',
+];
 const AUTH_ONLY_ROUTES = ['/login', '/signup'];
 
 export async function updateSession(request: NextRequest) {
@@ -55,8 +59,62 @@ export async function updateSession(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  // 1. Mandatory Membership Wall: Intercept any unauthenticated request to non-public routes
-  //    (including /list-a-project, /request-quote, /dashboard, /services, etc.)
+  const isAdminPageRoute =
+    pathname === '/admin' || pathname.startsWith('/admin/');
+  const isAdminApiRoute =
+    pathname === '/api/admin' || pathname.startsWith('/api/admin/');
+
+  // 1. Intercept all /admin/* and /api/admin/* routes for strict RBAC verification
+  if (isAdminPageRoute || isAdminApiRoute) {
+    if (!user) {
+      if (isAdminApiRoute) {
+        return NextResponse.json(
+          { error: 'Unauthorized: Valid authentication session required.' },
+          { status: 401 }
+        );
+      }
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      loginUrl.searchParams.set('next', pathname);
+      loginUrl.searchParams.set('reason', 'admin_auth_required');
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Verify role from user_profiles table in PostgreSQL (and check account status)
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('role, status')
+      .eq('id', user.id)
+      .single();
+
+    const jwtRole =
+      (user.app_metadata?.role as string | undefined) ||
+      (user.user_metadata?.role as string | undefined);
+    const effectiveRole = profile?.role ?? jwtRole;
+    const isSuspended = profile?.status === 'suspended';
+
+    if (effectiveRole !== 'admin' || isSuspended) {
+      // Return strict 403 Forbidden for API routes or when requested
+      if (isAdminApiRoute) {
+        return NextResponse.json(
+          {
+            error: 'Forbidden: Administrative clearance required.',
+            code: 'INSUFFICIENT_PRIVILEGES',
+          },
+          { status: 403 }
+        );
+      }
+
+      const forbiddenUrl = request.nextUrl.clone();
+      forbiddenUrl.pathname = '/dashboard';
+      forbiddenUrl.searchParams.set('error', 'forbidden_admin_access');
+      return NextResponse.redirect(forbiddenUrl, { status: 303 });
+    }
+
+    return supabaseResponse;
+  }
+
+  // 2. Mandatory Membership Wall: Intercept any unauthenticated request to non-public routes
   if (!isPublicRoute && !user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
@@ -65,7 +123,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 2. Redirect already-authenticated members away from /login and /signup to /dashboard
+  // 3. Redirect already-authenticated members away from /login and /signup to /dashboard
   if (isAuthPage && user) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';

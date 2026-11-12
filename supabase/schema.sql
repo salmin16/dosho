@@ -3,17 +3,36 @@
 -- ============================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- User Profiles Table (1-to-1 with auth.users, includes preferred_currency)
+-- User Profiles Table (1-to-1 with auth.users, includes role, status & preferred_currency)
 CREATE TABLE IF NOT EXISTS public.user_profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
     full_name TEXT,
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
     preferred_currency TEXT NOT NULL DEFAULT 'USD' CHECK (
         preferred_currency IN ('USD', 'EUR', 'GBP', 'TZS', 'JPY', 'ZAR', 'AUD', 'CAD', 'CNY', 'AED')
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON public.user_profiles(role);
+
+-- Audit Logs Table (Tracks all critical user and administrative actions)
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
 
 -- User Documents Table (1-to-Many with auth.users for strict data grounding)
 CREATE TABLE IF NOT EXISTS public.user_documents (
@@ -70,10 +89,29 @@ CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON public.user_projects(use
 CREATE INDEX IF NOT EXISTS idx_quote_requests_user_id ON public.quote_requests(user_id, created_at DESC);
 
 -- ============================================================================
--- 2. ROW-LEVEL SECURITY (RLS) POLICIES
+-- 2. HELPER FUNCTIONS & ROW-LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.user_profiles
+        WHERE id = auth.uid()
+          AND role = 'admin'
+          AND status = 'active'
+    );
+$$;
+
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_profiles FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE public.user_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_documents FORCE ROW LEVEL SECURITY;
@@ -85,18 +123,31 @@ ALTER TABLE public.quote_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quote_requests FORCE ROW LEVEL SECURITY;
 
 -- Policies for user_profiles
-CREATE POLICY "Users can view strictly their own profile"
+CREATE POLICY "Users can view own profile or admins can view all"
     ON public.user_profiles FOR SELECT TO authenticated
-    USING (auth.uid() = id);
+    USING (auth.uid() = id OR public.is_admin());
 
 CREATE POLICY "Users can insert strictly their own profile"
     ON public.user_profiles FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Users can update strictly their own profile"
+CREATE POLICY "Users can update own profile or admins can update any"
     ON public.user_profiles FOR UPDATE TO authenticated
-    USING (auth.uid() = id)
-    WITH CHECK (auth.uid() = id);
+    USING (auth.uid() = id OR public.is_admin())
+    WITH CHECK (auth.uid() = id OR public.is_admin());
+
+CREATE POLICY "Admins can delete user profiles"
+    ON public.user_profiles FOR DELETE TO authenticated
+    USING (public.is_admin());
+
+-- Policies for audit_logs
+CREATE POLICY "Admins can view all audit logs"
+    ON public.audit_logs FOR SELECT TO authenticated
+    USING (public.is_admin());
+
+CREATE POLICY "Authenticated users can insert audit logs"
+    ON public.audit_logs FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
 -- Policies for user_documents
 CREATE POLICY "Users can view strictly their own documents"
@@ -119,7 +170,7 @@ CREATE POLICY "Users can delete strictly their own documents"
 -- Policies for user_projects (Mandatory Membership for "List a Project")
 CREATE POLICY "Users can view strictly their own listed projects"
     ON public.user_projects FOR SELECT TO authenticated
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id OR public.is_admin());
 
 CREATE POLICY "Authenticated members can list strictly their own projects"
     ON public.user_projects FOR INSERT TO authenticated
@@ -127,13 +178,13 @@ CREATE POLICY "Authenticated members can list strictly their own projects"
 
 CREATE POLICY "Users can update strictly their own listed projects"
     ON public.user_projects FOR UPDATE TO authenticated
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
 -- Policies for quote_requests (Mandatory Membership for "Request a Quote")
 CREATE POLICY "Users can view strictly their own quote requests"
     ON public.quote_requests FOR SELECT TO authenticated
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id OR public.is_admin());
 
 CREATE POLICY "Authenticated members can submit strictly their own quote requests"
     ON public.quote_requests FOR INSERT TO authenticated
@@ -174,11 +225,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    INSERT INTO public.user_profiles (id, email, full_name, preferred_currency)
+    INSERT INTO public.user_profiles (id, email, full_name, role, status, preferred_currency)
     VALUES (
         NEW.id,
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_app_meta_data->>'role', 'user'),
+        'active',
         COALESCE(NEW.raw_user_meta_data->>'preferred_currency', 'USD')
     );
     RETURN NEW;

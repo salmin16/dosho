@@ -103,13 +103,24 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           <LanguageSwitcher dark={dark} />
 
           {session ? (
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30"
-            >
-              <ShieldCheck size={14} />
-              Vault ({session.user.fullName.split(' ')[0]})
-            </Link>
+            <>
+              <Link
+                to="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30"
+              >
+                <ShieldCheck size={14} />
+                Vault ({session.user.fullName.split(' ')[0]})
+              </Link>
+              {session.user.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-moss/60 bg-moss/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/30"
+                >
+                  <ShieldCheck size={14} />
+                  Admin
+                </Link>
+              )}
+            </>
           ) : (
             <>
               <Link
@@ -173,6 +184,15 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           >
             {session ? `Grounded Vault (${session.user.email})` : 'Sign In / Create Account'}
           </Link>
+          {session?.user.role === 'admin' && (
+            <Link
+              to="/admin"
+              onClick={() => setOpen(false)}
+              className="block border-b border-ink/5 py-3.5 text-sm font-semibold text-moss"
+            >
+              Admin Governance Console (/admin)
+            </Link>
+          )}
           <Link
             to="/list-a-project"
             onClick={handleListProjectClick}

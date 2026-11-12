@@ -18,19 +18,51 @@ export type SupportedCurrency =
   | 'CNY'
   | 'AED';
 
+export type UserRole = 'user' | 'admin';
+export type UserStatus = 'active' | 'suspended';
+
 export type DocumentClassification =
   | 'PUBLIC'
   | 'INTERNAL'
   | 'CONFIDENTIAL'
   | 'RESTRICTED';
 
+export type AuditAction =
+  | 'LOGIN_SUCCESS'
+  | 'LOGIN_FAILED'
+  | 'LOGOUT'
+  | 'SIGNUP_SUCCESS'
+  | 'UPDATE_SETTINGS'
+  | 'CREATE_DOCUMENT'
+  | 'DELETE_DOCUMENT'
+  | 'LIST_PROJECT'
+  | 'REQUEST_QUOTE'
+  | 'ADMIN_UPDATE_ROLE'
+  | 'ADMIN_SUSPEND_USER'
+  | 'ADMIN_ACTIVATE_USER'
+  | 'ADMIN_DELETE_USER'
+  | 'UNAUTHORIZED_ADMIN_ATTEMPT'
+  | (string & {});
+
 export interface UserProfile {
   id: string;
   email: string;
   full_name: string | null;
+  role: UserRole;
+  status: UserStatus;
   preferred_currency?: SupportedCurrency;
   created_at: string;
   updated_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  user_id: string | null;
+  action: AuditAction;
+  ip_address: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface UserDocument {
@@ -81,15 +113,32 @@ export interface Database {
           id: string;
           email: string;
           full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
           preferred_currency?: SupportedCurrency;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
           preferred_currency?: SupportedCurrency;
           updated_at?: string;
         };
+      };
+      audit_logs: {
+        Row: AuditLog;
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          action: string;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: never;
       };
       user_documents: {
         Row: UserDocument;

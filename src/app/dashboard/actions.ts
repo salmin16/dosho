@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
+import { logActivity } from '@/utils/audit-logger';
 import type { DocumentClassification } from '@/types/database';
 
 const ALLOWED_CLASSIFICATIONS: DocumentClassification[] = [
@@ -42,18 +43,30 @@ export async function createDocumentAction(formData: FormData) {
       ? rawClassification
       : 'CONFIDENTIAL';
 
-  // Insert grounded to the authenticated user's UUID (`user.id`).
-  // Even if tampered with, PostgreSQL RLS WITH CHECK (auth.uid() = user_id) enforces ownership.
-  const { error } = await supabase.from('user_documents').insert({
-    user_id: user.id,
-    title,
-    content,
-    classification,
-  });
+  const { data: doc, error } = await supabase
+    .from('user_documents')
+    .insert({
+      user_id: user.id,
+      title,
+      content,
+      classification,
+    })
+    .select('id, title, classification')
+    .single();
 
   if (error) {
     return { error: 'Failed to create document. Please try again.' };
   }
+
+  logActivity({
+    userId: user.id,
+    action: 'CREATE_DOCUMENT',
+    metadata: {
+      documentId: doc?.id,
+      title,
+      classification,
+    },
+  });
 
   revalidatePath('/dashboard');
   return { success: true };
@@ -71,7 +84,6 @@ export async function deleteDocumentAction(documentId: string) {
     return { error: 'Unauthorized' };
   }
 
-  // Defense-in-depth: Explicit `.eq('user_id', user.id)` combined with RLS policy
   const { error } = await supabase
     .from('user_documents')
     .delete()
@@ -81,6 +93,12 @@ export async function deleteDocumentAction(documentId: string) {
   if (error) {
     return { error: 'Could not delete document.' };
   }
+
+  logActivity({
+    userId: user.id,
+    action: 'DELETE_DOCUMENT',
+    metadata: { documentId },
+  });
 
   revalidatePath('/dashboard');
   return { success: true };
