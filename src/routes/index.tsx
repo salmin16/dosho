@@ -178,27 +178,35 @@ function GroundedAuthHeroBanner() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-moss/30 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-              Supabase + PostgreSQL RLS
+              Supabase + PostgreSQL RLS + Audit Trail
             </span>
             <h2 className="font-display text-base font-semibold text-paper">
               {session
                 ? `Authenticated Vault Active — ${session.user.fullName} (${session.user.email})`
-                : 'New: Private Investor & Operator Due-Diligence Vault'}
+                : 'Enterprise Due-Diligence Vault & Admin Governance Console'}
             </h2>
           </div>
           <p className="mt-1 text-xs text-paper/70">
             {session
-              ? `Your session is grounded to UUID ${session.user.id}. Access or manage your private geological & tender dossiers.`
-              : 'Sign in or provision an account to store confidential assay reports, license dossiers, and grounded notes enforced by Row-Level Security (auth.uid() = user_id).'}
+              ? `Your session is grounded to UUID ${session.user.id} (Role: ${session.user.role.toUpperCase()}). Access your private dossiers or open the Admin Security Console.`
+              : 'Sign in or provision an account to access private geological dossiers, real-time multi-currency conversion, and the built-in Admin Security & Audit Console.'}
           </p>
         </div>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2.5">
         {session ? (
-          <Link to="/dashboard" className="btn-primary !py-2.5 !px-4 text-xs">
-            Open Grounded Dashboard <ArrowRight size={14} />
-          </Link>
+          <>
+            <Link to="/dashboard" className="btn-primary !py-2.5 !px-4 text-xs">
+              Open Grounded Dashboard <ArrowRight size={14} />
+            </Link>
+            <Link
+              to="/admin"
+              className="rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
+            >
+              Admin Console
+            </Link>
+          </>
         ) : (
           <>
             <Link
@@ -209,6 +217,12 @@ function GroundedAuthHeroBanner() {
             </Link>
             <Link to="/signup" className="btn-primary !py-2.5 !px-4 text-xs">
               Create Vault Account <ArrowRight size={14} />
+            </Link>
+            <Link
+              to="/admin"
+              className="rounded-md border border-gold/50 bg-moss/30 px-3.5 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
+            >
+              Admin Console
             </Link>
           </>
         )}

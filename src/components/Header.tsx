@@ -137,6 +137,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 <ShieldCheck size={14} />
                 Sign Up
               </Link>
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/25 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/35"
+              >
+                <ShieldCheck size={14} />
+                Admin
+              </Link>
             </>
           )}
 
