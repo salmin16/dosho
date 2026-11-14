@@ -17,7 +17,7 @@ import {
   resolveRegionMetadata,
   type TanzaniaRegionProperties,
 } from '../data/tanzaniaRegionsGeoJson';
-import { useI18n } from '../i18n';
+import { useLocalization } from '../context/LocalizationContext';
 
 const LEVEL_COLOR = ['#9a8f82', '#c9a35c', '#d6a443', '#c0612b', '#3e5c49'];
 
@@ -112,7 +112,8 @@ export default function TanzaniaMap({
   className = '',
   heightClass = 'h-[580px]',
 }: TanzaniaMapProps) {
-  const { t, localizeProject } = useI18n();
+  const { t, localizeProject, currency, rateForSelected, formatUsd: formatLocalizedUsd } =
+    useLocalization();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
@@ -440,7 +441,7 @@ export default function TanzaniaMap({
 
       // Compact single-line label on hover; full details appear when clicked
       marker.bindTooltip(
-        `<span style="font-family:var(--font-mono);font-size:10px;color:#fbbf24;font-weight:600;">${p.title} (${p.region})</span>`,
+        `<span style="font-family:var(--font-mono);font-size:10px;color:#fbbf24;font-weight:600;">${p.title} (${p.region}) · ${formatLocalizedUsd(p.investmentUsd)}</span>`,
         {
           direction: 'top',
           offset: [0, -8],
@@ -459,7 +460,7 @@ export default function TanzaniaMap({
 
       marker.addTo(markersGroup);
     });
-  }, [isMounted, projects, selectedId, localizeProject]);
+  }, [isMounted, projects, selectedId, localizeProject, currency, rateForSelected, formatLocalizedUsd]);
 
   // Organized details card ONLY appears when a region is actively CLICKED/SELECTED
   const clickedRegionMeta = useMemo(() => {

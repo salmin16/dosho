@@ -200,9 +200,8 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   // Load saved currency preference & initial rates on client mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedCurrency = window.localStorage.getItem(
-        STORAGE_CURRENCY_KEY
-      ) as SupportedCurrencyCode | null;
+      const savedCurrency = (window.localStorage.getItem('mineconnect.currency.v1') ||
+        window.localStorage.getItem(STORAGE_CURRENCY_KEY)) as SupportedCurrencyCode | null;
 
       if (savedCurrency && savedCurrency in SUPPORTED_CURRENCIES) {
         setCurrencyState(savedCurrency);
@@ -211,19 +210,29 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     void fetchExchangeRates(false);
   }, [fetchExchangeRates]);
 
-  // Listen for cross-tab storage synchronization
+  // Listen for cross-tab storage and custom event synchronization
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (
-        event.key === STORAGE_CURRENCY_KEY &&
+        (event.key === STORAGE_CURRENCY_KEY || event.key === 'mineconnect.currency.v1') &&
         event.newValue &&
         event.newValue in SUPPORTED_CURRENCIES
       ) {
         setCurrencyState(event.newValue as SupportedCurrencyCode);
       }
     };
+    const handleCustomChange = (event: Event) => {
+      const custom = event as CustomEvent<string>;
+      if (custom.detail && custom.detail in SUPPORTED_CURRENCIES) {
+        setCurrencyState(custom.detail as SupportedCurrencyCode);
+      }
+    };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('mineconnect:currency-changed', handleCustomChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('mineconnect:currency-changed', handleCustomChange);
+    };
   }, []);
 
   const setCurrency = useCallback((code: SupportedCurrencyCode) => {
@@ -231,6 +240,8 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     setCurrencyState(code);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_CURRENCY_KEY, code);
+      window.localStorage.setItem('mineconnect.currency.v1', code);
+      window.dispatchEvent(new CustomEvent('mineconnect:currency-changed', { detail: code }));
     }
   }, []);
 

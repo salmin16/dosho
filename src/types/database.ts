@@ -46,11 +46,14 @@ export interface MineralPriceRecord {
   symbol: string;
   category: MineralCategory;
   unit: string;
+  local_statutory_unit?: string;
   purity_note: string;
+  producing_regions?: string;
   world_market_price_usd: number;
   local_market_price_usd: number;
   buying_centre_price_usd: number;
   royalty_rate_pct: number;
+  inspection_fee_pct?: number;
   trend_percentage: number;
   sparkline_points: number[];
   updated_at: string;

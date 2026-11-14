@@ -22,6 +22,7 @@ const DICTIONARIES: Record<LanguageCode, Record<TranslationKey, string>> = {
 }
 
 const STORAGE_KEY = 'mc:lang'
+const LANGUAGE_CHANGE_EVENT = 'mineconnect:language-changed'
 
 const DATE_LOCALES: Record<LanguageCode, string> = {
   en: 'en-GB',
@@ -31,6 +32,17 @@ const DATE_LOCALES: Record<LanguageCode, string> = {
 
 function isValidLang(val: unknown): val is LanguageCode {
   return typeof val === 'string' && LANGUAGES.some((l) => l.code === val)
+}
+
+function readInitialLang(): LanguageCode {
+  if (typeof window === 'undefined') return 'en'
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY)
+    if (isValidLang(saved)) return saved
+  } catch {
+    // ignore storage errors
+  }
+  return 'en'
 }
 
 interface I18nContextValue {
@@ -46,26 +58,45 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null)
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<LanguageCode>('en')
+  const [lang, setLangState] = useState<LanguageCode>(() => readInitialLang())
   // Subscribe LanguageProvider to active currency & exchange rates so all consumers re-render immediately on currency change
   const { currency, rateForSelected, convertText } = useCurrency()
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (isValidLang(saved)) {
-        setLangState(saved)
-        document.documentElement.lang = saved
+    const initial = readInitialLang()
+    setLangState(initial)
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = initial
+    }
+
+    const handleLangSync = (e: Event) => {
+      const custom = e as CustomEvent<LanguageCode>
+      if (custom.detail && isValidLang(custom.detail)) {
+        setLangState(custom.detail)
+        document.documentElement.lang = custom.detail
+      } else {
+        const stored = readInitialLang()
+        setLangState(stored)
+        document.documentElement.lang = stored
       }
-    } catch {
-      // Ignore storage access errors
+    }
+
+    window.addEventListener(LANGUAGE_CHANGE_EVENT, handleLangSync)
+    window.addEventListener('storage', handleLangSync)
+    return () => {
+      window.removeEventListener(LANGUAGE_CHANGE_EVENT, handleLangSync)
+      window.removeEventListener('storage', handleLangSync)
     }
   }, [])
 
   const setLang = useCallback((next: LanguageCode) => {
+    if (!isValidLang(next)) return
     setLangState(next)
     try {
       localStorage.setItem(STORAGE_KEY, next)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(LANGUAGE_CHANGE_EVENT, { detail: next }))
+      }
     } catch {
       // Ignore storage access errors
     }

@@ -8,8 +8,7 @@ import {
 import { useEffect } from 'react'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
-import { LanguageProvider } from '../i18n'
-import { CurrencyProvider, useCurrency } from '../lib/currency'
+import { LocalizationProvider, useLocalization } from '../context/LocalizationContext'
 import { getSession, useAuthSession } from '../lib/supabaseAuth'
 
 import '../styles.css'
@@ -35,22 +34,20 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <CurrencyProvider>
-      <LanguageProvider>
-        <HeadContent />
-        <Chrome>
-          <Outlet />
-        </Chrome>
-      </LanguageProvider>
-    </CurrencyProvider>
+    <LocalizationProvider>
+      <HeadContent />
+      <Chrome>
+        <Outlet />
+      </Chrome>
+    </LocalizationProvider>
   )
 }
 
 function Chrome({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const session = useAuthSession()
-  // Subscribe Chrome & child routes to active currency changes so all `formatUsd` calls re-render immediately
-  const { currency, rateForSelected } = useCurrency()
+  // Subscribe Chrome & child routes to active currency AND language changes so all formatting and translation calls re-render immediately
+  const { currency, rateForSelected, lang } = useLocalization()
 
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
@@ -93,10 +90,10 @@ function Chrome({ children }: { children: React.ReactNode }) {
   }, [isHome, isMarketsPage, isMapPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
-    <div data-currency={currency} data-fx-rate={rateForSelected}>
-      <Header overlay={isHome} key={isHome ? `home-${currency}` : `page-${currency}`} />
-      <main key={`${currency}-${rateForSelected}`}>{children}</main>
-      <Footer key={`footer-${currency}`} />
+    <div data-currency={currency} data-fx-rate={rateForSelected} data-lang={lang}>
+      <Header overlay={isHome} key={isHome ? `home-${currency}-${lang}` : `page-${currency}-${lang}`} />
+      <main key={`${currency}-${rateForSelected}-${lang}`}>{children}</main>
+      <Footer key={`footer-${currency}-${lang}`} />
     </div>
   )
 }

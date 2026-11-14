@@ -25,6 +25,7 @@ import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
 import { useCurrency } from '../lib/currency'
 import CurrencySwitcher from '../components/CurrencySwitcher'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import type {
   DocumentClassification,
   QuoteRequestRecord,
@@ -150,6 +151,7 @@ function DashboardRouteComponent() {
 
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <CurrencySwitcher dark />
+            <LanguageSwitcher dark />
             {session.user.role === 'admin' && (
               <Link
                 to="/admin"

@@ -31,6 +31,7 @@ import {
 } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import CurrencySwitcher from '../components/CurrencySwitcher'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import {
   adminSyncLiveMarketBenchmarks,
   adminUpdateMineralPrice,
@@ -535,6 +536,7 @@ export function MasterAdminDashboard({
 
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <CurrencySwitcher dark />
+            <LanguageSwitcher dark />
             <button
               type="button"
               onClick={() => void loadGovernanceTelemetry()}

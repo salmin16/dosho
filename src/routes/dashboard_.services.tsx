@@ -20,6 +20,7 @@ import {
 } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import CurrencySwitcher from '../components/CurrencySwitcher'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import { GuidedServiceWizard } from '../components/GuidedSubmissionWizards'
 import type { UserServiceRecord } from '../types/database'
 
@@ -84,6 +85,7 @@ function DashboardServicesRouteComponent() {
 
             <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
               <CurrencySwitcher dark />
+              <LanguageSwitcher dark />
               <Link
                 to="/dashboard"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-paper/20 bg-paper/10 px-3.5 py-2 text-xs font-semibold text-paper transition hover:bg-paper/20"
