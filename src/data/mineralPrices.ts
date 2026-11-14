@@ -4,6 +4,7 @@ import type {
   MineralPriceRecord,
 } from '../types/database';
 import { getSession, recordAuditActivity } from '../lib/supabaseAuth';
+import { AdminMineralPriceSchema } from '../lib/securityValidators';
 
 export const MINERAL_PRICES_STORAGE_KEY = 'mineconnect.db.mineral_prices.v3';
 export const MARKET_TELEMETRY_STORAGE_KEY = 'mineconnect.db.market_telemetry.v1';
@@ -438,8 +439,13 @@ export async function adminUpdateMineralPrice(params: {
     return { error: '403 Forbidden: Administrative clearance required.' };
   }
 
+  const parsed = AdminMineralPriceSchema.safeParse(params);
+  if (!parsed.success) {
+    return { error: parsed.error.message };
+  }
+
   const list = getStoredMineralPrices();
-  const idx = list.findIndex((m) => m.id === params.id);
+  const idx = list.findIndex((m) => m.id === parsed.data.id);
   if (idx === -1) {
     return { error: 'Mineral benchmark record not found.' };
   }

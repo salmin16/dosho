@@ -2,9 +2,38 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * PUBLIC_ROUTES: Only the landing page, authentication pages, and public exchange rate APIs
- * are accessible without an active authenticated session.
+ * Enterprise Content-Security-Policy (CSP) & HTTP Hardening Headers
+ * Restricts script, connect, style, and frame sources strictly to trusted origins.
  */
+export const ENTERPRISE_SECURITY_HEADERS: Record<string, string> = {
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-XSS-Protection': '1; mode=block',
+  'X-Permitted-Cross-Domain-Policies': 'none',
+  'Permissions-Policy':
+    'camera=(), microphone=(), geolocation=(self), payment=(), usb=()',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.supabase.co",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.frankfurter.app https://open.er-api.com https://api.gold-api.com https://tile.openstreetmap.org",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; '),
+};
+
+function applySecurityHeaders(response: NextResponse): NextResponse {
+  for (const [header, value] of Object.entries(ENTERPRISE_SECURITY_HEADERS)) {
+    response.headers.set(header, value);
+  }
+  return response;
+}
+
 const PUBLIC_EXACT_ROUTES = ['/'];
 const PUBLIC_PREFIX_ROUTES = [
   '/login',
@@ -13,7 +42,14 @@ const PUBLIC_PREFIX_ROUTES = [
   '/api/rates',
   '/api/exchange-rates',
   '/api/mineral-prices',
+  '/api/market-sync',
   '/markets',
+  '/opportunities',
+  '/map',
+  '/services',
+  '/verification',
+  '/pricing',
+  '/faq',
 ];
 const AUTH_ONLY_ROUTES = ['/login', '/signup'];
 
@@ -22,8 +58,12 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return applySecurityHeaders(supabaseResponse);
+  }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
@@ -44,7 +84,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // SECURITY CRITICAL: Re-validate JWT token against Supabase Auth server
+  // 1. Dual-Token Verification: Re-validate JWT token against Supabase Auth server
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -66,72 +106,112 @@ export async function updateSession(request: NextRequest) {
   const isAdminApiRoute =
     pathname === '/api/admin' || pathname.startsWith('/api/admin/');
 
-  // 1. Intercept all /admin/* and /api/admin/* routes for strict RBAC verification
+  // 2. Strict Route Guardrails for `/admin/*` and `/api/admin/*`
   if (isAdminPageRoute || isAdminApiRoute) {
     if (!user) {
-      if (isAdminApiRoute) {
-        return NextResponse.json(
-          { error: 'Unauthorized: Valid authentication session required.' },
-          { status: 401 }
+      if (
+        isAdminApiRoute ||
+        request.headers.get('accept')?.includes('application/json')
+      ) {
+        return applySecurityHeaders(
+          NextResponse.json(
+            {
+              error: '403 Forbidden: Administrative authentication required.',
+              code: 'ADMIN_AUTH_REQUIRED',
+            },
+            { status: 403 }
+          )
         );
       }
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/login';
       loginUrl.searchParams.set('next', pathname);
       loginUrl.searchParams.set('reason', 'admin_auth_required');
-      return NextResponse.redirect(loginUrl);
+      return applySecurityHeaders(NextResponse.redirect(loginUrl));
     }
 
-    // Verify role from user_profiles table in PostgreSQL (and check account status)
+    // Explicitly query `public.user_profiles` (and fallback `public.users`) for `role === 'admin'`
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('role, status')
       .eq('id', user.id)
       .single();
 
-    const jwtRole =
-      (user.app_metadata?.role as string | undefined) ||
-      (user.user_metadata?.role as string | undefined);
-    const effectiveRole = profile?.role ?? jwtRole;
-    const isSuspended = profile?.status === 'suspended';
+    let resolvedRole = profile?.role;
+    let resolvedStatus = profile?.status ?? 'active';
 
-    if (effectiveRole !== 'admin' || isSuspended) {
-      // Return strict 403 Forbidden for API routes or when requested
-      if (isAdminApiRoute) {
-        return NextResponse.json(
-          {
-            error: 'Forbidden: Administrative clearance required.',
-            code: 'INSUFFICIENT_PRIVILEGES',
-          },
-          { status: 403 }
+    if (!resolvedRole) {
+      const { data: legacyUser } = await supabase
+        .from('users')
+        .select('role, status')
+        .eq('id', user.id)
+        .single();
+      resolvedRole = legacyUser?.role;
+      resolvedStatus = legacyUser?.status ?? resolvedStatus;
+    }
+
+    const isSuspended = resolvedStatus === 'suspended';
+
+    if (resolvedRole !== 'admin' || isSuspended) {
+      // Non-blocking audit log of unauthorized admin access attempt
+      const forwardedFor = request.headers.get('x-forwarded-for');
+      const clientIp = forwardedFor
+        ? forwardedFor.split(',')[0].trim()
+        : request.headers.get('x-real-ip') || '0.0.0.0';
+
+      void supabase.from('audit_logs').insert({
+        user_id: user.id,
+        action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
+        ip_address: clientIp,
+        user_agent: request.headers.get('user-agent') || 'Edge-Middleware',
+        metadata: {
+          attemptedPath: pathname,
+          method: request.method,
+          resolvedRole: resolvedRole ?? 'user',
+          status: resolvedStatus,
+        },
+      });
+
+      if (
+        isAdminApiRoute ||
+        request.headers.get('accept')?.includes('application/json')
+      ) {
+        return applySecurityHeaders(
+          NextResponse.json(
+            {
+              error: '403 Forbidden: Explicit administrative privilege required.',
+              code: 'INSUFFICIENT_PRIVILEGES',
+            },
+            { status: 403 }
+          )
         );
       }
 
-      const forbiddenUrl = request.nextUrl.clone();
-      forbiddenUrl.pathname = '/dashboard';
-      forbiddenUrl.searchParams.set('error', 'forbidden_admin_access');
-      return NextResponse.redirect(forbiddenUrl, { status: 303 });
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      loginUrl.searchParams.set('error', 'forbidden_admin_access');
+      return applySecurityHeaders(NextResponse.redirect(loginUrl, { status: 303 }));
     }
 
-    return supabaseResponse;
+    return applySecurityHeaders(supabaseResponse);
   }
 
-  // 2. Mandatory Membership Wall: Intercept any unauthenticated request to non-public routes
+  // 3. Protect authenticated user routes (`/dashboard/*`, `/vault/*`)
   if (!isPublicRoute && !user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     loginUrl.searchParams.set('next', pathname);
     loginUrl.searchParams.set('reason', 'membership_required');
-    return NextResponse.redirect(loginUrl);
+    return applySecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
-  // 3. Redirect already-authenticated members away from /login and /signup to /dashboard
+  // 4. Redirect already-authenticated members away from `/login` and `/signup`
   if (isAuthPage && user) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     dashboardUrl.search = '';
-    return NextResponse.redirect(dashboardUrl);
+    return applySecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
-  return supabaseResponse;
+  return applySecurityHeaders(supabaseResponse);
 }

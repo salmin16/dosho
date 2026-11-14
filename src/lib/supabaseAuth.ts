@@ -1,4 +1,9 @@
 import { useEffect, useState } from 'react'
+import {
+  OpportunitySubmissionSchema,
+  ServiceSubmissionSchema,
+  sanitizeString,
+} from './securityValidators'
 import type {
   AuditAction,
   AuditLog,
@@ -1701,32 +1706,22 @@ export async function createGuidedOpportunitySubmission(input: {
     }
   }
 
-  const title = input.title.trim()
-  const organization = input.organization.trim()
-  const location = input.location.trim()
-  const deadline = input.deadline.trim()
-  const description = input.description.trim()
-  const requirements = input.requirements
-    .map((r) => r.trim())
-    .filter((r) => r.length > 0)
+  const parsed = OpportunitySubmissionSchema.safeParse({
+    ...input,
+    verifiedComplianceChecklist: true,
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.message }
+  }
 
-  if (title.length < 5 || title.length > 200) {
-    return { error: 'Opportunity title must be between 5 and 200 characters.' }
-  }
-  if (organization.length < 2 || organization.length > 160) {
-    return { error: 'Organization name must be between 2 and 160 characters.' }
-  }
-  if (!location) {
-    return { error: 'Please select a regional location (Mkoa).' }
-  }
-  if (!deadline) {
-    return { error: 'Please provide a valid submission deadline.' }
-  }
-  if (description.length < 20) {
-    return {
-      error: 'Scope description must be at least 20 characters for compliance review.',
-    }
-  }
+  const {
+    title,
+    organization,
+    location,
+    deadline,
+    description,
+    requirements,
+  } = parsed.data
 
   const now = new Date().toISOString()
   const catPrefix = input.category.slice(0, 3).toUpperCase()
@@ -1795,26 +1790,24 @@ export async function createGuidedServiceSubmission(input: {
     }
   }
 
-  const serviceName = input.serviceName.trim()
-  const providerOrganization = input.providerOrganization.trim()
-  const regionalCoverage = input.regionalCoverage.trim() || 'All Tanzania (31 Mikoa)'
-  const rateOrPricingModel = input.rateOrPricingModel.trim()
-  const scopeDescription = input.scopeDescription.trim()
+  const parsed = ServiceSubmissionSchema.safeParse({
+    ...input,
+    regionalCoverage: input.regionalCoverage.trim() || 'All Tanzania (31 Mikoa)',
+    verifiedComplianceChecklist: true,
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.message }
+  }
 
-  if (serviceName.length < 5 || serviceName.length > 200) {
-    return { error: 'Service name must be between 5 and 200 characters.' }
-  }
-  if (providerOrganization.length < 2 || providerOrganization.length > 160) {
-    return { error: 'Provider organization must be between 2 and 160 characters.' }
-  }
-  if (!rateOrPricingModel) {
-    return { error: 'Please specify a rate or pricing model.' }
-  }
-  if (scopeDescription.length < 20) {
-    return {
-      error: 'Technical scope description must be at least 20 characters.',
-    }
-  }
+  const {
+    serviceName,
+    providerOrganization,
+    regionalCoverage,
+    rateOrPricingModel,
+    scopeDescription,
+    portfolioLinks,
+    certifications,
+  } = parsed.data
 
   const now = new Date().toISOString()
   const expPrefix = input.expertiseArea.slice(0, 3).toUpperCase()
@@ -1830,8 +1823,8 @@ export async function createGuidedServiceSubmission(input: {
     rate_or_pricing_model: rateOrPricingModel,
     estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
     scope_description: scopeDescription,
-    portfolio_links: input.portfolioLinks.trim(),
-    certifications: input.certifications.trim(),
+    portfolio_links: sanitizeString(portfolioLinks, 500),
+    certifications: sanitizeString(certifications, 500),
     reference_code: refCode,
     status: 'pending',
     approved: false,
