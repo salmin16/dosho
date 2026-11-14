@@ -4,6 +4,7 @@ import { Lock, Menu, ShieldCheck, User, X } from 'lucide-react'
 import { type TranslationKey } from '../i18n'
 import { useLocalization } from '../context/LocalizationContext'
 import { useAuthSession } from '../lib/supabaseAuth'
+import { useSubscription } from '../lib/subscriptions'
 import LanguageSwitcher from './LanguageSwitcher'
 import CurrencySwitcher from './CurrencySwitcher'
 
@@ -41,6 +42,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
   const { t, ui } = useLocalization()
   const navigate = useNavigate()
   const session = useAuthSession()
+  const { tierName } = useSubscription()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
@@ -117,7 +119,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30"
               >
                 <ShieldCheck size={14} />
-                {ui('Vault', 'Hifadhi', 'Bóveda')} ({session.user.fullName.split(' ')[0]})
+                {ui('Vault', 'Hifadhi', 'Bóveda')} ({session.user.fullName.split(' ')[0]} · {tierName})
               </Link>
               {session.user.role === 'admin' && (
                 <Link

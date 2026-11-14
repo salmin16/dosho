@@ -28,6 +28,7 @@ import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import LiveMarketTicker from '../components/LiveMarketTicker'
 import PriceDisplay from '../components/PriceDisplay'
+import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
 import type {
   DocumentClassification,
   QuoteRequestRecord,
@@ -191,6 +192,16 @@ export function DashboardRouteComponent() {
               {ui('Sign Out', 'Ondoka', 'Cerrar Sesión')}
             </button>
           </div>
+        </div>
+
+        {/* Active Subscription Tier & Real-Time Quota Governance Widget */}
+        <div className="mt-6">
+          <SubscriptionStatusWidget
+            projectsUsed={listedProjects.length}
+            documentsUsed={documents.length}
+            opportunitiesUsed={userOpportunities.length}
+            servicesUsed={userServices.length}
+          />
         </div>
 
         {/* Real-Time Market Status & Statutory Benchmark Ticker */}

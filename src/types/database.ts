@@ -250,6 +250,53 @@ export type UnifiedContentType =
   | 'OPPORTUNITY'
   | 'SERVICE';
 
+export type SubscriptionTierName =
+  | 'Explorer'
+  | 'Miner'
+  | 'Professional'
+  | 'Investor'
+  | 'Corporate';
+
+export type SubscriptionStatus = 'active' | 'expired' | 'canceled';
+export type BillingCycle = 'monthly' | 'yearly';
+
+export type PaymentGatewayId =
+  | 'FREE_TIER'
+  | 'STRIPE_GLOBAL'
+  | 'AZAMPAY_MPESA_TZS'
+  | 'FLUTTERWAVE_AFRICA';
+
+export interface UserSubscriptionRecord {
+  id: string;
+  user_id: string;
+  tier_name: SubscriptionTierName;
+  status: SubscriptionStatus;
+  billing_cycle: BillingCycle;
+  price_tzs: number;
+  price_usd: number;
+  payment_gateway: PaymentGatewayId;
+  payment_reference: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentTransactionRecord {
+  id: string;
+  user_id: string;
+  tier_name: SubscriptionTierName;
+  billing_cycle: BillingCycle;
+  gateway: PaymentGatewayId;
+  payment_method_label: string;
+  verified_amount_tzs: number;
+  verified_amount_usd: number;
+  charged_currency: SupportedCurrency;
+  charged_amount: number;
+  external_reference: string;
+  webhook_status: 'PENDING' | 'VERIFIED' | 'FAILED';
+  created_at: string;
+}
+
 export interface UnifiedContentRecord {
   id: string;
   type: UnifiedContentType;

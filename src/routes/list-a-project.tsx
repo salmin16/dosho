@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, UploadCloud, FileText, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Crown, UploadCloud, FileText, X } from 'lucide-react'
 import { MINERALS, OPPORTUNITY_TYPES, REGIONS, STAGES } from '../data/fixtures'
 import { useI18n, type TranslationKey } from '../i18n'
-import { createGroundedProject, getSession, useAuthSession } from '../lib/supabaseAuth'
+import { createGroundedProject, fetchGroundedUserData, getSession, useAuthSession } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
+import { useSubscription } from '../lib/subscriptions'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -27,7 +28,17 @@ function ListProject() {
   const navigate = useNavigate()
   const session = useAuthSession()
   const { currency, toUsd } = useCurrency()
+  const { tierName, checkQuota } = useSubscription()
+  const [projectsCount, setProjectsCount] = useState(0)
   const [step, setStep] = useState(0)
+
+  useEffect(() => {
+    void fetchGroundedUserData().then((d) => {
+      setProjectsCount(d.listedProjects.length)
+    })
+  }, [session?.user.id])
+
+  const projectQuota = checkQuota('maxProjectListings', projectsCount)
   const [form, setForm] = useState<Form>(() => {
     const active = getSession()
     return {
@@ -190,6 +201,34 @@ function ListProject() {
       </section>
 
       <div className="mx-auto max-w-5xl px-5 py-12 lg:px-8">
+        {/* Subscription Tier Quota & Gating Banner */}
+        <div className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-ink/15 bg-ink p-5 text-paper sm:flex-row sm:items-center">
+          <div>
+            <div className="flex items-center gap-2 font-mono text-xs text-gold">
+              <Crown size={14} />
+              <span>Active Subscription Tier: <strong>{tierName}</strong></span>
+              <span>·</span>
+              <span>
+                Project Listings Used: <strong>{projectQuota.used} / {projectQuota.limit >= 999 ? 'Unlimited' : projectQuota.limit}</strong>
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-paper/70">
+              {projectQuota.allowed
+                ? `Your ${tierName} plan entitles you to publish up to ${projectQuota.limit >= 999 ? 'unlimited' : projectQuota.limit} mining project listings.`
+                : `Your current ${tierName} plan has reached its project listing limit (${projectQuota.used}/${projectQuota.limit}). Subscribe to Miner (TSh 50,000/mo) or Professional (TSh 150,000/mo) to unlock additional project slots.`}
+            </p>
+          </div>
+          {!projectQuota.allowed && (
+            <Link
+              to="/checkout"
+              search={{ tier: tierName === 'Explorer' ? 'miner' : 'professional', billing: 'monthly' }}
+              className="btn-primary shrink-0 !py-2.5 !px-4 text-xs"
+            >
+              Subscribe / Upgrade Plan <ArrowRight size={14} />
+            </Link>
+          )}
+        </div>
+
         <div key={step} className="animate-rise">
           {step === 0 && (
             <Grid>
