@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { ArrowRight, Database, Info, MapPin, UserRound } from 'lucide-react'
-import { MINERALS, OPPORTUNITY_TYPES, PROJECTS, STAGES, formatUsd } from '../data/fixtures'
+import { MINERALS, OPPORTUNITY_TYPES, PROJECTS, STAGES } from '../data/fixtures'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
 import VerificationBadge from '../components/VerificationBadge'
 import { TANZANIA_REGIONS_META, resolveRegionMetadata } from '../data/tanzaniaRegionsGeoJson'
 import { img } from '../lib/img'
-import { useI18n } from '../i18n'
+import { useLocalization } from '../context/LocalizationContext'
 
 export const Route = createFileRoute('/map')({
   head: () => ({ meta: [{ title: 'Tanzania Regional GIS Map (Mikoa) — MineConnect' }] }),
@@ -14,7 +14,7 @@ export const Route = createFileRoute('/map')({
 })
 
 function MapPage() {
-  const { t, tv, localizeProject } = useI18n()
+  const { t, tv, localizeProject, formatUsd } = useLocalization()
   const [mineral, setMineral] = useState('')
   const [type, setType] = useState('')
   const [stage, setStage] = useState('')

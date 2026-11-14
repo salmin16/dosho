@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Project } from '../data/fixtures';
-import { PROJECTS, formatUsd } from '../data/fixtures';
+import { PROJECTS } from '../data/fixtures';
 import {
   TANZANIA_ADM1_GEOJSON,
   resolveRegionMetadata,
@@ -692,7 +692,7 @@ export default function TanzaniaMap({
                             {p.title}
                           </span>
                           <span className="ml-2 shrink-0 font-mono text-[10px] text-gold">
-                            {formatUsd(p.investmentUsd)}
+                            {formatLocalizedUsd(p.investmentUsd)}
                           </span>
                         </button>
                       </li>
@@ -726,7 +726,7 @@ export default function TanzaniaMap({
 }
 
 export function MapLegend({ dark = false }: { dark?: boolean }) {
-  const { t } = useI18n();
+  const { t } = useLocalization();
   const labels = [
     t('map.legend.l0'),
     t('map.legend.l1'),
