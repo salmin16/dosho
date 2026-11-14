@@ -4,18 +4,14 @@ import React, { useMemo, useState } from 'react';
 import {
   CheckCircle2,
   CreditCard,
-  Landmark,
   Lock,
   ShieldCheck,
 } from 'lucide-react';
 import {
-  executeInternationalWebhookSettlement,
-  type WebhookSettlementResponse,
-} from '../app/api/payments/webhook/route';
-import {
-  MERCHANT_SETTLEMENT_ACCOUNT,
-  type InternationalPaymentMethodId,
-} from '../lib/payments/settlement';
+  executeStripePayment,
+  type StripeCheckoutResponse,
+} from '../app/api/payments/stripe/route';
+import type { InternationalPaymentMethodId } from '../lib/payments/settlement';
 import { useLocalization } from '../context/LocalizationContext';
 import type { BillingCycle, SubscriptionTierName } from '../types/database';
 
@@ -25,7 +21,7 @@ export interface InternationalCheckoutProps {
   billingCycle: BillingCycle;
   formattedAmount: string;
   pdpaConsent: boolean;
-  onSuccess: (result: WebhookSettlementResponse) => void;
+  onSuccess: (result: StripeCheckoutResponse) => void;
 }
 
 function detectCardBrand(
@@ -64,7 +60,7 @@ export default function InternationalCheckout({
   const [cardNumber, setCardNumber] = useState('');
   const [expirationDate, setExpirationDate] = useState('');
   const [securityCode, setSecurityCode] = useState('');
-  const [cardholderName, setCardholderName] = useState('Salmin Ally Mwenesi');
+  const [cardholderName, setCardholderName] = useState('');
   const [saveToken, setSaveToken] = useState(true);
   const [processingMethod, setProcessingMethod] =
     useState<InternationalPaymentMethodId | null>(null);
@@ -92,7 +88,7 @@ export default function InternationalCheckout({
 
     setProcessingMethod(walletMethod);
     try {
-      const res = await executeInternationalWebhookSettlement({
+      const res = await executeStripePayment({
         userId,
         tier: tierName,
         billing: billingCycle,
@@ -165,13 +161,14 @@ export default function InternationalCheckout({
 
     setProcessingMethod('credit_debit_card');
     try {
-      const res = await executeInternationalWebhookSettlement({
+      const res = await executeStripePayment({
         userId,
         tier: tierName,
         billing: billingCycle,
         methodId: 'credit_debit_card',
         cardBrand: detectedBrand,
         cardLast4: rawDigits.slice(-4),
+        cardholderName,
         saveToken,
         currency,
       });
@@ -420,20 +417,23 @@ export default function InternationalCheckout({
           </div>
         </div>
 
-        {/* Direct Merchant Settlement Routing Banner */}
+        {/* Security & Tokenization Notice */}
         <div className="flex items-start gap-3 rounded-xl border border-gold/25 bg-ochre/10 p-3.5 font-mono text-[11px] text-paper/80">
-          <Landmark size={15} className="mt-0.5 shrink-0 text-gold" />
+          <Lock size={15} className="mt-0.5 shrink-0 text-gold" />
           <div>
             <div className="font-semibold text-gold">
-              Direct Merchant Settlement Routing · {MERCHANT_SETTLEMENT_ACCOUNT.bankShortCode}
+              {ui(
+                'Stripe PCI-DSS Level 1 Encrypted Checkout',
+                'Malipo Salama ya Stripe PCI-DSS Level 1',
+                'Pago Cifrado Stripe PCI-DSS Nivel 1'
+              )}
             </div>
             <div className="mt-0.5 text-[10px] text-white/70">
-              Bank: <strong>{MERCHANT_SETTLEMENT_ACCOUNT.bankName}</strong> · Account:{' '}
-              <strong className="text-gold">
-                {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber}
-              </strong>{' '}
-              · Beneficiary:{' '}
-              <strong>{MERCHANT_SETTLEMENT_ACCOUNT.accountName}</strong>
+              {ui(
+                'Card credentials are tokenized end-to-end via TLS 1.3 and verified via cryptographic webhook signatures.',
+                'Taarifa za kadi zimesimbwa kwa usalama wa hali ya juu (TLS 1.3).',
+                'Las credenciales de tarjeta se tokenizan de extremo a extremo mediante TLS 1.3.'
+              )}
             </div>
           </div>
         </div>
@@ -452,9 +452,9 @@ export default function InternationalCheckout({
           <ShieldCheck size={17} />
           {processingMethod === 'credit_debit_card'
             ? ui(
-                'Tokenizing Card & Routing to NMB 60510047212...',
-                'Inathibitisha Kadi na Kupeleka NMB 60510047212...',
-                'Tokenizando Tarjeta y Enrutando a NMB 60510047212...'
+                'Authorizing & Tokenizing Card...',
+                'Inathibitisha Malipo ya Kadi...',
+                'Autorizando y Tokenizando Tarjeta...'
               )
             : ui(
                 `Pay & Subscribe (${formattedAmount})`,

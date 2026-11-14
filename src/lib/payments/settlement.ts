@@ -1,58 +1,19 @@
 /**
- * Merchant Payout Settlement & Direct Bank Routing Configuration (`src/lib/payments/settlement.ts`)
- * Routes all incoming subscription revenues from International Gateways (Stripe, Apple Pay,
- * Google Pay, Visa/Mastercard/Discover) and Local Tanzania Mobile Money Gateways
- * (M-Pesa, Airtel Money, Mixx by Yas, Halopesa, Azampesa, T-Pesa) directly to the
- * designated NMB Bank merchant settlement account.
+ * Sanitized Settlement Ledger & Payment Operator Types (`src/lib/payments/settlement.ts`)
+ *
+ * PRIVACY & SECURITY INVARIANT:
+ * - Zero merchant bank names, bank account numbers, or beneficiary names exist in this module.
+ * - All merchant payout coordinates live strictly underground in server-only environment
+ *   variables inside `src/lib/payments/config.ts`.
  */
 
+import { buildUndergroundGatewaySplitMetadata } from './config';
 import type {
   BillingCycle,
   PaymentGatewayId,
   SubscriptionTierName,
   SupportedCurrency,
 } from '../../types/database';
-
-export interface MerchantSettlementBankConfig {
-  bankName: string;
-  bankShortCode: string;
-  swiftBic: string;
-  accountNumber: string;
-  accountName: string;
-  countryCode: 'TZ';
-  settlementCurrencyPrimary: 'TZS';
-  branchName: string;
-  aggregatorSubaccounts: {
-    stripeDestinationId: string;
-    azampayMerchantAccount: string;
-    flutterwaveSubaccountId: string;
-    dpoCompanyTokenRef: string;
-  };
-}
-
-/**
- * Primary Designated Merchant Beneficiary & Bank Routing Profile
- * Bank: NMB Bank (National Microfinance Bank, Tanzania)
- * Account Number: 60510047212
- * Account Name: Salmin Ally Mwenesi
- */
-export const MERCHANT_SETTLEMENT_ACCOUNT: Readonly<MerchantSettlementBankConfig> =
-  Object.freeze({
-    bankName: 'NMB Bank (National Microfinance Bank, Tanzania)',
-    bankShortCode: 'NMB-TZ',
-    swiftBic: 'NMIBTZTZ',
-    accountNumber: '60510047212',
-    accountName: 'Salmin Ally Mwenesi',
-    countryCode: 'TZ',
-    settlementCurrencyPrimary: 'TZS',
-    branchName: 'Dar es Salaam Corporate & Treasury Settlement Desk',
-    aggregatorSubaccounts: {
-      stripeDestinationId: 'acct_nmb_tz_60510047212',
-      azampayMerchantAccount: 'AZAM-NMB-60510047212',
-      flutterwaveSubaccountId: 'RS_NMB_TZ_60510047212',
-      dpoCompanyTokenRef: 'DPO-NMB-60510047212',
-    },
-  });
 
 export type SettlementStatus = 'settled' | 'pending_payout';
 
@@ -70,6 +31,9 @@ export type InternationalPaymentMethodId =
   | 'google_pay'
   | 'credit_debit_card';
 
+/**
+ * Sanitized Settlement Receipt Entry (contains zero banking coordinates or beneficiary PII).
+ */
 export interface SettlementLedgerEntry {
   settlementId: string;
   batchId: string;
@@ -83,22 +47,17 @@ export interface SettlementLedgerEntry {
   grossAmountUsd: number;
   chargedCurrency: SupportedCurrency;
   chargedAmount: number;
-  destinationBankName: string;
-  destinationAccountNumber: string;
-  destinationBeneficiaryName: string;
-  destinationSwiftBic: string;
-  aggregatorRoutingCode: string;
   settlementStatus: SettlementStatus;
   settledAt: string;
   createdAt: string;
 }
 
 const SETTLEMENT_LEDGER_STORAGE_KEY =
-  'mineconnect.db.merchant_settlement_ledger.v1';
+  'mineconnect.db.sanitized_settlement_ledger.v2';
 
 /**
- * Generates a verified bank settlement instruction routing funds directly to
- * NMB Bank Account `60510047212` (Salmin Ally Mwenesi).
+ * Builds a sanitized settlement confirmation record while keeping all merchant
+ * bank routing strictly underground on the backend.
  */
 export function buildMerchantSettlementEntry(params: {
   transactionReference: string;
@@ -113,29 +72,27 @@ export function buildMerchantSettlementEntry(params: {
   chargedAmount: number;
 }): SettlementLedgerEntry {
   const nowIso = new Date().toISOString();
-  const datePart = nowIso.slice(0, 10).replace(/-/g, '');
 
-  const aggregatorRoutingCode =
-    params.gateway === 'STRIPE_GLOBAL'
-      ? MERCHANT_SETTLEMENT_ACCOUNT.aggregatorSubaccounts.stripeDestinationId
-      : params.gateway === 'AZAMPAY_MPESA_TZS'
-        ? MERCHANT_SETTLEMENT_ACCOUNT.aggregatorSubaccounts
-            .azampayMerchantAccount
-        : params.gateway === 'FLUTTERWAVE_AFRICA'
-          ? MERCHANT_SETTLEMENT_ACCOUNT.aggregatorSubaccounts
-              .flutterwaveSubaccountId
-          : 'FREE-TIER-ZERO-SETTLEMENT';
+  const splitMeta = buildUndergroundGatewaySplitMetadata({
+    gateway: params.gateway,
+    userId: params.userId,
+    tierName: params.tierName,
+    billingCycle: params.billingCycle,
+    verifiedAmountTzs: params.verifiedAmountTzs,
+    verifiedAmountUsd: params.verifiedAmountUsd,
+    chargedCurrency: params.chargedCurrency,
+  });
 
   const settlementStatus: SettlementStatus =
     params.verifiedAmountTzs === 0
       ? 'settled'
       : params.gateway === 'AZAMPAY_MPESA_TZS'
-        ? 'settled' // Instant TISS / Mobile-to-NMB Bank settlement
-        : 'pending_payout'; // International Stripe / Card T+1 automatic sweep to NMB 60510047212
+        ? 'settled'
+        : 'pending_payout';
 
   return {
-    settlementId: `stl-nmb-${Date.now().toString(36)}`,
-    batchId: `BATCH-NMB-${datePart}`,
+    settlementId: `stl-${Date.now().toString(36)}`,
+    batchId: splitMeta.internalBatchRef,
     transactionReference: params.transactionReference,
     userId: params.userId,
     tierName: params.tierName,
@@ -146,11 +103,6 @@ export function buildMerchantSettlementEntry(params: {
     grossAmountUsd: params.verifiedAmountUsd,
     chargedCurrency: params.chargedCurrency,
     chargedAmount: params.chargedAmount,
-    destinationBankName: MERCHANT_SETTLEMENT_ACCOUNT.bankName,
-    destinationAccountNumber: MERCHANT_SETTLEMENT_ACCOUNT.accountNumber,
-    destinationBeneficiaryName: MERCHANT_SETTLEMENT_ACCOUNT.accountName,
-    destinationSwiftBic: MERCHANT_SETTLEMENT_ACCOUNT.swiftBic,
-    aggregatorRoutingCode,
     settlementStatus,
     settledAt: nowIso,
     createdAt: nowIso,
@@ -162,6 +114,8 @@ export function recordMerchantSettlementLedger(
 ): void {
   if (typeof window === 'undefined') return;
   try {
+    // Purge legacy v1 storage if present to guarantee zero residual banking strings
+    window.localStorage.removeItem('mineconnect.db.merchant_settlement_ledger.v1');
     const raw = window.localStorage.getItem(SETTLEMENT_LEDGER_STORAGE_KEY);
     const list: SettlementLedgerEntry[] = raw ? JSON.parse(raw) : [];
     list.unshift(entry);

@@ -7,7 +7,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  Landmark,
+  Lock,
   Phone,
   ShieldCheck,
   Smartphone,
@@ -15,11 +15,8 @@ import {
 import {
   executeMobileMoneyCharge,
   type MobileMoneyChargeResponse,
-} from '../app/api/payments/mobile/route';
-import {
-  MERCHANT_SETTLEMENT_ACCOUNT,
-  type MobileMoneyOperatorId,
-} from '../lib/payments/settlement';
+} from '../app/api/payments/mobile-money/route';
+import type { MobileMoneyOperatorId } from '../lib/payments/settlement';
 import { useLocalization } from '../context/LocalizationContext';
 import type { BillingCycle, SubscriptionTierName } from '../types/database';
 
@@ -356,20 +353,23 @@ export default function LocalMobileCheckout({
           </div>
         </div>
 
-        {/* Direct Merchant Settlement Routing Box */}
+        {/* Encrypted STK Push & Aggregator Verification Box */}
         <div className="flex items-start gap-3 rounded-xl border border-ink/15 bg-ink p-3.5 font-mono text-[11px] text-paper">
-          <Landmark size={15} className="mt-0.5 shrink-0 text-gold" />
+          <Lock size={15} className="mt-0.5 shrink-0 text-gold" />
           <div>
             <div className="font-semibold text-gold">
-              Direct Merchant Payout Settlement · {MERCHANT_SETTLEMENT_ACCOUNT.bankShortCode}
+              {ui(
+                'East African Mobile Money Aggregator · Instant STK Push',
+                'Mfumo Salama wa Malipo ya Simu · STK Push',
+                'Pasarela Segura de Dinero Móvil · STK Push Instantáneo'
+              )}
             </div>
             <div className="mt-0.5 text-[10px] text-paper/75">
-              Bank: <strong>{MERCHANT_SETTLEMENT_ACCOUNT.bankName}</strong> · Account:{' '}
-              <strong className="text-gold">
-                {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber}
-              </strong>{' '}
-              · Beneficiary:{' '}
-              <strong>{MERCHANT_SETTLEMENT_ACCOUNT.accountName}</strong>
+              {ui(
+                'Real-time collection via AzamPay / Flutterwave MNO rails with cryptographic webhook confirmation.',
+                'Malipo yanathibitishwa moja kwa moja kwa usalama wa hali ya juu.',
+                'Cobro en tiempo real con confirmación criptográfica de webhook.'
+              )}
             </div>
           </div>
         </div>
@@ -388,8 +388,8 @@ export default function LocalMobileCheckout({
           <ShieldCheck size={17} />
           {processing
             ? ui(
-                `Authorizing ${selectedOperator.label} & Settling to NMB 60510047212...`,
-                `Inathibitisha ${selectedOperator.label} kwenda NMB 60510047212...`,
+                `Authorizing ${selectedOperator.label} STK Push...`,
+                `Inathibitisha Malipo ya ${selectedOperator.label}...`,
                 `Autorizando ${selectedOperator.label}...`
               )
             : ui(
@@ -402,7 +402,11 @@ export default function LocalMobileCheckout({
         <div className="flex items-center justify-center gap-2 pt-1 font-mono text-[10px] text-stone">
           <CheckCircle2 size={12} className="text-moss" />
           <span>
-            Funds settle directly to NMB Account 60510047212 (Salmin Ally Mwenesi)
+            {ui(
+              'Instant subscription tier unlock upon mobile operator confirmation',
+              'Mpango wako utawashwa mara moja baada ya uthibitisho wa malipo',
+              'Activación instantánea del plan tras la confirmación del operador móvil'
+            )}
           </span>
         </div>
       </form>

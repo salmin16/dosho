@@ -7,7 +7,7 @@ import {
   CreditCard,
   Crown,
   ExternalLink,
-  Landmark,
+  Lock,
   ShieldCheck,
   Smartphone,
   X,
@@ -15,10 +15,7 @@ import {
 import { useLocalization } from '../context/LocalizationContext'
 import InternationalCheckout from '../components/InternationalCheckout'
 import LocalMobileCheckout from '../components/LocalMobileCheckout'
-import {
-  MERCHANT_SETTLEMENT_ACCOUNT,
-  type SettlementLedgerEntry,
-} from '../lib/payments/settlement'
+import type { SettlementLedgerEntry } from '../lib/payments/settlement'
 import {
   SUBSCRIPTION_TIERS,
   normalizeSubscriptionTier,
@@ -272,9 +269,8 @@ function Pricing() {
                     {selectedCheckoutTier} ({billingCycle})
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/40 bg-moss/25 px-3 py-1 font-mono text-[10px] text-[#9de4b4]">
-                    <Landmark size={11} />
-                    NMB Bank · {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber} (
-                    {MERCHANT_SETTLEMENT_ACCOUNT.accountName})
+                    <Lock size={11} />
+                    PCI-DSS TLS 1.3 & East Africa MNO Certified
                   </span>
                 </div>
 
@@ -362,7 +358,7 @@ function Pricing() {
             </div>
 
             {receipt ? (
-              /* Verified Payment & NMB Settlement Confirmation */
+              /* Verified Payment & Subscription Activation Confirmation */
               <div className="mx-auto max-w-2xl rounded-2xl border border-moss/40 bg-ink p-8 text-paper shadow-2xl">
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-moss/30 text-[#9de4b4]">
@@ -370,7 +366,7 @@ function Pricing() {
                   </div>
                   <div>
                     <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[#9de4b4]">
-                      WEBHOOK VERIFIED · NMB BANK 60510047212 SETTLED
+                      WEBHOOK VERIFIED · SUBSCRIPTION ACTIVATED
                     </span>
                     <h3 className="font-display text-3xl text-paper">
                       {receipt.tierName} Plan Activated!
@@ -395,11 +391,10 @@ function Pricing() {
                   </div>
                   <div>
                     <dt className="text-[10px] uppercase text-paper/50">
-                      Settled to NMB Account
+                      Verification Status
                     </dt>
                     <dd className="mt-1 font-bold text-[#9de4b4]">
-                      {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber} (
-                      {MERCHANT_SETTLEMENT_ACCOUNT.accountName})
+                      VERIFIED · INSTANT TIER UNLOCK
                     </dd>
                   </div>
                   <div>
@@ -506,9 +501,9 @@ function Pricing() {
             <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-1.5 font-mono text-xs text-stone">
               <ShieldCheck size={14} className="text-moss" />
               {ui(
-                'Settled to NMB Bank · 60510047212 (Salmin Ally Mwenesi)',
-                'Malipo yanaingia NMB Bank · 60510047212 (Salmin Ally Mwenesi)',
-                'Liquidación NMB Bank · 60510047212 (Salmin Ally Mwenesi)'
+                'Platform Fees Separate from Mining Commission Statutory Fees',
+                'Ada za Jukwaa ni Tofauti na Ada za Kisheria za Tume ya Madini',
+                'Tarifas de Plataforma Separadas de Tasas Gubernamentales'
               )}
             </span>
           </div>

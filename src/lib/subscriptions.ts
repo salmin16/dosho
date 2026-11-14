@@ -8,7 +8,6 @@ import {
   useAuthSession,
 } from './supabaseAuth';
 import {
-  MERCHANT_SETTLEMENT_ACCOUNT,
   buildMerchantSettlementEntry,
   recordMerchantSettlementLedger,
   type SettlementLedgerEntry,
@@ -555,9 +554,6 @@ export async function activateVerifiedSubscription(params: {
       verifiedAmountTzs: verified.verifiedAmountTzs,
       verifiedAmountUsd: verified.verifiedAmountUsd,
       reference: externalReference,
-      settlementBank: MERCHANT_SETTLEMENT_ACCOUNT.bankName,
-      settlementAccountNumber: MERCHANT_SETTLEMENT_ACCOUNT.accountNumber,
-      settlementBeneficiary: MERCHANT_SETTLEMENT_ACCOUNT.accountName,
       settlementStatus: settlement.settlementStatus,
       settlementBatchId: settlement.batchId,
       expiresAt,

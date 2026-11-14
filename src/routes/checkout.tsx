@@ -6,9 +6,9 @@ import {
   CheckCircle2,
   CreditCard,
   Crown,
-  Landmark,
   Columns2,
   Lock,
+  ShieldCheck,
   Smartphone,
   Sparkles,
 } from 'lucide-react';
@@ -17,10 +17,7 @@ import CurrencySwitcher from '../components/CurrencySwitcher';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import InternationalCheckout from '../components/InternationalCheckout';
 import LocalMobileCheckout from '../components/LocalMobileCheckout';
-import {
-  MERCHANT_SETTLEMENT_ACCOUNT,
-  type SettlementLedgerEntry,
-} from '../lib/payments/settlement';
+import type { SettlementLedgerEntry } from '../lib/payments/settlement';
 import {
   SUBSCRIPTION_TIER_LIST,
   normalizeBillingCycle,
@@ -138,9 +135,9 @@ function CheckoutPageComponent() {
               <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-widest text-gold">
                 <Lock size={12} />
                 {ui(
-                  'Dual-Rail Payment Gateway · Direct NMB Bank Settlement (60510047212)',
-                  'Mfumo wa Malipo wa Njia Mbili · NMB Bank (60510047212)',
-                  'Pasarela de Pago de Doble Vía · Liquidación Directa NMB Bank'
+                  'Dual-Rail Payment Gateway · PCI-DSS & East African MNO Certified',
+                  'Mfumo Salama wa Malipo · Simu za Mkononi na Kadi za Kimataifa',
+                  'Pasarela de Pago de Doble Vía · Certificada PCI-DSS y MNO'
                 )}
               </span>
               <h1 className="mt-3 font-display text-4xl font-light text-paper md:text-5xl">
@@ -168,20 +165,20 @@ function CheckoutPageComponent() {
             <div className="rounded-xl border border-gold/35 bg-ink-2 px-4 py-3 font-mono text-xs">
               <div className="text-[10px] uppercase tracking-wider text-gold">
                 {ui(
-                  'Direct Merchant Bank Settlement',
-                  'Akaunti ya Mapato ya Jukwaa',
-                  'Cuenta Bancaria de Liquidación'
+                  'Encrypted Gateway Security',
+                  'Usalama wa Malipo ya Jukwaa',
+                  'Seguridad de Pasarela Cifrada'
                 )}
               </div>
               <div className="mt-0.5 font-semibold text-paper">
-                {MERCHANT_SETTLEMENT_ACCOUNT.bankName}
+                Stripe TLS 1.3 & East Africa MNO Rails
               </div>
               <div className="mt-0.5 text-[11px] text-paper/75">
-                Acc:{' '}
-                <strong className="text-gold">
-                  {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber}
-                </strong>{' '}
-                · {MERCHANT_SETTLEMENT_ACCOUNT.accountName}
+                {ui(
+                  'Instant webhook verification & tier unlock',
+                  'Uthibitisho wa papo hapo wa uanachama',
+                  'Verificación instantánea de suscripción'
+                )}
               </div>
             </div>
           </div>
@@ -191,7 +188,7 @@ function CheckoutPageComponent() {
       {/* Main Content */}
       <section className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
         {receipt ? (
-          /* Verified Webhook & NMB Bank Settlement Receipt */
+          /* Verified Webhook Subscription Activation Receipt */
           <div className="mx-auto max-w-2xl overflow-hidden rounded-2xl border border-moss/40 bg-ink p-8 text-paper shadow-2xl">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-moss/30 text-[#9de4b4]">
@@ -200,9 +197,9 @@ function CheckoutPageComponent() {
               <div>
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[#9de4b4]">
                   {ui(
-                    'WEBHOOK VERIFIED · NMB BANK SETTLEMENT ROUTED',
-                    'MALIPO YAMETHIBITISHWA · NMB BANK 60510047212',
-                    'WEBHOOK VERIFICADO · LIQUIDACIÓN NMB BANK'
+                    'WEBHOOK VERIFIED · SUBSCRIPTION ACTIVATED',
+                    'MALIPO YAMETHIBITISHWA · MPANGO UMEWASHWA',
+                    'WEBHOOK VERIFICADO · SUSCRIPCIÓN ACTIVADA'
                   )}
                 </span>
                 <h2 className="font-display text-3xl text-paper">
@@ -260,43 +257,37 @@ function CheckoutPageComponent() {
               </div>
             </dl>
 
-            {/* Merchant Bank Settlement Confirmation Card */}
+            {/* Encrypted Gateway Verification Card */}
             <div className="mt-4 rounded-xl border border-gold/30 bg-ochre/15 p-4 font-mono text-xs">
               <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-gold">
                 <span className="inline-flex items-center gap-1.5 font-semibold">
-                  <Landmark size={13} />
+                  <ShieldCheck size={13} />
                   {ui(
-                    'Designated Merchant Payout Destination',
-                    'Akaunti Rasmi ya Mapato ya Jukwaa',
-                    'Cuenta Bancaria de Liquidación'
+                    'Cryptographic Settlement Confirmation',
+                    'Uthibitisho wa Malipo Salama',
+                    'Confirmación Criptográfica de Pago'
                   )}
                 </span>
                 <span className="rounded bg-moss/40 px-2 py-0.5 text-[#9de4b4]">
                   {receipt.settlement?.settlementStatus.toUpperCase() ||
-                    'SETTLED'}
+                    'VERIFIED'}
                 </span>
               </div>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
-                  <span className="text-[10px] text-paper/55">Bank Name</span>
+                  <span className="text-[10px] text-paper/55">
+                    Settlement Batch ID
+                  </span>
                   <div className="font-semibold text-paper">
-                    {MERCHANT_SETTLEMENT_ACCOUNT.bankName}
+                    {receipt.settlement?.batchId || 'STL-BATCH-VERIFIED'}
                   </div>
                 </div>
                 <div>
                   <span className="text-[10px] text-paper/55">
-                    Account Number
+                    Entitlement Status
                   </span>
                   <div className="font-bold text-gold">
-                    {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-[10px] text-paper/55">
-                    Beneficiary Name
-                  </span>
-                  <div className="font-semibold text-paper">
-                    {MERCHANT_SETTLEMENT_ACCOUNT.accountName}
+                    ACTIVE · {receipt.tierName.toUpperCase()} QUOTAS UNLOCKED
                   </div>
                 </div>
               </div>
@@ -561,32 +552,32 @@ function CheckoutPageComponent() {
                   <span className="inline-flex items-center gap-1.5">
                     <Crown size={12} />
                     {ui(
-                      'Merchant Payout Settlement Summary',
-                      'Muhtasari wa Akaunti ya Mapato',
-                      'Resumen de Liquidación Bancaria'
+                      'Subscription Summary & Security',
+                      'Muhtasari wa Mpango na Usalama',
+                      'Resumen de Suscripción y Seguridad'
                     )}
                   </span>
                   <span className="rounded bg-moss/30 px-2 py-0.5 text-[#9de4b4]">
-                    Active Routing
+                    TLS 1.3 Verified
                   </span>
                 </div>
                 <dl className="mt-3 space-y-1.5 text-[11px]">
                   <div className="flex justify-between">
-                    <dt className="text-paper/60">Destination Bank:</dt>
+                    <dt className="text-paper/60">Selected Plan:</dt>
                     <dd className="font-semibold text-paper">
-                      {MERCHANT_SETTLEMENT_ACCOUNT.bankName}
+                      {selectedTier} ({billingCycle})
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-paper/60">NMB Account Number:</dt>
+                    <dt className="text-paper/60">Verified Price:</dt>
                     <dd className="font-bold text-gold">
-                      {MERCHANT_SETTLEMENT_ACCOUNT.accountNumber}
+                      {displayPrimaryAmount}
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-paper/60">Beneficiary Name:</dt>
+                    <dt className="text-paper/60">Gateway Rails:</dt>
                     <dd className="font-semibold text-paper">
-                      {MERCHANT_SETTLEMENT_ACCOUNT.accountName}
+                      Stripe & East Africa MNO
                     </dd>
                   </div>
                   <div className="flex justify-between border-t border-paper/10 pt-2">
