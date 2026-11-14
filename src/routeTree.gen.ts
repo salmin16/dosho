@@ -15,6 +15,8 @@ import { Route as AdminContentRouteImport } from './routes/admin_.content'
 import { Route as AdminApprovalsRouteImport } from './routes/admin_.approvals'
 import { Route as AdminUsersRouteImport } from './routes/admin_.users'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as DashboardOpportunitiesRouteImport } from './routes/dashboard_.opportunities'
+import { Route as DashboardServicesRouteImport } from './routes/dashboard_.services'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ListAProjectRouteImport } from './routes/list-a-project'
 import { Route as LoginRouteImport } from './routes/login'
@@ -55,6 +57,16 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardOpportunitiesRoute = DashboardOpportunitiesRouteImport.update({
+  id: '/dashboard_/opportunities',
+  path: '/dashboard/opportunities',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardServicesRoute = DashboardServicesRouteImport.update({
+  id: '/dashboard_/services',
+  path: '/dashboard/services',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqRoute = FaqRouteImport.update({
@@ -120,6 +132,8 @@ export interface FileRoutesByFullPath {
   '/admin/approvals': typeof AdminApprovalsRoute
   '/admin/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
+  '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
+  '/dashboard/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
@@ -139,6 +153,8 @@ export interface FileRoutesByTo {
   '/admin/approvals': typeof AdminApprovalsRoute
   '/admin/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
+  '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
+  '/dashboard/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
@@ -159,6 +175,8 @@ export interface FileRoutesById {
   '/admin_/approvals': typeof AdminApprovalsRoute
   '/admin_/users': typeof AdminUsersRoute
   '/dashboard': typeof DashboardRoute
+  '/dashboard_/opportunities': typeof DashboardOpportunitiesRoute
+  '/dashboard_/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
@@ -180,6 +198,8 @@ export interface FileRouteTypes {
     | '/admin/approvals'
     | '/admin/users'
     | '/dashboard'
+    | '/dashboard/opportunities'
+    | '/dashboard/services'
     | '/faq'
     | '/list-a-project'
     | '/login'
@@ -199,6 +219,8 @@ export interface FileRouteTypes {
     | '/admin/approvals'
     | '/admin/users'
     | '/dashboard'
+    | '/dashboard/opportunities'
+    | '/dashboard/services'
     | '/faq'
     | '/list-a-project'
     | '/login'
@@ -218,6 +240,8 @@ export interface FileRouteTypes {
     | '/admin_/approvals'
     | '/admin_/users'
     | '/dashboard'
+    | '/dashboard_/opportunities'
+    | '/dashboard_/services'
     | '/faq'
     | '/list-a-project'
     | '/login'
@@ -238,6 +262,8 @@ export interface RootRouteChildren {
   AdminApprovalsRoute: typeof AdminApprovalsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   DashboardRoute: typeof DashboardRoute
+  DashboardOpportunitiesRoute: typeof DashboardOpportunitiesRoute
+  DashboardServicesRoute: typeof DashboardServicesRoute
   FaqRoute: typeof FaqRoute
   ListAProjectRoute: typeof ListAProjectRoute
   LoginRoute: typeof LoginRoute
@@ -293,6 +319,20 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard_/opportunities': {
+      id: '/dashboard_/opportunities'
+      path: '/dashboard/opportunities'
+      fullPath: '/dashboard/opportunities'
+      preLoaderRoute: typeof DashboardOpportunitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard_/services': {
+      id: '/dashboard_/services'
+      path: '/dashboard/services'
+      fullPath: '/dashboard/services'
+      preLoaderRoute: typeof DashboardServicesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -382,6 +422,8 @@ const rootRouteChildren: RootRouteChildren = {
   AdminApprovalsRoute: AdminApprovalsRoute,
   AdminUsersRoute: AdminUsersRoute,
   DashboardRoute: DashboardRoute,
+  DashboardOpportunitiesRoute: DashboardOpportunitiesRoute,
+  DashboardServicesRoute: DashboardServicesRoute,
   FaqRoute: FaqRoute,
   ListAProjectRoute: ListAProjectRoute,
   LoginRoute: LoginRoute,

@@ -897,6 +897,12 @@ export function MasterAdminDashboard({
               >
                 <option value="ALL">All Content Types ({unifiedContent.length})</option>
                 <option value="PROJECT">Listed Mining Projects ({totalProjects})</option>
+                <option value="OPPORTUNITY">
+                  Guided Opportunities ({unifiedContent.filter((c) => c.type === 'OPPORTUNITY').length})
+                </option>
+                <option value="SERVICE">
+                  Technical Services ({unifiedContent.filter((c) => c.type === 'SERVICE').length})
+                </option>
                 <option value="DOCUMENT">Uploaded Vault Documents ({totalDocuments})</option>
                 <option value="QUOTE">Service Quote Requests ({totalQuotes})</option>
               </select>

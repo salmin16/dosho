@@ -4,14 +4,18 @@ import type {
   AuditLog,
   ContentStatus,
   DocumentClassification,
+  OpportunitySubmissionCategory,
   QuoteRequestRecord,
+  ServiceExpertiseArea,
   SupportedCurrency,
   UnifiedContentRecord,
   UnifiedContentType,
   UserDocument,
   UserListedProject,
+  UserOpportunityRecord,
   UserProfile,
   UserRole,
+  UserServiceRecord,
   UserStatus,
 } from '../types/database'
 
@@ -37,6 +41,8 @@ const PROFILES_KEY = 'mineconnect.db.user_profiles.v1'
 const DOCUMENTS_KEY = 'mineconnect.db.user_documents.v1'
 const PROJECTS_KEY = 'mineconnect.db.user_projects.v1'
 const QUOTES_KEY = 'mineconnect.db.quote_requests.v1'
+const OPPORTUNITIES_KEY = 'mineconnect.db.opportunities.v1'
+const SERVICES_KEY = 'mineconnect.db.services.v1'
 const AUDIT_LOGS_KEY = 'mineconnect.db.audit_logs.v1'
 const SEED_VERSION_KEY = 'mineconnect.db.seed_version.v2'
 const AUTH_EVENT = 'mineconnect:auth-changed'
@@ -309,6 +315,94 @@ function ensureSeedGovernanceData() {
         }
       }
       window.localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes))
+    }
+
+    const rawOpportunities = window.localStorage.getItem(OPPORTUNITIES_KEY)
+    const opportunities: UserOpportunityRecord[] = rawOpportunities
+      ? JSON.parse(rawOpportunities)
+      : []
+    if (opportunities.length === 0) {
+      const seedOpportunities: UserOpportunityRecord[] = [
+        {
+          id: 'opp-seed-001',
+          user_id: '00000000-0000-4000-8000-000000000002',
+          title: '5,000m Reverse Circulation & Diamond Core Drilling Tender — Geita West',
+          organization: 'Lake Victoria Goldfields Exploration Ltd',
+          category: 'Tender',
+          location: 'Geita',
+          deadline: '2026-12-20',
+          compensation_usd: 420000,
+          description:
+            'Competitive tender for 3,500m RC and 1,500m NQ diamond core drilling across Shear Zone B in Geita Region. Contractor must provide downhole survey instrumentation, core orientation, and daily shift logs.',
+          requirements: [
+            'Valid Tanzania Mining Commission Local Content Compliance Certificate',
+            'Minimum 2 track-mounted multipurpose RC/DD rigs available in Lake Zone',
+            'OSHA & Environmental Management Plan compliance',
+          ],
+          reference_code: 'OPP-TND-8901',
+          status: 'pending',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 3 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 3 * 3600 * 1000).toISOString(),
+        },
+        {
+          id: 'opp-seed-002',
+          user_id: '00000000-0000-4000-8000-000000000003',
+          title: 'Senior JORC / NI 43-101 Resource Estimation Consultancy — Lindi Graphite',
+          organization: 'Kilimanjaro Critical Minerals PLC',
+          category: 'Consultancy',
+          location: 'Lindi',
+          deadline: '2026-12-15',
+          compensation_usd: 85000,
+          description:
+            'Independent geological consultancy to audit 48 drill holes, construct 3D wireframes, and sign off as Competent Person (CP) on an updated JORC-2012 Mineral Resource Estimate for coarse-flake graphite.',
+          requirements: [
+            'Registered AusIMM or SACNASP Competent Person (5+ years industrial minerals)',
+            'Proficiency in Leapfrog Geo & Datamine Studio RM',
+          ],
+          reference_code: 'OPP-CNS-4412',
+          status: 'active',
+          approved: true,
+          moderation_notes: 'Verified CP scope and corporate registration.',
+          created_at: new Date(now - 28 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 20 * 3600 * 1000).toISOString(),
+        },
+      ]
+      window.localStorage.setItem(
+        OPPORTUNITIES_KEY,
+        JSON.stringify(seedOpportunities)
+      )
+    }
+
+    const rawServices = window.localStorage.getItem(SERVICES_KEY)
+    const services: UserServiceRecord[] = rawServices
+      ? JSON.parse(rawServices)
+      : []
+    if (services.length === 0) {
+      const seedServices: UserServiceRecord[] = [
+        {
+          id: 'srv-seed-001',
+          user_id: '00000000-0000-4000-8000-000000000004',
+          service_name: 'High-Resolution Drone Magnetics & Induced Polarization (IP) Geophysics',
+          provider_organization: 'Rift Valley GeoPhysics & Survey Tanzania Ltd',
+          expertise_area: 'Geological & Exploration',
+          regional_coverage: 'Geita, Shinyanga, Dodoma, Singida, Mbeya',
+          rate_or_pricing_model: 'Per Line-Kilometre ($95/line-km)',
+          estimated_rate_usd: 28500,
+          scope_description:
+            'UAV-bornefluxgate aeromagnetic surveys and ground gradient array IP/Resistivity for shear-hosted gold and base metal target generation. Deliverable includes 3D magnetic susceptibility inversion models.',
+          portfolio_links: 'https://mineconnect.co.tz/providers/rift-valley-geophysics',
+          certifications: 'ERB Tanzania Registered Consulting Firm · NCAA Commercial UAV Permit',
+          reference_code: 'SRV-GEO-3104',
+          status: 'pending',
+          approved: false,
+          moderation_notes: null,
+          created_at: new Date(now - 2 * 3600 * 1000).toISOString(),
+          updated_at: new Date(now - 2 * 3600 * 1000).toISOString(),
+        },
+      ]
+      window.localStorage.setItem(SERVICES_KEY, JSON.stringify(seedServices))
     }
 
     const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
@@ -741,11 +835,20 @@ export async function fetchGroundedUserData(): Promise<{
   documents: UserDocument[]
   listedProjects: UserListedProject[]
   quoteRequests: QuoteRequestRecord[]
+  userOpportunities: UserOpportunityRecord[]
+  userServices: UserServiceRecord[]
 }> {
   ensureSeedGovernanceData()
   const session = getSession()
   if (!session) {
-    return { profile: null, documents: [], listedProjects: [], quoteRequests: [] }
+    return {
+      profile: null,
+      documents: [],
+      listedProjects: [],
+      quoteRequests: [],
+      userOpportunities: [],
+      userServices: [],
+    }
   }
 
   const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
@@ -784,7 +887,26 @@ export async function fetchGroundedUserData(): Promise<{
     .filter((q) => q.user_id === session.user.id)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-  return { profile, documents, listedProjects, quoteRequests }
+  const rawOpps = window.localStorage.getItem(OPPORTUNITIES_KEY)
+  const allOpps: UserOpportunityRecord[] = rawOpps ? JSON.parse(rawOpps) : []
+  const userOpportunities = allOpps
+    .filter((o) => o.user_id === session.user.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const rawSrvs = window.localStorage.getItem(SERVICES_KEY)
+  const allSrvs: UserServiceRecord[] = rawSrvs ? JSON.parse(rawSrvs) : []
+  const userServices = allSrvs
+    .filter((s) => s.user_id === session.user.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  return {
+    profile,
+    documents,
+    listedProjects,
+    quoteRequests,
+    userOpportunities,
+    userServices,
+  }
 }
 
 function normalizeProjectStatus(status: UserListedProject['status'], approved?: boolean): ContentStatus {
@@ -861,7 +983,59 @@ export async function fetchAdminGovernanceData(): Promise<{
   const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
   const quotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
 
+  const rawOpportunities = window.localStorage.getItem(OPPORTUNITIES_KEY)
+  const opportunities: UserOpportunityRecord[] = rawOpportunities
+    ? JSON.parse(rawOpportunities)
+    : []
+
+  const rawServices = window.localStorage.getItem(SERVICES_KEY)
+  const services: UserServiceRecord[] = rawServices
+    ? JSON.parse(rawServices)
+    : []
+
   const unifiedContent: UnifiedContentRecord[] = [
+    ...opportunities.map((o): UnifiedContentRecord => {
+      const owner = profileMap.get(o.user_id)
+      return {
+        id: o.id,
+        type: 'OPPORTUNITY',
+        user_id: o.user_id,
+        owner_email: owner?.email ?? 'member@mineconnect.co.tz',
+        owner_name: owner?.full_name ?? o.organization,
+        title: o.title,
+        details: `${o.description}\n\nOrganization: ${o.organization} | Location: ${o.location} | Deadline: ${o.deadline}\nRequirements: ${(o.requirements || []).join('; ')}`,
+        category_badge: `${o.category.toUpperCase()} · ${o.location} · Due ${o.deadline}`,
+        reference_code: o.reference_code,
+        value_usd: o.compensation_usd,
+        status: o.status,
+        raw_status: o.status.toUpperCase(),
+        approved: Boolean(o.approved || o.status === 'active'),
+        moderation_notes: o.moderation_notes ?? null,
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+      }
+    }),
+    ...services.map((s): UnifiedContentRecord => {
+      const owner = profileMap.get(s.user_id)
+      return {
+        id: s.id,
+        type: 'SERVICE',
+        user_id: s.user_id,
+        owner_email: owner?.email ?? 'member@mineconnect.co.tz',
+        owner_name: owner?.full_name ?? s.provider_organization,
+        title: s.service_name,
+        details: `${s.scope_description}\n\nProvider: ${s.provider_organization} | Pricing Model: ${s.rate_or_pricing_model} | Coverage: ${s.regional_coverage}\nCertifications: ${s.certifications || 'N/A'}\nPortfolio: ${s.portfolio_links || 'N/A'}`,
+        category_badge: `${s.expertise_area} · ${s.rate_or_pricing_model}`,
+        reference_code: s.reference_code,
+        value_usd: s.estimated_rate_usd,
+        status: s.status,
+        raw_status: s.status.toUpperCase(),
+        approved: Boolean(s.approved || s.status === 'active'),
+        moderation_notes: s.moderation_notes ?? null,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+      }
+    }),
     ...projects.map((p): UnifiedContentRecord => {
       const owner = profileMap.get(p.user_id)
       const normalizedStatus = normalizeProjectStatus(p.status, p.approved)
@@ -1015,6 +1189,36 @@ export async function adminModerateSubmission(params: {
       reviewed_at: nowIso,
     }
     window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  } else if (params.type === 'OPPORTUNITY') {
+    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
+    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((o) => o.id === params.id)
+    if (idx === -1) return { error: 'Opportunity submission not found.' }
+    list[idx] = {
+      ...list[idx],
+      status: isApproved ? 'active' : 'rejected',
+      approved: isApproved,
+      moderation_notes: notes,
+      reviewed_by: session.user.id,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+  } else if (params.type === 'SERVICE') {
+    const raw = window.localStorage.getItem(SERVICES_KEY)
+    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((s) => s.id === params.id)
+    if (idx === -1) return { error: 'Service submission not found.' }
+    list[idx] = {
+      ...list[idx],
+      status: isApproved ? 'active' : 'rejected',
+      approved: isApproved,
+      moderation_notes: notes,
+      reviewed_by: session.user.id,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
   }
 
   recordAuditActivity({
@@ -1114,6 +1318,36 @@ export async function adminUpdateContentItem(params: {
       moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
     }
     window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  } else if (params.type === 'OPPORTUNITY') {
+    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
+    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((o) => o.id === params.id)
+    if (idx === -1) return { error: 'Opportunity record not found.' }
+    list[idx] = {
+      ...list[idx],
+      title: params.title.trim(),
+      description: params.details.trim(),
+      status: params.status,
+      approved: isApproved,
+      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+  } else if (params.type === 'SERVICE') {
+    const raw = window.localStorage.getItem(SERVICES_KEY)
+    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex((s) => s.id === params.id)
+    if (idx === -1) return { error: 'Service record not found.' }
+    list[idx] = {
+      ...list[idx],
+      service_name: params.title.trim(),
+      scope_description: params.details.trim(),
+      status: params.status,
+      approved: isApproved,
+      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
+      updated_at: nowIso,
+    }
+    window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
   }
 
   recordAuditActivity({
@@ -1163,6 +1397,20 @@ export async function adminPurgeContentItem(params: {
     window.localStorage.setItem(
       QUOTES_KEY,
       JSON.stringify(list.filter((q) => q.id !== params.id))
+    )
+  } else if (params.type === 'OPPORTUNITY') {
+    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
+    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
+    window.localStorage.setItem(
+      OPPORTUNITIES_KEY,
+      JSON.stringify(list.filter((o) => o.id !== params.id))
+    )
+  } else if (params.type === 'SERVICE') {
+    const raw = window.localStorage.getItem(SERVICES_KEY)
+    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
+    window.localStorage.setItem(
+      SERVICES_KEY,
+      JSON.stringify(list.filter((s) => s.id !== params.id))
     )
   }
 
@@ -1429,4 +1677,185 @@ export async function deleteGroundedDocument(documentId: string): Promise<{ erro
   })
 
   return {}
+}
+
+/**
+ * Guided Opportunity Publishing Action (`public.opportunities`)
+ * Validates step-by-step payload, binds `auth.uid() = user_id`, sets `status = 'pending'`,
+ * and records `CREATE_OPPORTUNITY` in `public.audit_logs`.
+ */
+export async function createGuidedOpportunitySubmission(input: {
+  title: string
+  organization: string
+  category: OpportunitySubmissionCategory
+  location: string
+  deadline: string
+  compensationUsd: number
+  description: string
+  requirements: string[]
+}): Promise<{ opportunity?: UserOpportunityRecord; error?: string }> {
+  const session = getSession()
+  if (!session) {
+    return {
+      error: 'Authentication required: Please sign in to publish an opportunity.',
+    }
+  }
+
+  const title = input.title.trim()
+  const organization = input.organization.trim()
+  const location = input.location.trim()
+  const deadline = input.deadline.trim()
+  const description = input.description.trim()
+  const requirements = input.requirements
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0)
+
+  if (title.length < 5 || title.length > 200) {
+    return { error: 'Opportunity title must be between 5 and 200 characters.' }
+  }
+  if (organization.length < 2 || organization.length > 160) {
+    return { error: 'Organization name must be between 2 and 160 characters.' }
+  }
+  if (!location) {
+    return { error: 'Please select a regional location (Mkoa).' }
+  }
+  if (!deadline) {
+    return { error: 'Please provide a valid submission deadline.' }
+  }
+  if (description.length < 20) {
+    return {
+      error: 'Scope description must be at least 20 characters for compliance review.',
+    }
+  }
+
+  const now = new Date().toISOString()
+  const catPrefix = input.category.slice(0, 3).toUpperCase()
+  const refCode = `OPP-${catPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
+
+  const record: UserOpportunityRecord = {
+    id: generateUuid(),
+    user_id: session.user.id,
+    title,
+    organization,
+    category: input.category,
+    location,
+    deadline,
+    compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
+    description,
+    requirements,
+    reference_code: refCode,
+    status: 'pending',
+    approved: false,
+    moderation_notes: null,
+    created_at: now,
+    updated_at: now,
+  }
+
+  const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
+  const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
+  list.unshift(record)
+  window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'CREATE_OPPORTUNITY',
+    metadata: {
+      opportunityId: record.id,
+      referenceCode: record.reference_code,
+      title: record.title,
+      category: record.category,
+      location: record.location,
+      status: 'pending',
+    },
+  })
+
+  return { opportunity: record }
+}
+
+/**
+ * Guided Professional Service Publishing Action (`public.services`)
+ * Validates step-by-step payload, binds `auth.uid() = user_id`, sets `status = 'pending'`,
+ * and records `CREATE_SERVICE` in `public.audit_logs`.
+ */
+export async function createGuidedServiceSubmission(input: {
+  serviceName: string
+  providerOrganization: string
+  expertiseArea: ServiceExpertiseArea
+  regionalCoverage: string
+  rateOrPricingModel: string
+  estimatedRateUsd: number
+  scopeDescription: string
+  portfolioLinks: string
+  certifications: string
+}): Promise<{ service?: UserServiceRecord; error?: string }> {
+  const session = getSession()
+  if (!session) {
+    return {
+      error: 'Authentication required: Please sign in to publish a professional service.',
+    }
+  }
+
+  const serviceName = input.serviceName.trim()
+  const providerOrganization = input.providerOrganization.trim()
+  const regionalCoverage = input.regionalCoverage.trim() || 'All Tanzania (31 Mikoa)'
+  const rateOrPricingModel = input.rateOrPricingModel.trim()
+  const scopeDescription = input.scopeDescription.trim()
+
+  if (serviceName.length < 5 || serviceName.length > 200) {
+    return { error: 'Service name must be between 5 and 200 characters.' }
+  }
+  if (providerOrganization.length < 2 || providerOrganization.length > 160) {
+    return { error: 'Provider organization must be between 2 and 160 characters.' }
+  }
+  if (!rateOrPricingModel) {
+    return { error: 'Please specify a rate or pricing model.' }
+  }
+  if (scopeDescription.length < 20) {
+    return {
+      error: 'Technical scope description must be at least 20 characters.',
+    }
+  }
+
+  const now = new Date().toISOString()
+  const expPrefix = input.expertiseArea.slice(0, 3).toUpperCase()
+  const refCode = `SRV-${expPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
+
+  const record: UserServiceRecord = {
+    id: generateUuid(),
+    user_id: session.user.id,
+    service_name: serviceName,
+    provider_organization: providerOrganization,
+    expertise_area: input.expertiseArea,
+    regional_coverage: regionalCoverage,
+    rate_or_pricing_model: rateOrPricingModel,
+    estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
+    scope_description: scopeDescription,
+    portfolio_links: input.portfolioLinks.trim(),
+    certifications: input.certifications.trim(),
+    reference_code: refCode,
+    status: 'pending',
+    approved: false,
+    moderation_notes: null,
+    created_at: now,
+    updated_at: now,
+  }
+
+  const raw = window.localStorage.getItem(SERVICES_KEY)
+  const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
+  list.unshift(record)
+  window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'CREATE_SERVICE',
+    metadata: {
+      serviceId: record.id,
+      referenceCode: record.reference_code,
+      serviceName: record.service_name,
+      expertiseArea: record.expertise_area,
+      status: 'pending',
+    },
+  })
+
+  return { service: record }
 }

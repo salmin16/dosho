@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Briefcase,
   Coins,
+  Compass,
   FileText,
   Lock,
   LogOut,
@@ -10,6 +11,7 @@ import {
   PlusCircle,
   ShieldCheck,
   Trash2,
+  Wrench,
 } from 'lucide-react'
 import {
   createGroundedDocument,
@@ -28,7 +30,9 @@ import type {
   QuoteRequestRecord,
   UserDocument,
   UserListedProject,
+  UserOpportunityRecord,
   UserProfile,
+  UserServiceRecord,
 } from '../types/database'
 
 export const Route = createFileRoute('/dashboard')({
@@ -46,6 +50,8 @@ function DashboardRouteComponent() {
   const [documents, setDocuments] = useState<UserDocument[]>([])
   const [listedProjects, setListedProjects] = useState<UserListedProject[]>([])
   const [quoteRequests, setQuoteRequests] = useState<QuoteRequestRecord[]>([])
+  const [userOpportunities, setUserOpportunities] = useState<UserOpportunityRecord[]>([])
+  const [userServices, setUserServices] = useState<UserServiceRecord[]>([])
 
   const [title, setTitle] = useState('')
   const [classification, setClassification] =
@@ -60,6 +66,8 @@ function DashboardRouteComponent() {
     setDocuments(data.documents)
     setListedProjects(data.listedProjects)
     setQuoteRequests(data.quoteRequests)
+    setUserOpportunities(data.userOpportunities)
+    setUserServices(data.userServices)
   }, [])
 
   useEffect(() => {
@@ -163,6 +171,51 @@ function DashboardRouteComponent() {
               Sign Out
             </button>
           </div>
+        </div>
+
+        {/* Guided Publishing Module Quick-Access Banner */}
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Link
+            to="/dashboard/opportunities"
+            className="group flex items-center justify-between gap-4 rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 contours"
+          >
+            <div>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
+                <Compass size={13} />
+                3-Step Guided Wizard · public.opportunities
+              </span>
+              <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
+                Publish Mining Opportunity →
+              </h2>
+              <p className="mt-1 text-xs text-paper/70">
+                Submit tenders, consultancies, exploration grants, JVs, or internships ({userOpportunities.length} submitted).
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
+              /dashboard/opportunities
+            </span>
+          </Link>
+
+          <Link
+            to="/dashboard/services"
+            className="group flex items-center justify-between gap-4 rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 contours"
+          >
+            <div>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
+                <Wrench size={13} />
+                3-Step Guided Wizard · public.services
+              </span>
+              <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
+                Publish Technical Service →
+              </h2>
+              <p className="mt-1 text-xs text-paper/70">
+                Register accredited drilling, geological, assay, legal, or ESIA services ({userServices.length} submitted).
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
+              /dashboard/services
+            </span>
+          </Link>
         </div>
 
         {/* Main Vault Grid */}
@@ -309,6 +362,91 @@ function DashboardRouteComponent() {
                         </button>
                       </div>
                     </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Grounded Listed Projects */}
+            <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Compass size={18} className="text-ochre" />
+                  <h2 className="font-display text-xl font-semibold text-ink">
+                    Your Guided Opportunities &amp; Services ({userOpportunities.length + userServices.length})
+                  </h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Link
+                    to="/dashboard/opportunities"
+                    className="text-xs font-semibold text-ochre hover:underline"
+                  >
+                    + New Opportunity →
+                  </Link>
+                  <Link
+                    to="/dashboard/services"
+                    className="text-xs font-semibold text-ochre hover:underline"
+                  >
+                    + New Service →
+                  </Link>
+                </div>
+              </div>
+
+              {userOpportunities.length === 0 && userServices.length === 0 ? (
+                <p className="mt-3 text-sm text-stone">
+                  No opportunities or technical services published yet. Launch the{' '}
+                  <Link to="/dashboard/opportunities" className="text-ochre underline">
+                    Opportunity Wizard
+                  </Link>{' '}
+                  or{' '}
+                  <Link to="/dashboard/services" className="text-ochre underline">
+                    Service Wizard
+                  </Link>{' '}
+                  above.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {userOpportunities.map((opp) => (
+                    <div
+                      key={opp.id}
+                      className="rounded-lg border border-ink/10 bg-paper p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                          OPPORTUNITY · {opp.category} · {opp.location} ({opp.reference_code})
+                        </span>
+                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
+                          {opp.status}
+                        </span>
+                      </div>
+                      <h3 className="mt-1 font-display text-base font-semibold text-ink">
+                        {opp.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-stone">
+                        {opp.organization} · Deadline: {opp.deadline}
+                      </p>
+                    </div>
+                  ))}
+                  {userServices.map((srv) => (
+                    <div
+                      key={srv.id}
+                      className="rounded-lg border border-ink/10 bg-paper p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                          SERVICE · {srv.expertise_area} · {srv.regional_coverage} ({srv.reference_code})
+                        </span>
+                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
+                          {srv.status}
+                        </span>
+                      </div>
+                      <h3 className="mt-1 font-display text-base font-semibold text-ink">
+                        {srv.service_name}
+                      </h3>
+                      <p className="mt-1 text-xs text-stone">
+                        {srv.provider_organization} · Rate: {srv.rate_or_pricing_model} ({formatExactUsd(srv.estimated_rate_usd)})
+                      </p>
+                    </div>
                   ))}
                 </div>
               )}

@@ -66,6 +66,8 @@ export type AuditAction =
   | 'DELETE_DOCUMENT'
   | 'LIST_PROJECT'
   | 'REQUEST_QUOTE'
+  | 'CREATE_OPPORTUNITY'
+  | 'CREATE_SERVICE'
   | 'ADMIN_UPDATE_ROLE'
   | 'ADMIN_SUSPEND_USER'
   | 'ADMIN_ACTIVATE_USER'
@@ -156,7 +158,71 @@ export interface QuoteRequestRecord {
   created_at: string;
 }
 
-export type UnifiedContentType = 'DOCUMENT' | 'PROJECT' | 'QUOTE';
+export type OpportunitySubmissionCategory =
+  | 'Tender'
+  | 'Consultancy'
+  | 'Grant'
+  | 'Internship'
+  | 'Joint Venture'
+  | 'Equipment Supply';
+
+export interface UserOpportunityRecord {
+  id: string;
+  user_id: string;
+  title: string;
+  organization: string;
+  category: OpportunitySubmissionCategory;
+  location: string;
+  deadline: string;
+  compensation_usd: number;
+  description: string;
+  requirements: string[];
+  reference_code: string;
+  status: ContentStatus;
+  approved: boolean;
+  moderation_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ServiceExpertiseArea =
+  | 'Geological & Exploration'
+  | 'Drilling & Core Recovery'
+  | 'Assay & Laboratory Testing'
+  | 'Legal, Licensing & Cadastre'
+  | 'Environmental (ESIA) & ESG'
+  | 'Mine Engineering & EPCM';
+
+export interface UserServiceRecord {
+  id: string;
+  user_id: string;
+  service_name: string;
+  provider_organization: string;
+  expertise_area: ServiceExpertiseArea;
+  regional_coverage: string;
+  rate_or_pricing_model: string;
+  estimated_rate_usd: number;
+  scope_description: string;
+  portfolio_links: string;
+  certifications: string;
+  reference_code: string;
+  status: ContentStatus;
+  approved: boolean;
+  moderation_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type UnifiedContentType =
+  | 'DOCUMENT'
+  | 'PROJECT'
+  | 'QUOTE'
+  | 'OPPORTUNITY'
+  | 'SERVICE';
 
 export interface UnifiedContentRecord {
   id: string;
@@ -337,6 +403,82 @@ export interface Database {
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
+        };
+      };
+      opportunities: {
+        Row: UserOpportunityRecord;
+        Insert: {
+          id?: string;
+          user_id?: string;
+          title: string;
+          organization: string;
+          category: OpportunitySubmissionCategory;
+          location: string;
+          deadline: string;
+          compensation_usd?: number;
+          description: string;
+          requirements?: string[];
+          reference_code: string;
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          organization?: string;
+          category?: OpportunitySubmissionCategory;
+          location?: string;
+          deadline?: string;
+          compensation_usd?: number;
+          description?: string;
+          requirements?: string[];
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          updated_at?: string;
+        };
+      };
+      services: {
+        Row: UserServiceRecord;
+        Insert: {
+          id?: string;
+          user_id?: string;
+          service_name: string;
+          provider_organization: string;
+          expertise_area: ServiceExpertiseArea;
+          regional_coverage?: string;
+          rate_or_pricing_model: string;
+          estimated_rate_usd?: number;
+          scope_description: string;
+          portfolio_links?: string;
+          certifications?: string;
+          reference_code: string;
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          service_name?: string;
+          provider_organization?: string;
+          expertise_area?: ServiceExpertiseArea;
+          regional_coverage?: string;
+          rate_or_pricing_model?: string;
+          estimated_rate_usd?: number;
+          scope_description?: string;
+          portfolio_links?: string;
+          certifications?: string;
+          status?: ContentStatus;
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          updated_at?: string;
         };
       };
     };
