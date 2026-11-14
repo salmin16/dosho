@@ -40,6 +40,11 @@ export type MineralCategory =
   | 'Critical & Battery Minerals'
   | 'Gemstones';
 
+export type MarketFeedSource =
+  | 'LIVE_API'
+  | 'HYBRID_LIVE'
+  | 'CACHED_BENCHMARK';
+
 export interface MineralPriceRecord {
   id: string;
   mineral_name: string;
@@ -55,8 +60,26 @@ export interface MineralPriceRecord {
   royalty_rate_pct: number;
   inspection_fee_pct?: number;
   trend_percentage: number;
+  change_24h_usd?: number;
+  day_open_usd?: number;
+  day_high_usd?: number;
+  day_low_usd?: number;
+  exchange_desk?: string;
+  feed_source?: MarketFeedSource;
   sparkline_points: number[];
   updated_at: string;
+}
+
+export interface MarketSyncTelemetry {
+  syncId: string;
+  provider: string;
+  syncMode: MarketFeedSource;
+  status: 'LIVE' | 'CACHED' | 'FALLBACK';
+  latencyMs: number;
+  commoditiesSynced: number;
+  liveSymbols: string[];
+  lastSyncedAt: string;
+  nextSyncAt: string;
 }
 
 export type AuditAction =

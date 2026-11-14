@@ -22,6 +22,7 @@ import {
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from './CurrencySwitcher'
 import LanguageSwitcher from './LanguageSwitcher'
+import LiveMarketTicker from './LiveMarketTicker'
 import PriceDisplay from './PriceDisplay'
 import type { MineralCategory, MineralPriceRecord } from '../types/database'
 
@@ -185,12 +186,6 @@ export default function MineralPricesBoard({
     }
   }, [selectedCalcMineral, calcQuantity, unitBasis, formatStatutoryPrice, formatPrice])
 
-  const latestTimestamp = useMemo(() => {
-    if (minerals.length === 0) return new Date().toLocaleDateString()
-    const maxTime = Math.max(...minerals.map((m) => new Date(m.updated_at).getTime()))
-    return new Date(maxTime).toLocaleString()
-  }, [minerals])
-
   return (
     <section
       aria-label="Indicative Mineral Prices Board"
@@ -299,88 +294,8 @@ export default function MineralPricesBoard({
           </div>
         </div>
 
-        {/* 1. Live Market Ticker Header Strip */}
-        <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-3.5 shadow-lg backdrop-blur-md">
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-paper/10 pb-2 font-mono text-[11px] text-paper/65">
-            <span className="inline-flex items-center gap-2">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-gold" />
-              <strong className="tracking-wider text-paper/90">
-                {ui(
-                  'LIVE STATUTORY & SPOT COMMODITY TICKER',
-                  'MWENENDO WA BEI ZA MADINI MOJA KWA MOJA',
-                  'TICKER EN VIVO DE MATERIAS PRIMAS Y MINERALES',
-                )}
-              </strong>{' '}
-              · {ui('Active FX', 'Kiwango cha Fedha', 'Tasa Activa')}: 1 USD ={' '}
-              {rateForSelected.toLocaleString('en-US', {
-                maximumFractionDigits: 2,
-              })}{' '}
-              {currency}
-            </span>
-            <span>
-              {ui('Updated', 'Imesasishwa', 'Actualizado')}: {latestTimestamp}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
-            {minerals.map((m) => {
-              const positive = m.trend_percentage >= 0
-              const statutory = formatStatutoryPrice(
-                m.world_market_price_usd,
-                m.unit,
-                unitBasis,
-              )
-              const intSpotUnit = m.unit.replace(/^USD\//i, '')
-              return (
-                <div
-                  key={m.id}
-                  className="group flex flex-col justify-between rounded-lg border border-paper/10 bg-paper/[0.04] p-3 transition hover:border-gold/45 hover:bg-paper/[0.08]"
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-mono text-xs font-bold text-gold">
-                      {m.symbol}
-                    </span>
-                    <span
-                      className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
-                        positive
-                          ? 'bg-moss/40 text-[#9de4b4]'
-                          : 'bg-danger/30 text-[#f59c8a]'
-                      }`}
-                    >
-                      {positive ? (
-                        <ArrowUpRight size={11} />
-                      ) : (
-                        <ArrowDownRight size={11} />
-                      )}
-                      {positive ? '+' : ''}
-                      {m.trend_percentage.toFixed(2)}%
-                    </span>
-                  </div>
-
-                  <p className="mt-1 truncate text-xs font-medium text-paper/80">
-                    {m.mineral_name}
-                  </p>
-
-                  <div className="mt-2 border-t border-paper/10 pt-2">
-                    <div className="font-mono text-xs font-semibold text-paper">
-                      {statutory.formatted}
-                      <span className="text-[10px] font-normal text-paper/55">
-                        {statutory.unitSuffix}
-                      </span>
-                    </div>
-                    <div className="font-mono text-[10px] text-paper/55">
-                      {ui('Spot', 'Soko', 'Spot')}:{' '}
-                      <PriceDisplay
-                        amountInUSD={m.world_market_price_usd}
-                        suffix={`/${intSpotUnit}`}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        {/* 1. Real-Time Market Status & Trading-Floor Ticker */}
+        <LiveMarketTicker unitBasis={unitBasis} />
 
         {/* 2. Priority Commodity Spotlight Cards (Gold, Silver, Copper, Tanzanite) */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -26,6 +26,7 @@ import { PROJECTS } from '../data/fixtures'
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
+import LiveMarketTicker from '../components/LiveMarketTicker'
 import PriceDisplay from '../components/PriceDisplay'
 import type {
   DocumentClassification,
@@ -190,6 +191,11 @@ export function DashboardRouteComponent() {
               {ui('Sign Out', 'Ondoka', 'Cerrar Sesión')}
             </button>
           </div>
+        </div>
+
+        {/* Real-Time Market Status & Statutory Benchmark Ticker */}
+        <div className="mt-6">
+          <LiveMarketTicker compact showFullMarketsLink />
         </div>
 
         {/* Guided Publishing Module Quick-Access Banner */}
