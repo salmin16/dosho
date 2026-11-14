@@ -70,10 +70,16 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
 
     const handleLangSync = (e: Event) => {
-      const custom = e as CustomEvent<LanguageCode>
-      if (custom.detail && isValidLang(custom.detail)) {
-        setLangState(custom.detail)
-        document.documentElement.lang = custom.detail
+      const custom = e as CustomEvent<
+        LanguageCode | { currency?: string; language?: LanguageCode }
+      >
+      const nextLang =
+        typeof custom.detail === 'string'
+          ? custom.detail
+          : custom.detail?.language
+      if (nextLang && isValidLang(nextLang)) {
+        setLangState(nextLang)
+        document.documentElement.lang = nextLang
       } else {
         const stored = readInitialLang()
         setLangState(stored)
@@ -82,9 +88,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
 
     window.addEventListener(LANGUAGE_CHANGE_EVENT, handleLangSync)
+    window.addEventListener('app-localization-update', handleLangSync)
     window.addEventListener('storage', handleLangSync)
     return () => {
       window.removeEventListener(LANGUAGE_CHANGE_EVENT, handleLangSync)
+      window.removeEventListener('app-localization-update', handleLangSync)
       window.removeEventListener('storage', handleLangSync)
     }
   }, [])
@@ -95,7 +103,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem(STORAGE_KEY, next)
       if (typeof window !== 'undefined') {
+        const currentCurrency =
+          window.localStorage.getItem('mineconnect.currency.v1') || 'USD'
         window.dispatchEvent(new CustomEvent(LANGUAGE_CHANGE_EVENT, { detail: next }))
+        window.dispatchEvent(
+          new CustomEvent('app-localization-update', {
+            detail: { currency: currentCurrency, language: next },
+          })
+        )
       }
     } catch {
       // Ignore storage access errors

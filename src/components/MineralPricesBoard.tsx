@@ -22,6 +22,7 @@ import {
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from './CurrencySwitcher'
 import LanguageSwitcher from './LanguageSwitcher'
+import PriceDisplay from './PriceDisplay'
 import type { MineralCategory, MineralPriceRecord } from '../types/database'
 
 function SparklineSvg({
@@ -96,9 +97,10 @@ export default function MineralPricesBoard({
     currency,
     currencyMeta,
     rateForSelected,
-    formatCurrency,
+    formatPrice,
     formatStatutoryPrice,
-    lang,
+    language,
+    ui,
   } = useLocalization()
 
   const [minerals, setMinerals] = useState<MineralPriceRecord[]>(() =>
@@ -122,6 +124,21 @@ export default function MineralPricesBoard({
     if (selectedCategory === 'ALL') return minerals
     return minerals.filter((m) => m.category === selectedCategory)
   }, [minerals, selectedCategory])
+
+  const translateCategory = (cat: 'ALL' | MineralCategory): string => {
+    switch (cat) {
+      case 'ALL':
+        return ui(`All (${minerals.length})`, `Zote (${minerals.length})`, `Todos (${minerals.length})`)
+      case 'Precious Metals':
+        return ui('Precious Metals', 'Madini ya Thamani', 'Metales Preciosos')
+      case 'Base & Industrial Metals':
+        return ui('Base & Industrial Metals', 'Madini ya Viwandani', 'Metales Industriales')
+      case 'Critical & Battery Minerals':
+        return ui('Critical & Battery Minerals', 'Madini ya Kimkakati na Betri', 'Minerales Críticos y Baterías')
+      case 'Gemstones':
+        return ui('Gemstones', 'Vito vya Thamani', 'Piedras Preciosas')
+    }
+  }
 
   const selectedCalcMineral = useMemo(
     () => minerals.find((m) => m.symbol === calcSymbol) ?? minerals[0],
@@ -158,15 +175,15 @@ export default function MineralPricesBoard({
     return {
       qty,
       unitLabel: worldLocal.unitSuffix.replace(/^\//, ''),
-      grossWorldFormatted: formatCurrency(grossWorldUsd),
+      grossWorldFormatted: formatPrice(grossWorldUsd),
       royaltyPct,
-      royaltyFormatted: formatCurrency(royaltyUsd),
+      royaltyFormatted: formatPrice(royaltyUsd),
       inspectionPct,
-      inspectionFormatted: formatCurrency(inspectionUsd),
-      sokoPayoutFormatted: formatCurrency(sokoPayoutUsd),
-      buyingCentrePayoutFormatted: formatCurrency(buyingCentrePayoutUsd),
+      inspectionFormatted: formatPrice(inspectionUsd),
+      sokoPayoutFormatted: formatPrice(sokoPayoutUsd),
+      buyingCentrePayoutFormatted: formatPrice(buyingCentrePayoutUsd),
     }
-  }, [selectedCalcMineral, calcQuantity, unitBasis, formatStatutoryPrice, formatCurrency])
+  }, [selectedCalcMineral, calcQuantity, unitBasis, formatStatutoryPrice, formatPrice])
 
   const latestTimestamp = useMemo(() => {
     if (minerals.length === 0) return new Date().toLocaleDateString()
@@ -177,6 +194,8 @@ export default function MineralPricesBoard({
   return (
     <section
       aria-label="Indicative Mineral Prices Board"
+      data-currency={currency}
+      data-language={language}
       className="grain relative isolate overflow-hidden border-b border-ink/15 bg-ink py-20 text-paper lg:py-24"
     >
       {/* Signature MineConnect Topographic Contour Texture */}
@@ -193,20 +212,31 @@ export default function MineralPricesBoard({
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
                 <Sparkles size={12} />
-                {lang === 'sw'
-                  ? 'Bei Elekezi za Madini · Tume ya Madini'
-                  : 'Indicative Mineral Prices · Tume ya Madini Aligned'}
+                {ui(
+                  'Indicative Mineral Prices · Tume ya Madini Aligned',
+                  'Bei Elekezi za Madini · Tume ya Madini',
+                  'Precios Indicativos de Minerales · Tume ya Madini',
+                )}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/50 bg-moss/25 px-3 py-1 font-mono text-[11px] text-paper/90">
                 <Activity size={12} className="text-gold" />
-                LBMA · LME · Mining Commission of Tanzania
+                {ui(
+                  'LBMA · LME · Mining Commission of Tanzania',
+                  'LBMA · LME · Tume ya Madini Tanzania',
+                  'LBMA · LME · Comisión Minera de Tanzania',
+                )}
               </span>
             </div>
 
             <h2 className="font-display mt-4 text-4xl font-light leading-[1.05] text-paper md:text-5xl">
-              {lang === 'sw' ? (
+              {language === 'sw' ? (
                 <>
                   Jedwali la <em className="italic text-gold">Bei Elekezi za Madini</em>
+                </>
+              ) : language === 'es' ? (
+                <>
+                  Referencia Oficial de{' '}
+                  <em className="italic text-gold">Precios de Minerales</em>
                 </>
               ) : (
                 <>
@@ -216,10 +246,11 @@ export default function MineralPricesBoard({
               )}
             </h2>
             <p className="mt-3 max-w-3xl text-base leading-relaxed text-paper/70">
-              Official reference benchmarks comparing international spot markets with statutory
-              Tanzania Mineral Market (<span className="text-paper/90">Soko la Madini</span>) and
-              Buying Centre (<span className="text-paper/90">Kituo cha Ununuzi</span>) thresholds,
-              dynamically converted to{' '}
+              {ui(
+                'Official reference benchmarks comparing international spot markets with statutory Tanzania Mineral Market (Soko la Madini) and Buying Centre (Kituo cha Ununuzi) thresholds, dynamically converted into',
+                'Viwango rasmi vya kumbukumbu vinavyolinganisha soko la kimataifa na Soko la Madini pamoja na Vituo vya Ununuzi nchini Tanzania, vikibadilishwa papo hapo kwa sarafu ya',
+                'Valores de referencia oficiales que comparan los mercados internacionales con el Mercado de Minerales de Tanzania (Soko la Madini) y los Centros de Compra, convertidos dinámicamente a',
+              )}{' '}
               <strong className="font-mono text-gold">
                 {currencyMeta.flag} {currency} ({currencyMeta.name})
               </strong>
@@ -241,7 +272,7 @@ export default function MineralPricesBoard({
                     : 'text-paper/70 hover:text-paper'
                 }`}
               >
-                Statutory Local (/g, /kg, /ct)
+                {ui('Statutory Local (/g, /kg, /ct)', 'Kipimo cha Ndani (/g, /kg, /ct)', 'Métrico Local (/g, /kg, /ct)')}
               </button>
               <button
                 type="button"
@@ -252,7 +283,7 @@ export default function MineralPricesBoard({
                     : 'text-paper/70 hover:text-paper'
                 }`}
               >
-                Global Spot (/toz, /lb, /t)
+                {ui('Global Spot (/toz, /lb, /t)', 'Kipimo cha Kimataifa (/toz, /lb, /t)', 'Estándar Global (/toz, /lb, /t)')}
               </button>
             </div>
 
@@ -262,7 +293,7 @@ export default function MineralPricesBoard({
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/45 bg-gold/15 px-3.5 py-2 font-mono text-xs font-semibold text-gold transition hover:bg-gold/25"
               >
                 <SlidersHorizontal size={13} />
-                Full Markets Terminal
+                {ui('Full Markets Terminal', 'Fungua Soko Kamili', 'Terminal de Mercados')}
               </Link>
             )}
           </div>
@@ -274,15 +305,21 @@ export default function MineralPricesBoard({
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-2 animate-pulse rounded-full bg-gold" />
               <strong className="tracking-wider text-paper/90">
-                LIVE STATUTORY &amp; SPOT COMMODITY TICKER
+                {ui(
+                  'LIVE STATUTORY & SPOT COMMODITY TICKER',
+                  'MWENENDO WA BEI ZA MADINI MOJA KWA MOJA',
+                  'TICKER EN VIVO DE MATERIAS PRIMAS Y MINERALES',
+                )}
               </strong>{' '}
-              · Active FX: 1 USD ={' '}
+              · {ui('Active FX', 'Kiwango cha Fedha', 'Tasa Activa')}: 1 USD ={' '}
               {rateForSelected.toLocaleString('en-US', {
                 maximumFractionDigits: 2,
               })}{' '}
               {currency}
             </span>
-            <span>Updated: {latestTimestamp}</span>
+            <span>
+              {ui('Updated', 'Imesasishwa', 'Actualizado')}: {latestTimestamp}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
@@ -293,6 +330,7 @@ export default function MineralPricesBoard({
                 m.unit,
                 unitBasis,
               )
+              const intSpotUnit = m.unit.replace(/^USD\//i, '')
               return (
                 <div
                   key={m.id}
@@ -330,9 +368,12 @@ export default function MineralPricesBoard({
                         {statutory.unitSuffix}
                       </span>
                     </div>
-                    <div className="font-mono text-[10px] text-paper/50">
-                      Spot: ${m.world_market_price_usd.toLocaleString('en-US')} /
-                      {m.unit.replace('USD/', '')}
+                    <div className="font-mono text-[10px] text-paper/55">
+                      {ui('Spot', 'Soko', 'Spot')}:{' '}
+                      <PriceDisplay
+                        amountInUSD={m.world_market_price_usd}
+                        suffix={`/${intSpotUnit}`}
+                      />
                     </div>
                   </div>
                 </div>
@@ -360,6 +401,7 @@ export default function MineralPricesBoard({
               m.unit,
               unitBasis,
             )
+            const intUnit = m.unit.replace(/^USD\//i, '')
 
             return (
               <article
@@ -370,7 +412,7 @@ export default function MineralPricesBoard({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <span className="font-mono text-[10px] uppercase tracking-widest text-gold">
-                        {m.category}
+                        {translateCategory(m.category)}
                       </span>
                       <h3 className="font-display mt-0.5 text-xl font-medium text-paper">
                         {m.mineral_name}
@@ -384,13 +426,13 @@ export default function MineralPricesBoard({
                   <div className="mt-4 flex items-end justify-between gap-2">
                     <div>
                       <span className="block font-mono text-[10px] uppercase text-paper/55">
-                        World Spot ({m.unit})
+                        {ui('World Spot', 'Soko la Dunia', 'Mercado Mundial')} ({currency}/{intUnit})
                       </span>
                       <span className="font-mono text-2xl font-bold text-paper">
-                        {formatCurrency(m.world_market_price_usd)}
+                        <PriceDisplay amountInUSD={m.world_market_price_usd} />
                       </span>
                       <span className="block font-mono text-[11px] text-gold">
-                        Local Baseline: {worldLocal.formatted}
+                        {ui('Local Metric', 'Bei kwa Kipimo', 'Base Local')}: {worldLocal.formatted}
                         {worldLocal.unitSuffix}
                       </span>
                     </div>
@@ -400,14 +442,14 @@ export default function MineralPricesBoard({
 
                 <div className="mt-4 space-y-1.5 border-t border-paper/10 pt-3 font-mono text-[11px]">
                   <div className="flex items-center justify-between text-paper/75">
-                    <span>Soko la Madini (Market):</span>
+                    <span>{ui('Soko la Madini (Market):', 'Soko la Madini:', 'Mercado Mineral:') }</span>
                     <span className="font-semibold text-[#9de4b4]">
                       {sokoLocal.formatted}
                       {sokoLocal.unitSuffix}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-paper/75">
-                    <span>Kituo cha Ununuzi (Floor):</span>
+                    <span>{ui('Buying Centre (Floor):', 'Kituo cha Ununuzi:', 'Centro de Compra:')}</span>
                     <span className="font-semibold text-gold">
                       {buyingLocal.formatted}
                       {buyingLocal.unitSuffix}
@@ -425,7 +467,7 @@ export default function MineralPricesBoard({
           })}
         </div>
 
-        {/* 3. Detailed Breakdown Matrix Table (Parchment Ledger Card matching MineConnect's Editorial Aesthetic) */}
+        {/* 3. Detailed Breakdown Matrix Table */}
         <div className="overflow-hidden rounded-2xl border border-ink/15 bg-paper text-ink shadow-2xl">
           {/* Matrix Filter Bar */}
           <div className="flex flex-col justify-between gap-4 border-b border-ink/10 bg-paper-2 px-6 py-5 sm:flex-row sm:items-center">
@@ -433,19 +475,31 @@ export default function MineralPricesBoard({
               <div className="flex items-center gap-2">
                 <Scale size={16} className="text-ochre" />
                 <h3 className="font-display text-xl font-medium text-ink">
-                  Statutory Mineral Pricing Matrix (World · Soko la Madini · Kituo cha Ununuzi)
+                  {ui(
+                    'Statutory Mineral Pricing Matrix (World · Soko la Madini · Kituo cha Ununuzi)',
+                    'Jedwali Rasmi la Bei za Madini (Soko la Dunia · Soko la Madini · Kituo cha Ununuzi)',
+                    'Matriz Oficial de Precios de Minerales (Mundial · Soko la Madini · Kituo cha Ununuzi)',
+                  )}
                 </h3>
               </div>
               <p className="mt-0.5 text-xs text-stone">
-                Showing converted rates in{' '}
+                {ui('Showing converted rates in', 'Inaonyesha bei kwa sarafu ya', 'Mostrando precios convertidos en')}{' '}
                 <strong className="font-mono text-ochre">
-                  {currencyMeta.flag} {currency} ({currencyMeta.symbol})
+                  {currencyMeta.flag} {currency} ({currencyMeta.symbol.trim()})
                 </strong>{' '}
-                · Unit Basis:{' '}
+                · {ui('Unit Basis', 'Msingi wa Kipimo', 'Base de Unidad')}:{' '}
                 <strong className="font-mono text-ink">
                   {unitBasis === 'standard'
-                    ? 'International Benchmark (/toz, /lb, /tonne, /ct)'
-                    : 'Tanzania Statutory Local Metric (/g, /kg, /ct)'}
+                    ? ui(
+                        'International Benchmark (/toz, /lb, /tonne, /ct)',
+                        'Kipimo cha Kimataifa (/toz, /lb, /tonne, /ct)',
+                        'Estándar Internacional (/toz, /lb, /tonne, /ct)',
+                      )
+                    : ui(
+                        'Tanzania Statutory Local Metric (/g, /kg, /ct)',
+                        'Kipimo Rasmi cha Tanzania (/g, /kg, /ct)',
+                        'Métrico Local de Tanzania (/g, /kg, /ct)',
+                      )}
                 </strong>
               </p>
             </div>
@@ -470,7 +524,7 @@ export default function MineralPricesBoard({
                       : 'border border-ink/12 bg-paper text-ink-3 hover:border-ochre/40 hover:text-ink'
                   }`}
                 >
-                  {cat === 'ALL' ? `All (${minerals.length})` : cat}
+                  {translateCategory(cat)}
                 </button>
               ))}
             </div>
@@ -481,37 +535,44 @@ export default function MineralPricesBoard({
             <table className="w-full text-left text-xs">
               <thead className="border-b border-ink/12 bg-paper-2/60 font-mono text-[11px] uppercase tracking-wider text-stone">
                 <tr>
-                  <th className="px-5 py-4">Mineral &amp; Purity Standard</th>
+                  <th className="px-5 py-4">
+                    {ui('Mineral & Purity Standard', 'Aina ya Madini na Ubora', 'Mineral y Pureza')}
+                  </th>
                   <th className="px-4 py-4">
                     <span className="inline-flex items-center gap-1 text-ink">
                       <Globe size={12} className="text-ochre" />
-                      World Market (USD Spot)
+                      {ui(`World Spot (${currency})`, `Soko la Dunia (${currency})`, `Precio Mundial (${currency})`)}
                     </span>
                   </th>
                   <th className="px-4 py-4">
                     <span className="inline-flex items-center gap-1 text-ochre">
                       <Coins size={12} />
-                      World Converted ({currency})
+                      {ui(`Local Unit Rate (${currency})`, `Bei kwa Kipimo (${currency})`, `Tasa por Unidad (${currency})`)}
                     </span>
                   </th>
                   <th className="px-4 py-4">
                     <span className="inline-flex items-center gap-1 text-moss">
                       <ShieldCheck size={12} />
-                      Mineral Market (Soko la Madini)
+                      {ui(`Soko la Madini (${currency})`, `Soko la Madini (${currency})`, `Mercado Local (${currency})`)}
                     </span>
                   </th>
                   <th className="px-4 py-4">
                     <span className="inline-flex items-center gap-1 text-ink">
-                      Buying Centre (Kituo cha Ununuzi)
+                      {ui(`Buying Centre (${currency})`, `Kituo cha Ununuzi (${currency})`, `Centro de Compra (${currency})`)}
                     </span>
                   </th>
-                  <th className="px-4 py-4 text-center">Royalty + Insp.</th>
-                  <th className="px-5 py-4 text-right">24h Change &amp; Trend</th>
+                  <th className="px-4 py-4 text-center">
+                    {ui('Royalty + Insp.', 'Mrabaha + Ada', 'Regalía + Insp.')}
+                  </th>
+                  <th className="px-5 py-4 text-right">
+                    {ui('24h Change & Trend', 'Mabadiliko ya Saa 24', 'Cambio 24h y Tendencia')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink/10">
                 {filteredMinerals.map((m) => {
                   const positive = m.trend_percentage >= 0
+                  const intSpotUnit = m.unit.replace(/^USD\//i, '')
                   const worldAdj = formatStatutoryPrice(
                     m.world_market_price_usd,
                     m.unit,
@@ -532,6 +593,8 @@ export default function MineralPricesBoard({
                     m.unit,
                     'metric_local',
                   )
+                  const localIntSpot = formatPrice(m.local_market_price_usd)
+                  const buyingIntSpot = formatPrice(m.buying_centre_price_usd)
 
                   return (
                     <tr key={m.id} className="transition hover:bg-paper-2/70">
@@ -549,32 +612,28 @@ export default function MineralPricesBoard({
                             </div>
                             {m.producing_regions && (
                               <div className="mt-0.5 font-mono text-[10px] text-ochre">
-                                Hubs: {m.producing_regions}
+                                {ui('Hubs', 'Mikoa', 'Regiones')}: {m.producing_regions}
                               </div>
                             )}
                           </div>
                         </div>
                       </td>
 
-                      {/* Tier 1A: World Market Price in USD Benchmark */}
+                      {/* Tier 1A: World Market Price in Active Currency per International Unit */}
                       <td className="whitespace-nowrap px-4 py-4 font-mono">
                         <div className="text-sm font-semibold text-ink">
-                          $
-                          {m.world_market_price_usd.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                          <span className="ml-1 text-[11px] font-normal text-stone">
-                            /{m.unit.replace(/^USD\//i, '')}
-                          </span>
+                          <PriceDisplay
+                            amountInUSD={m.world_market_price_usd}
+                            suffix={`/${intSpotUnit}`}
+                          />
                         </div>
                         <div className="text-[10px] text-stone">
-                          ${perGramOrKgNote.unitUsd.toFixed(2)}
-                          {perGramOrKgNote.unitSuffix} (USD metric)
+                          {perGramOrKgNote.formatted}
+                          {perGramOrKgNote.unitSuffix} ({ui('local metric', 'kipimo cha ndani', 'métrico local')})
                         </div>
                       </td>
 
-                      {/* Tier 1B: World Market Price Converted to User's Active Currency */}
+                      {/* Tier 1B: World Market Price Converted to Statutory Unit in Active Currency */}
                       <td className="whitespace-nowrap px-4 py-4 font-mono">
                         <div className="text-sm font-bold text-ochre">
                           {worldAdj.formatted}
@@ -582,11 +641,10 @@ export default function MineralPricesBoard({
                             {worldAdj.unitSuffix}
                           </span>
                         </div>
-                        {unitBasis === 'standard' && m.unit === 'USD/toz' && (
-                          <div className="text-[10px] text-stone">
-                            {perGramOrKgNote.formatted}/g in {currency}
-                          </div>
-                        )}
+                        <div className="text-[10px] text-stone">
+                          {perGramOrKgNote.formatted}
+                          {perGramOrKgNote.unitSuffix} ({currency})
+                        </div>
                       </td>
 
                       {/* Tier 2: Mineral Market Price (Local Regulatory Benchmark) */}
@@ -598,8 +656,7 @@ export default function MineralPricesBoard({
                           </span>
                         </div>
                         <div className="text-[10px] text-stone">
-                          USD Base: ${localAdj.unitUsd.toFixed(2)}
-                          {localAdj.unitSuffix}
+                          {localIntSpot}/{intSpotUnit}
                         </div>
                       </td>
 
@@ -612,8 +669,7 @@ export default function MineralPricesBoard({
                           </span>
                         </div>
                         <div className="text-[10px] text-stone">
-                          USD Base: ${buyingAdj.unitUsd.toFixed(2)}
-                          {buyingAdj.unitSuffix}
+                          {buyingIntSpot}/{intSpotUnit}
                         </div>
                       </td>
 
@@ -664,7 +720,11 @@ export default function MineralPricesBoard({
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 font-mono text-[11px] font-semibold text-gold">
                     <Calculator size={13} />
-                    Statutory Valuation &amp; Royalty Calculator ({currency})
+                    {ui(
+                      `Statutory Valuation & Royalty Calculator (${currency})`,
+                      `Kikokotoo cha Thamani ya Madini na Mrabaha (${currency})`,
+                      `Calculadora Oficial de Valoración y Regalías (${currency})`,
+                    )}
                   </span>
                   <select
                     value={calcSymbol}
@@ -697,7 +757,7 @@ export default function MineralPricesBoard({
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-lg border border-ink/10 bg-paper px-3 py-2">
                     <span className="block font-mono text-[10px] uppercase text-stone">
-                      Gross World Value
+                      {ui('Gross World Value', 'Thamani Soko la Dunia', 'Valor Bruto Mundial')}
                     </span>
                     <span className="font-mono text-xs font-bold text-ink">
                       {calcBreakdown.grossWorldFormatted}
@@ -705,8 +765,8 @@ export default function MineralPricesBoard({
                   </div>
                   <div className="rounded-lg border border-ink/10 bg-paper px-3 py-2">
                     <span className="block font-mono text-[10px] uppercase text-stone">
-                      Royalty ({calcBreakdown.royaltyPct}%) + Fee (
-                      {calcBreakdown.inspectionPct}%)
+                      {ui('Royalty', 'Mrabaha', 'Regalía')} ({calcBreakdown.royaltyPct}%) +{' '}
+                      {ui('Fee', 'Ada', 'Tasa')} ({calcBreakdown.inspectionPct}%)
                     </span>
                     <span className="font-mono text-xs font-bold text-ochre">
                       {calcBreakdown.royaltyFormatted} + {calcBreakdown.inspectionFormatted}
@@ -714,7 +774,7 @@ export default function MineralPricesBoard({
                   </div>
                   <div className="rounded-lg border border-moss/30 bg-moss-light/60 px-3 py-2">
                     <span className="block font-mono text-[10px] uppercase text-moss">
-                      Soko la Madini Net
+                      {ui('Soko la Madini Net', 'Malipo Soko la Madini', 'Neto Soko la Madini')}
                     </span>
                     <span className="font-mono text-xs font-bold text-moss">
                       {calcBreakdown.sokoPayoutFormatted}
@@ -722,7 +782,7 @@ export default function MineralPricesBoard({
                   </div>
                   <div className="rounded-lg border border-gold/40 bg-gold/15 px-3 py-2">
                     <span className="block font-mono text-[10px] uppercase text-ink-2">
-                      Buying Centre Payout
+                      {ui('Buying Centre Payout', 'Malipo Kituo cha Ununuzi', 'Pago Centro de Compra')}
                     </span>
                     <span className="font-mono text-xs font-bold text-ink">
                       {calcBreakdown.buyingCentrePayoutFormatted}
@@ -736,14 +796,14 @@ export default function MineralPricesBoard({
           {/* Regulatory Compliance & Statutory Disclaimer Footer */}
           <div className="flex flex-col justify-between gap-3 border-t border-ink/10 bg-paper px-6 py-4 text-[11px] text-stone sm:flex-row sm:items-center">
             <p>
-              <strong className="text-ink">Regulatory Notice:</strong> Indicative prices are
-              published for market transparency and financial modelling only. Final statutory
-              royalty assessments (6% metallic/gemstones, 3% industrial minerals) and 1% clearing
-              &amp; inspection fees are determined by the{' '}
-              <span className="text-ink">
-                Mining Commission of Tanzania (Tume ya Madini)
-              </span>{' '}
-              at licensed Mineral Markets (<em>Masoko ya Madini</em>).
+              <strong className="text-ink">
+                {ui('Regulatory Notice:', 'Taarifa ya Kisheria:', 'Aviso Regulatorio:')}
+              </strong>{' '}
+              {ui(
+                'Indicative prices are published for market transparency and financial modelling only. Final statutory royalty assessments (6% metallic/gemstones, 3% industrial minerals) and 1% clearing & inspection fees are determined by the Mining Commission of Tanzania (Tume ya Madini) at licensed Mineral Markets (Masoko ya Madini).',
+                'Bei elekezi zinachapishwa kwa uwazi wa soko na makadirio ya kifedha pekee. Tathmini ya mwisho ya mrabaha wa serikali (6% madini ya metali/vito, 3% madini ya viwandani) na ada ya ukaguzi ya 1% huamuliwa na Tume ya Madini katika Masoko ya Madini yaliyosajiliwa.',
+                'Los precios indicativos se publican únicamente para transparencia del mercado. Las regalías legales finales (6% metálicos/gemas, 3% industriales) y la tasa de inspección del 1% son determinadas por la Comisión Minera de Tanzania (Tume ya Madini).',
+              )}
             </p>
             <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-ochre">
               1 toz = 31.1035 g · 1 lb = 453.59 g

@@ -23,9 +23,10 @@ import {
 } from '../lib/supabaseAuth'
 import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
-import { useCurrency } from '../lib/currency'
+import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
+import PriceDisplay from '../components/PriceDisplay'
 import type {
   DocumentClassification,
   QuoteRequestRecord,
@@ -40,12 +41,19 @@ export const Route = createFileRoute('/dashboard')({
   component: DashboardRouteComponent,
 })
 
-function DashboardRouteComponent() {
+export function DashboardRouteComponent() {
   const navigate = useNavigate()
   const session = useAuthSession()
   const { saved: savedProjectIds } = useSavedProjects()
-  const { currency, currencyMeta, rateForSelected, formatUsd, formatExactUsd } =
-    useCurrency()
+  const {
+    currency,
+    language,
+    currencyMeta,
+    rateForSelected,
+    convertText,
+    localizeProject,
+    ui,
+  } = useLocalization()
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [documents, setDocuments] = useState<UserDocument[]>([])
@@ -84,7 +92,9 @@ function DashboardRouteComponent() {
     return null
   }
 
-  const savedProjects = PROJECTS.filter((p) => savedProjectIds.includes(p.id))
+  const savedProjects = PROJECTS.filter((p) => savedProjectIds.includes(p.id)).map((p) =>
+    localizeProject(p),
+  )
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -120,7 +130,11 @@ function DashboardRouteComponent() {
   }
 
   return (
-    <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
+    <div
+      data-currency={currency}
+      data-language={language}
+      className="min-h-screen bg-paper pb-24 pt-28 text-ink"
+    >
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
         {/* Grounded Session Header */}
         <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
@@ -128,7 +142,8 @@ function DashboardRouteComponent() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
                 <ShieldCheck size={14} />
-                RLS Policy Active: auth.uid() = user_id · Role: {session.user.role.toUpperCase()}
+                {ui('RLS Policy Active: auth.uid() = user_id · Role:', 'Sera ya RLS Inafanya Kazi: auth.uid() = user_id · Wajibu:', 'Política RLS Activa: auth.uid() = user_id · Rol:')}{' '}
+                {session.user.role.toUpperCase()}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
                 <Coins size={13} className="text-gold" />
@@ -140,11 +155,13 @@ function DashboardRouteComponent() {
               </span>
             </div>
             <h1 className="mt-3 font-display text-3xl font-semibold">
-              Welcome, {profile?.full_name || session.user.fullName}
+              {ui('Welcome,', 'Karibu,', 'Bienvenido,')}{' '}
+              {profile?.full_name || session.user.fullName}
             </h1>
             <p className="mt-1 text-sm text-paper/75">
-              Authenticated Email:{' '}
-              <span className="font-mono">{session.user.email}</span> · User UUID:{' '}
+              {ui('Authenticated Email:', 'Barua Pepe Iliyothibitishwa:', 'Correo Autenticado:')}{' '}
+              <span className="font-mono">{session.user.email}</span> ·{' '}
+              {ui('User UUID:', 'Kitambulisho cha Mtumiaji:', 'UUID de Usuario:')}{' '}
               <span className="font-mono text-gold">{session.user.id}</span>
             </p>
           </div>
@@ -158,11 +175,11 @@ function DashboardRouteComponent() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"
               >
                 <ShieldCheck size={15} />
-                Admin Console
+                {ui('Admin Console', 'Dashibodi ya Utawala', 'Consola Admin')}
               </Link>
             )}
             <Link to="/list-a-project" className="btn-primary !py-2.5 !px-4 text-xs">
-              + List a Project
+              {ui('+ List a Project', '+ Sajili Mradi', '+ Publicar Proyecto')}
             </Link>
             <button
               type="button"
@@ -170,7 +187,7 @@ function DashboardRouteComponent() {
               className="inline-flex items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
             >
               <LogOut size={15} />
-              Sign Out
+              {ui('Sign Out', 'Ondoka', 'Cerrar Sesión')}
             </button>
           </div>
         </div>
@@ -184,13 +201,25 @@ function DashboardRouteComponent() {
             <div>
               <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
                 <Compass size={13} />
-                3-Step Guided Wizard · public.opportunities
+                {ui(
+                  '3-Step Guided Wizard · public.opportunities',
+                  'Mfumo wa Hatua 3 · public.opportunities',
+                  'Asistente de 3 Pasos · public.opportunities',
+                )}
               </span>
               <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
-                Publish Mining Opportunity →
+                {ui(
+                  'Publish Mining Opportunity →',
+                  'Chapisha Fursa ya Madini →',
+                  'Publicar Oportunidad Minera →',
+                )}
               </h2>
               <p className="mt-1 text-xs text-paper/70">
-                Submit tenders, consultancies, exploration grants, JVs, or internships ({userOpportunities.length} submitted).
+                {ui(
+                  `Submit tenders, consultancies, exploration grants, JVs, or internships (${userOpportunities.length} submitted).`,
+                  `Wasilisha zabuni, ushauri, ruzuku za utafutaji au mafunzo (${userOpportunities.length} zimewasilishwa).`,
+                  `Envíe licitaciones, consultorías, subvenciones o pasantías (${userOpportunities.length} enviadas).`,
+                )}
               </p>
             </div>
             <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
@@ -205,13 +234,25 @@ function DashboardRouteComponent() {
             <div>
               <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
                 <Wrench size={13} />
-                3-Step Guided Wizard · public.services
+                {ui(
+                  '3-Step Guided Wizard · public.services',
+                  'Mfumo wa Hatua 3 · public.services',
+                  'Asistente de 3 Pasos · public.services',
+                )}
               </span>
               <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
-                Publish Technical Service →
+                {ui(
+                  'Publish Technical Service →',
+                  'Chapisha Huduma ya Kitaalamu →',
+                  'Publicar Servicio Técnico →',
+                )}
               </h2>
               <p className="mt-1 text-xs text-paper/70">
-                Register accredited drilling, geological, assay, legal, or ESIA services ({userServices.length} submitted).
+                {ui(
+                  `Register accredited drilling, geological, assay, legal, or ESIA services (${userServices.length} submitted).`,
+                  `Sajili huduma za uchorongaji, jiolojia, maabara, sheria au mazingira (${userServices.length} zimewasilishwa).`,
+                  `Registre servicios acreditados de perforación, geología, laboratorio o legales (${userServices.length} enviados).`,
+                )}
               </p>
             </div>
             <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
@@ -227,11 +268,11 @@ function DashboardRouteComponent() {
             <div className="flex items-center gap-2 text-ochre">
               <PlusCircle size={18} />
               <h2 className="font-display text-xl font-semibold text-ink">
-                New Grounded Record
+                {ui('New Grounded Record', 'Rekodi Mpya ya Hifadhi', 'Nuevo Registro en Bóveda')}
               </h2>
             </div>
             <p className="mt-1 text-xs text-stone">
-              Records are strictly bound to{' '}
+              {ui('Records are strictly bound to', 'Rekodi zimefungwa moja kwa moja kwa', 'Los registros están vinculados a')}{' '}
               <code className="font-mono text-ink">
                 user_id = {session.user.id.slice(0, 8)}…
               </code>
@@ -246,7 +287,7 @@ function DashboardRouteComponent() {
             <form onSubmit={handleCreate} className="mt-5 space-y-4">
               <div>
                 <label htmlFor="doc-title" className="label">
-                  Document / Dossier Title
+                  {ui('Document / Dossier Title', 'Kichwa cha Hati / Jalada', 'Título del Documento')}
                 </label>
                 <input
                   id="doc-title"
@@ -255,14 +296,18 @@ function DashboardRouteComponent() {
                   maxLength={200}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Kahama Drill Core Assay Verification"
+                  placeholder={ui(
+                    'e.g., Kahama Drill Core Assay Verification',
+                    'mf., Uthibitisho wa Sampuli za Uchorongaji Kahama',
+                    'ej., Verificación de Muestras de Perforación Kahama',
+                  )}
                   className="field"
                 />
               </div>
 
               <div>
                 <label htmlFor="doc-class" className="label">
-                  Security Classification
+                  {ui('Security Classification', 'Daraja la Usalama', 'Clasificación de Seguridad')}
                 </label>
                 <select
                   id="doc-class"
@@ -281,7 +326,11 @@ function DashboardRouteComponent() {
 
               <div>
                 <label htmlFor="doc-content" className="label">
-                  Grounded Notes &amp; Due-Diligence Payload
+                  {ui(
+                    'Grounded Notes & Due-Diligence Payload',
+                    'Maelezo ya Kina na Uhakiki (Due Diligence)',
+                    'Notas y Datos de Debida Diligencia',
+                  )}
                 </label>
                 <textarea
                   id="doc-content"
@@ -290,7 +339,11 @@ function DashboardRouteComponent() {
                   maxLength={10000}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Enter private geological findings, license numbers, or term-sheet notes..."
+                  placeholder={ui(
+                    'Enter private geological findings, license numbers, or term-sheet notes...',
+                    'Ingiza taarifa za jiolojia, namba za leseni au maelezo ya mkataba...',
+                    'Ingrese hallazgos geológicos privados, números de licencia o notas...',
+                  )}
                   className="field"
                 />
               </div>
@@ -301,7 +354,9 @@ function DashboardRouteComponent() {
                 className="btn-primary w-full disabled:opacity-50"
               >
                 <Lock size={15} />
-                {saving ? 'Encrypting & Saving...' : 'Save to Grounded Vault'}
+                {saving
+                  ? ui('Encrypting & Saving...', 'Inahifadhi kwa Usalama...', 'Cifrando y Guardando...')
+                  : ui('Save to Grounded Vault', 'Hifadhi kwenye Vault', 'Guardar en Bóveda')}
               </button>
             </form>
           </section>
@@ -314,7 +369,11 @@ function DashboardRouteComponent() {
                 <div className="flex items-center gap-2">
                   <FileText size={18} className="text-ochre" />
                   <h2 className="font-display text-xl font-semibold text-ink">
-                    Your Grounded Documents ({documents.length})
+                    {ui(
+                      `Your Grounded Documents (${documents.length})`,
+                      `Hati Zako Zilizohifadhiwa (${documents.length})`,
+                      `Sus Documentos en Bóveda (${documents.length})`,
+                    )}
                   </h2>
                 </div>
                 <span className="rounded bg-moss-light px-2.5 py-1 font-mono text-[11px] text-moss">
@@ -324,7 +383,11 @@ function DashboardRouteComponent() {
 
               {documents.length === 0 ? (
                 <div className="mt-6 rounded-lg border border-dashed border-ink/15 p-10 text-center text-sm text-stone">
-                  No grounded documents found for your account yet. Add your first record on the left.
+                  {ui(
+                    'No grounded documents found for your account yet. Add your first record on the left.',
+                    'Hakuna hati zilizohifadhiwa bado. Ongeza rekodi yako ya kwanza upande wa kushoto.',
+                    'Aún no hay documentos en su cuenta. Agregue su primer registro a la izquierda.',
+                  )}
                 </div>
               ) : (
                 <div className="mt-5 space-y-3">
@@ -340,16 +403,17 @@ function DashboardRouteComponent() {
                               {doc.classification}
                             </span>
                             <h3 className="font-display text-lg font-semibold text-ink">
-                              {doc.title}
+                              {convertText(doc.title)}
                             </h3>
                           </div>
                           <p className="mt-2 whitespace-pre-wrap text-sm text-ink-3">
-                            {doc.content}
+                            {convertText(doc.content)}
                           </p>
                           <div className="mt-3 flex flex-wrap items-center gap-4 font-mono text-[11px] text-stone">
                             <span>Owner UUID: {doc.user_id}</span>
                             <span>
-                              Created: {new Date(doc.created_at).toLocaleString()}
+                              {ui('Created:', 'Imeundwa:', 'Creado:')}{' '}
+                              {new Date(doc.created_at).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -369,13 +433,17 @@ function DashboardRouteComponent() {
               )}
             </div>
 
-            {/* Grounded Listed Projects */}
+            {/* Guided Opportunities & Services */}
             <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Compass size={18} className="text-ochre" />
                   <h2 className="font-display text-xl font-semibold text-ink">
-                    Your Guided Opportunities &amp; Services ({userOpportunities.length + userServices.length})
+                    {ui(
+                      `Your Guided Opportunities & Services (${userOpportunities.length + userServices.length})`,
+                      `Fursa na Huduma Ulizowasilisha (${userOpportunities.length + userServices.length})`,
+                      `Sus Oportunidades y Servicios (${userOpportunities.length + userServices.length})`,
+                    )}
                   </h2>
                 </div>
                 <div className="flex items-center gap-3">
@@ -383,28 +451,32 @@ function DashboardRouteComponent() {
                     to="/dashboard/opportunities"
                     className="text-xs font-semibold text-ochre hover:underline"
                   >
-                    + New Opportunity →
+                    {ui('+ New Opportunity →', '+ Fursa Mpya →', '+ Nueva Oportunidad →')}
                   </Link>
                   <Link
                     to="/dashboard/services"
                     className="text-xs font-semibold text-ochre hover:underline"
                   >
-                    + New Service →
+                    {ui('+ New Service →', '+ Huduma Mpya →', '+ Nuevo Servicio →')}
                   </Link>
                 </div>
               </div>
 
               {userOpportunities.length === 0 && userServices.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
-                  No opportunities or technical services published yet. Launch the{' '}
+                  {ui(
+                    'No opportunities or technical services published yet. Launch the ',
+                    'Bado hujachapisha fursa au huduma za kitaalamu. Fungua ',
+                    'Aún no se han publicado oportunidades o servicios. Inicie el ',
+                  )}
                   <Link to="/dashboard/opportunities" className="text-ochre underline">
-                    Opportunity Wizard
+                    {ui('Opportunity Wizard', 'Mfumo wa Fursa', 'Asistente de Oportunidades')}
                   </Link>{' '}
-                  or{' '}
+                  {ui('or', 'au', 'o')}{' '}
                   <Link to="/dashboard/services" className="text-ochre underline">
-                    Service Wizard
-                  </Link>{' '}
-                  above.
+                    {ui('Service Wizard', 'Mfumo wa Huduma', 'Asistente de Servicios')}
+                  </Link>
+                  .
                 </p>
               ) : (
                 <div className="mt-4 space-y-3">
@@ -422,10 +494,18 @@ function DashboardRouteComponent() {
                         </span>
                       </div>
                       <h3 className="mt-1 font-display text-base font-semibold text-ink">
-                        {opp.title}
+                        {convertText(opp.title)}
                       </h3>
                       <p className="mt-1 text-xs text-stone">
-                        {opp.organization} · Deadline: {opp.deadline}
+                        {opp.organization} · {ui('Deadline:', 'Mwisho:', 'Fecha límite:')} {opp.deadline} ·{' '}
+                        {ui('Budget', 'Bajeti', 'Presupuesto')} ({currency}):{' '}
+                        <strong className="font-mono text-ochre">
+                          {opp.compensation_usd > 0 ? (
+                            <PriceDisplay amountInUSD={opp.compensation_usd} />
+                          ) : (
+                            ui('Per Tender Schedule', 'Kulingana na Zabuni', 'Según Licitación')
+                          )}
+                        </strong>
                       </p>
                     </div>
                   ))}
@@ -443,10 +523,15 @@ function DashboardRouteComponent() {
                         </span>
                       </div>
                       <h3 className="mt-1 font-display text-base font-semibold text-ink">
-                        {srv.service_name}
+                        {convertText(srv.service_name)}
                       </h3>
                       <p className="mt-1 text-xs text-stone">
-                        {srv.provider_organization} · Rate: {srv.rate_or_pricing_model} ({formatExactUsd(srv.estimated_rate_usd)})
+                        {srv.provider_organization} · {ui('Rate', 'Gharama', 'Tarifa')} ({currency}):{' '}
+                        {convertText(srv.rate_or_pricing_model)} (
+                        <strong className="font-mono text-ochre">
+                          <PriceDisplay amountInUSD={srv.estimated_rate_usd} />
+                        </strong>
+                        )
                       </p>
                     </div>
                   ))}
@@ -460,24 +545,32 @@ function DashboardRouteComponent() {
                 <div className="flex items-center gap-2">
                   <Pickaxe size={18} className="text-ochre" />
                   <h2 className="font-display text-xl font-semibold text-ink">
-                    Your Submitted Projects ({listedProjects.length})
+                    {ui(
+                      `Your Submitted Projects (${listedProjects.length})`,
+                      `Miradi Yako Iliyowasilishwa (${listedProjects.length})`,
+                      `Sus Proyectos Enviados (${listedProjects.length})`,
+                    )}
                   </h2>
                 </div>
                 <Link
                   to="/list-a-project"
                   className="text-xs font-semibold text-ochre hover:underline"
                 >
-                  + List Another Project →
+                  {ui('+ List Another Project →', '+ Sajili Mradi Mwingine →', '+ Publicar Otro Proyecto →')}
                 </Link>
               </div>
 
               {listedProjects.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
-                  You haven&apos;t submitted any projects yet. Use the{' '}
+                  {ui(
+                    "You haven't submitted any projects yet. Use the ",
+                    'Bado hujawasilisha mradi wowote. Tumia ukurasa wa ',
+                    'Aún no ha enviado proyectos. Utilice el flujo de ',
+                  )}
                   <Link to="/list-a-project" className="text-ochre underline">
-                    List a Project
-                  </Link>{' '}
-                  workflow to submit a verified mineral right or tender.
+                    {ui('List a Project', 'Sajili Mradi', 'Publicar un Proyecto')}
+                  </Link>
+                  .
                 </p>
               ) : (
                 <div className="mt-4 space-y-3">
@@ -495,13 +588,13 @@ function DashboardRouteComponent() {
                         </span>
                       </div>
                       <h3 className="mt-1 font-display text-lg font-semibold text-ink">
-                        {proj.title}
+                        {convertText(proj.title)}
                       </h3>
-                      <p className="mt-1 text-xs text-stone">{proj.summary}</p>
+                      <p className="mt-1 text-xs text-stone">{convertText(proj.summary)}</p>
                       <p className="mt-2 font-mono text-xs font-semibold text-ink">
-                        Seeking Investment ({currency}):{' '}
+                        {ui('Seeking Investment', 'Uwekezaji Unaohitajika', 'Inversión Solicitada')} ({currency}):{' '}
                         <span className="text-ochre">
-                          {formatExactUsd(proj.investment_usd)}
+                          <PriceDisplay amountInUSD={proj.investment_usd} />
                         </span>
                       </p>
                     </div>
@@ -516,24 +609,32 @@ function DashboardRouteComponent() {
                 <div className="flex items-center gap-2">
                   <Briefcase size={18} className="text-ochre" />
                   <h2 className="font-display text-xl font-semibold text-ink">
-                    Your Service Quote Requests ({quoteRequests.length})
+                    {ui(
+                      `Your Service Quote Requests (${quoteRequests.length})`,
+                      `Maombi Yako ya Bei za Huduma (${quoteRequests.length})`,
+                      `Sus Solicitudes de Cotización (${quoteRequests.length})`,
+                    )}
                   </h2>
                 </div>
                 <Link
                   to="/services"
                   className="text-xs font-semibold text-ochre hover:underline"
                 >
-                  Request Another Quote →
+                  {ui('Request Another Quote →', 'Omba Bei Nyingine →', 'Solicitar Otra Cotización →')}
                 </Link>
               </div>
 
               {quoteRequests.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
-                  No service quotes requested yet. Visit the{' '}
+                  {ui(
+                    'No service quotes requested yet. Visit the ',
+                    'Bado hujaomba bei ya huduma. Tembelea ',
+                    'Aún no ha solicitado cotizaciones. Visite el ',
+                  )}
                   <Link to="/services" className="text-ochre underline">
-                    Mining Services Marketplace
+                    {ui('Mining Services Marketplace', 'Soko la Huduma za Madini', 'Mercado de Servicios Mineros')}
                   </Link>{' '}
-                  to request quotes in {currency}.
+                  ({currency}).
                 </p>
               ) : (
                 <div className="mt-4 space-y-3">
@@ -544,20 +645,20 @@ function DashboardRouteComponent() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
-                          Provider: {q.provider_name}
+                          {ui('Provider:', 'Mtoa Huduma:', 'Proveedor:')} {q.provider_name}
                         </span>
                         <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] text-ink">
                           {q.status}
                         </span>
                       </div>
                       <h3 className="mt-1 font-display text-base font-semibold text-ink">
-                        {q.service_requested}
+                        {convertText(q.service_requested)}
                       </h3>
-                      <p className="mt-1 text-xs text-stone">{q.scope_notes}</p>
+                      <p className="mt-1 text-xs text-stone">{convertText(q.scope_notes)}</p>
                       <p className="mt-2 font-mono text-xs font-semibold text-ink">
-                        Estimated Budget ({currency}):{' '}
+                        {ui('Estimated Budget', 'Makadirio ya Bajeti', 'Presupuesto Estimado')} ({currency}):{' '}
                         <span className="text-ochre">
-                          {formatExactUsd(q.estimated_budget_usd)}
+                          <PriceDisplay amountInUSD={q.estimated_budget_usd} />
                         </span>
                       </p>
                     </div>
@@ -570,23 +671,31 @@ function DashboardRouteComponent() {
             <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-xl font-semibold text-ink">
-                  Saved Mining Opportunities ({savedProjects.length})
+                  {ui(
+                    `Saved Mining Opportunities (${savedProjects.length})`,
+                    `Fursa za Madini Ulizohifadhi (${savedProjects.length})`,
+                    `Oportunidades Mineras Guardadas (${savedProjects.length})`,
+                  )}
                 </h2>
                 <Link
                   to="/opportunities"
                   className="text-xs font-semibold text-ochre hover:underline"
                 >
-                  Browse All Streams →
+                  {ui('Browse All Streams →', 'Tazama Fursa Zote →', 'Explorar Oportunidades →')}
                 </Link>
               </div>
 
               {savedProjects.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
-                  You haven&apos;t bookmarked any mining licenses or tenders yet. Visit the{' '}
+                  {ui(
+                    "You haven't bookmarked any mining licenses or tenders yet. Visit the ",
+                    'Bado hujahifadhi leseni au zabuni yoyote. Tembelea ',
+                    'Aún no ha guardado licencias o licitaciones. Visite el ',
+                  )}
                   <Link to="/opportunities" className="text-ochre underline">
-                    Opportunities Hub
-                  </Link>{' '}
-                  to save listings to your workspace.
+                    {ui('Opportunities Hub', 'Kituo cha Fursa', 'Centro de Oportunidades')}
+                  </Link>
+                  .
                 </p>
               ) : (
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -604,11 +713,11 @@ function DashboardRouteComponent() {
                         {proj.title}
                       </h3>
                       <p className="mt-1 text-xs text-stone">
-                        Seeking ({currency}):{' '}
+                        {ui('Seeking', 'Inahitaji', 'Buscando')} ({currency}):{' '}
                         <strong className="text-ink">
-                          {formatUsd(proj.investmentUsd)}
+                          <PriceDisplay amountInUSD={proj.investmentUsd} compact />
                         </strong>{' '}
-                        · Stage: {proj.stage}
+                        · {ui('Stage:', 'Hatua:', 'Etapa:')} {proj.stage}
                       </p>
                     </Link>
                   ))}

@@ -51,6 +51,7 @@ export interface LocalizationContextValue {
   currencyMeta: CurrencyMetadata
   currencies: CurrencyMetadata[]
   rates: Record<SupportedCurrency, number>
+  exchangeRates: Record<SupportedCurrency, number>
   rateForSelected: number
   ratesSource: 'live' | 'fallback'
   lastUpdated: Date | null
@@ -58,6 +59,8 @@ export interface LocalizationContextValue {
   refreshRates: () => Promise<void>
 
   // Native Intl.NumberFormat & Conversion Helpers
+  convertPrice: (usdAmount: number, currencyOverride?: SupportedCurrency) => number
+  formatPrice: (usdAmount: number, options?: FormatCurrencyOptions) => string
   formatCurrency: (usdAmount: number, options?: FormatCurrencyOptions) => string
   formatUsd: (usdAmount: number) => string
   formatExactUsd: (usdAmount: number) => string
@@ -71,10 +74,13 @@ export interface LocalizationContextValue {
 
   // Language State & Actions
   lang: LanguageCode
+  language: LanguageCode
   languages: typeof LANGUAGES
   setLang: (lang: LanguageCode) => void
+  setLanguage: (lang: LanguageCode) => void
   t: (key: TranslationKey, vars?: Record<string, string | number>) => string
   tv: (value: string) => string
+  ui: (enText: string, swText: string, esText?: string) => string
   localizeProject: (project: Project) => Project
   formatDate: (iso: string) => string
   fixtures: ReturnType<typeof useI18n>['fixtures']
@@ -112,6 +118,16 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
   } = useCurrency()
 
   const { lang, setLang, t, tv, localizeProject, formatDate, fixtures } = useI18n()
+
+  const convertPrice = useCallback(
+    (usdAmount: number, currencyOverride?: SupportedCurrency): number => {
+      if (!Number.isFinite(usdAmount)) return 0
+      const targetCode = currencyOverride ?? currency
+      const rate = rates[targetCode] ?? 1
+      return usdAmount * rate
+    },
+    [currency, rates],
+  )
 
   /**
    * Formats any USD numeric value into the active user currency using native `Intl.NumberFormat`
@@ -205,17 +221,28 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
     [rateForSelected, formatCurrency],
   )
 
+  const ui = useCallback(
+    (enText: string, swText: string, esText?: string): string => {
+      const chosen = lang === 'sw' ? swText : lang === 'es' ? (esText ?? enText) : enText
+      return convertText(chosen)
+    },
+    [lang, convertText],
+  )
+
   const value = useMemo<LocalizationContextValue>(
     () => ({
       currency,
       currencyMeta,
       currencies: CURRENCY_LIST,
       rates,
+      exchangeRates: rates,
       rateForSelected,
       ratesSource,
       lastUpdated,
       setCurrency,
       refreshRates,
+      convertPrice,
+      formatPrice: formatCurrency,
       formatCurrency,
       formatUsd,
       formatExactUsd,
@@ -223,10 +250,13 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
       convertText,
       toUsd,
       lang,
+      language: lang,
       languages: LANGUAGES,
       setLang,
+      setLanguage: setLang,
       t,
       tv,
+      ui,
       localizeProject,
       formatDate,
       fixtures,
@@ -240,6 +270,7 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
       lastUpdated,
       setCurrency,
       refreshRates,
+      convertPrice,
       formatCurrency,
       formatUsd,
       formatExactUsd,
@@ -250,6 +281,7 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
       setLang,
       t,
       tv,
+      ui,
       localizeProject,
       formatDate,
       fixtures,
@@ -265,7 +297,7 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
 
 /**
  * Global Provider combining Currency and Language state with instant cross-component
- * localStorage and DOM event synchronization.
+ * localStorage and DOM event synchronization (`app-localization-update`).
  */
 export function LocalizationProvider({ children }: { children: React.ReactNode }) {
   return (

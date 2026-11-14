@@ -29,9 +29,10 @@ import {
   fetchAdminGovernanceData,
   useAuthSession,
 } from '../lib/supabaseAuth'
-import { useCurrency } from '../lib/currency'
+import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
+import PriceDisplay from '../components/PriceDisplay'
 import {
   adminSyncLiveMarketBenchmarks,
   adminUpdateMineralPrice,
@@ -106,7 +107,16 @@ export function MasterAdminDashboard({
   initialSection?: MasterAdminSection
 }) {
   const session = useAuthSession()
-  const { currency, currencyMeta, rateForSelected, formatExactUsd } = useCurrency()
+  const {
+    currency,
+    language,
+    currencyMeta,
+    rateForSelected,
+    formatExactUsd,
+    formatStatutoryPrice,
+    convertText,
+    ui,
+  } = useLocalization()
 
   const [authorized, setAuthorized] = useState<boolean>(true)
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -507,7 +517,11 @@ export function MasterAdminDashboard({
   }
 
   return (
-    <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
+    <div
+      data-currency={currency}
+      data-language={language}
+      className="min-h-screen bg-paper pb-24 pt-28 text-ink"
+    >
       <div className="mx-auto max-w-7xl space-y-8 px-5 lg:px-8">
         {/* Top Security & Master Control Banner */}
         <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
@@ -515,7 +529,11 @@ export function MasterAdminDashboard({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
                 <ShieldCheck size={14} />
-                Master Control &amp; Oversight (`public.is_admin() = true`)
+                {ui(
+                  'Master Control & Oversight (`public.is_admin() = true`)',
+                  'Udhibiti Mkuu na Usimamizi (`public.is_admin() = true`)',
+                  'Control Maestro y Supervisión (`public.is_admin() = true`)',
+                )}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
                 <Coins size={13} className="text-gold" />
@@ -527,10 +545,18 @@ export function MasterAdminDashboard({
               </span>
             </div>
             <h1 className="mt-3 font-display text-3xl font-semibold">
-              Master Control, Content Explorer &amp; Moderation Console
+              {ui(
+                'Master Control, Content Explorer & Moderation Console',
+                'Dashibodi ya Utawala, Maudhui na Uhakiki',
+                'Consola Maestra de Control, Contenido y Moderación',
+              )}
             </h1>
             <p className="mt-1 text-sm text-paper/75">
-              Full visibility over all platform content (`/admin/content`), pending moderation queues (`/admin/approvals`), user directory (`/admin/users`), and immutable audit trails.
+              {ui(
+                'Full visibility over all platform content (`/admin/content`), pending moderation queues (`/admin/approvals`), user directory (`/admin/users`), and immutable audit trails.',
+                'Ufuatiliaji kamili wa maudhui yote (`/admin/content`), foleni za uhakiki (`/admin/approvals`), orodha ya watumiaji (`/admin/users`), na kumbukumbu za ukaguzi.',
+                'Visibilidad completa sobre todo el contenido (`/admin/content`), colas de aprobación (`/admin/approvals`), directorio de usuarios (`/admin/users`) y auditoría.',
+              )}
             </p>
           </div>
 
@@ -543,13 +569,13 @@ export function MasterAdminDashboard({
               className="inline-flex items-center gap-2 rounded-md border border-gold/40 bg-ochre/20 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-ochre/30"
             >
               <RefreshCw size={14} />
-              Refresh DB
+              {ui('Refresh DB', 'Sasisha DB', 'Actualizar BD')}
             </button>
             <Link
               to="/dashboard"
               className="inline-flex items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
             >
-              Member Vault
+              {ui('Member Vault', 'Hifadhi ya Mwanachama', 'Bóveda')}
             </Link>
           </div>
         </div>
@@ -562,7 +588,7 @@ export function MasterAdminDashboard({
                 : 'border-danger/40 bg-danger/10 text-danger'
             }`}
           >
-            <span>{feedback.message}</span>
+            <span>{convertText(feedback.message)}</span>
             <button type="button" onClick={() => setFeedback(null)}>
               ✕
             </button>
@@ -577,7 +603,7 @@ export function MasterAdminDashboard({
           <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                Pending Approvals Queue
+                {ui('Pending Approvals Queue', 'Foleni ya Uhakiki', 'Cola de Aprobaciones')}
               </span>
               <ClipboardCheck size={16} className="text-ochre" />
             </div>
@@ -585,14 +611,14 @@ export function MasterAdminDashboard({
               {pendingApprovals.length}
             </p>
             <p className="mt-1 font-mono text-[11px] text-ochre">
-              Awaiting Compliance Review
+              {ui('Awaiting Compliance Review', 'Inasubiri Uhakiki wa Utawala', 'Esperando Revisión')}
             </p>
           </div>
 
           <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                Total Platform Records
+                {ui('Total Platform Records', 'Jumla ya Rekodi za Mfumo', 'Total de Registros')}
               </span>
               <FolderSearch size={16} className="text-moss" />
             </div>
@@ -600,14 +626,15 @@ export function MasterAdminDashboard({
               {unifiedContent.length}
             </p>
             <p className="mt-1 font-mono text-[11px] text-stone">
-              {totalProjects} Projects · {totalDocuments} Docs · {totalQuotes} Quotes
+              {totalProjects} {ui('Projects', 'Miradi', 'Proyectos')} · {totalDocuments}{' '}
+              {ui('Docs', 'Hati', 'Docs')} · {totalQuotes} {ui('Quotes', 'Nukuu', 'Cotizaciones')}
             </p>
           </div>
 
           <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                Registered Users &amp; Signups
+                {ui('Registered Users & Signups', 'Watumiaji Waliosajiliwa', 'Usuarios Registrados')}
               </span>
               <Users size={16} className="text-ochre" />
             </div>
@@ -615,14 +642,15 @@ export function MasterAdminDashboard({
               {users.length}
             </p>
             <p className="mt-1 font-mono text-[11px] text-moss">
-              +{newSignups7d} this week (+{newSignups24h} today)
+              +{newSignups7d} {ui('this week', 'wiki hii', 'esta semana')} (+{newSignups24h}{' '}
+              {ui('today', 'leo', 'hoy')})
             </p>
           </div>
 
           <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                Active 24h Sessions
+                {ui('Active 24h Sessions', 'Watumiaji Hai (Saa 24)', 'Sesiones Activas 24h')}
               </span>
               <Activity size={16} className="text-moss" />
             </div>
@@ -630,7 +658,8 @@ export function MasterAdminDashboard({
               {activeActorIds.size}
             </p>
             <p className="mt-1 font-mono text-[11px] text-stone">
-              {adminUsersCount} Admins · {activeUsersCount} Active Profiles
+              {adminUsersCount} {ui('Admins', 'Wasimamizi', 'Admins')} · {activeUsersCount}{' '}
+              {ui('Active Profiles', 'Wasifu Hai', 'Perfiles Activos')}
             </p>
           </div>
         </section>
@@ -648,7 +677,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <ClipboardCheck size={14} />
-              Pending Approvals ({pendingApprovals.length})
+              {ui('Pending Approvals', 'Foleni ya Uhakiki', 'Aprobaciones Pendientes')} ({pendingApprovals.length})
             </button>
             <button
               type="button"
@@ -660,7 +689,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <FolderSearch size={14} />
-              Content Explorer ({unifiedContent.length})
+              {ui('Content Explorer', 'Kichunguzi cha Maudhui', 'Explorador de Contenido')} ({unifiedContent.length})
             </button>
             <button
               type="button"
@@ -672,7 +701,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <Users size={14} />
-              User Directory &amp; Analytics ({users.length})
+              {ui('User Directory & Analytics', 'Orodha ya Watumiaji', 'Directorio de Usuarios')} ({users.length})
             </button>
             <button
               type="button"
@@ -684,7 +713,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <Coins size={14} />
-              Mineral Prices ({mineralBenchmarks.length})
+              {ui('Mineral Prices', 'Bei za Madini', 'Precios de Minerales')} ({mineralBenchmarks.length})
             </button>
             <button
               type="button"
@@ -696,7 +725,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <ShieldCheck size={14} />
-              Live Audit Trail ({auditLogs.length})
+              {ui('Live Audit Trail', 'Ukaguzi wa Usalama', 'Auditoría en Vivo')} ({auditLogs.length})
             </button>
             <button
               type="button"
@@ -708,7 +737,7 @@ export function MasterAdminDashboard({
               }`}
             >
               <Database size={14} />
-              System Health
+              {ui('System Health', 'Afya ya Mfumo', 'Estado del Sistema')}
             </button>
           </div>
 
@@ -784,20 +813,21 @@ export function MasterAdminDashboard({
 
                       {item.value_usd !== null && (
                         <div className="font-mono text-sm font-semibold text-ochre">
-                          Valuation ({currency}): {formatExactUsd(item.value_usd)}
+                          {ui('Valuation', 'Thamani', 'Valoración')} ({currency}):{' '}
+                          <PriceDisplay amountInUSD={item.value_usd} />
                         </div>
                       )}
                     </div>
 
                     <h3 className="mt-2 font-display text-xl font-semibold text-ink">
-                      {item.title}
+                      {convertText(item.title)}
                     </h3>
                     <p className="mt-0.5 font-mono text-xs text-ochre">
-                      {item.category_badge}
+                      {convertText(item.category_badge)}
                     </p>
 
                     <p className="mt-3 whitespace-pre-wrap rounded-lg border border-ink/10 bg-paper-2/60 p-4 text-xs leading-relaxed text-ink-3">
-                      {item.details}
+                      {convertText(item.details)}
                     </p>
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-stone">
@@ -964,9 +994,9 @@ export function MasterAdminDashboard({
                         </div>
                       </td>
                       <td className="px-3 py-3">
-                        <div className="font-semibold text-ink">{item.title}</div>
+                        <div className="font-semibold text-ink">{convertText(item.title)}</div>
                         <div className="font-mono text-[10px] text-ochre">
-                          {item.category_badge}
+                          {convertText(item.category_badge)}
                         </div>
                       </td>
                       <td className="px-3 py-3">
@@ -976,9 +1006,11 @@ export function MasterAdminDashboard({
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
-                        {item.value_usd !== null
-                          ? formatExactUsd(item.value_usd)
-                          : '—'}
+                        {item.value_usd !== null ? (
+                          <PriceDisplay amountInUSD={item.value_usd} />
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
                         <span
@@ -1429,71 +1461,90 @@ export function MasterAdminDashboard({
               <table className="w-full border-collapse text-left text-xs">
                 <thead>
                   <tr className="border-b border-ink/10 font-mono text-[11px] uppercase tracking-wider text-stone">
-                    <th className="px-3 py-3">Commodity &amp; Symbol</th>
-                    <th className="px-3 py-3">World Market (USD)</th>
-                    <th className="px-3 py-3">Converted ({currency})</th>
-                    <th className="px-3 py-3">Mineral Market ({currency})</th>
-                    <th className="px-3 py-3">Buying Centre ({currency})</th>
-                    <th className="px-3 py-3">24h Trend</th>
-                    <th className="px-3 py-3 text-right">Admin Action</th>
+                    <th className="px-3 py-3">
+                      {ui('Commodity & Symbol', 'Madini na Alama', 'Mineral y Símbolo')}
+                    </th>
+                    <th className="px-3 py-3">
+                      {ui(`World Spot (${currency})`, `Soko la Dunia (${currency})`, `Spot Mundial (${currency})`)}
+                    </th>
+                    <th className="px-3 py-3">
+                      {ui(`Local Metric (${currency})`, `Kipimo cha Ndani (${currency})`, `Métrico Local (${currency})`)}
+                    </th>
+                    <th className="px-3 py-3">
+                      {ui(`Mineral Market (${currency})`, `Soko la Madini (${currency})`, `Mercado Mineral (${currency})`)}
+                    </th>
+                    <th className="px-3 py-3">
+                      {ui(`Buying Centre (${currency})`, `Kituo cha Ununuzi (${currency})`, `Centro de Compra (${currency})`)}
+                    </th>
+                    <th className="px-3 py-3">{ui('24h Trend', 'Mwelekeo 24h', 'Tendencia 24h')}</th>
+                    <th className="px-3 py-3 text-right">
+                      {ui('Admin Action', 'Hatua ya Utawala', 'Acción Admin')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink/10">
-                  {mineralBenchmarks.map((m) => (
-                    <tr key={m.id} className="hover:bg-paper/60">
-                      <td className="px-3 py-3">
-                        <div className="font-semibold text-ink">
-                          {m.mineral_name}{' '}
-                          <span className="rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-gold">
-                            {m.symbol}
+                  {mineralBenchmarks.map((m) => {
+                    const localMetric = formatStatutoryPrice(
+                      m.world_market_price_usd,
+                      m.unit,
+                      'metric_local',
+                    )
+                    return (
+                      <tr key={m.id} className="hover:bg-paper/60">
+                        <td className="px-3 py-3">
+                          <div className="font-semibold text-ink">
+                            {m.mineral_name}{' '}
+                            <span className="rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-gold">
+                              {m.symbol}
+                            </span>
+                          </div>
+                          <div className="font-mono text-[10px] text-stone">
+                            {m.category} · {m.unit} · {m.purity_note}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
+                          <PriceDisplay
+                            amountInUSD={m.world_market_price_usd}
+                            suffix={m.unit.replace('USD', '')}
+                          />
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ochre">
+                          {localMetric.formatted}
+                          <span className="text-[10px] font-normal text-stone">
+                            {localMetric.unitSuffix}
                           </span>
-                        </div>
-                        <div className="font-mono text-[10px] text-stone">
-                          {m.category} · {m.unit} · {m.purity_note}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
-                        ${m.world_market_price_usd.toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{' '}
-                        <span className="text-[10px] text-stone">
-                          {m.unit.replace('USD', '')}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ochre">
-                        {formatExactUsd(m.world_market_price_usd)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-moss">
-                        {formatExactUsd(m.local_market_price_usd)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-ink">
-                        {formatExactUsd(m.buying_centre_price_usd)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
-                        <span
-                          className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold ${
-                            m.trend_percentage >= 0
-                              ? 'border-moss/40 bg-moss-light text-moss'
-                              : 'border-danger/40 bg-danger/15 text-danger'
-                          }`}
-                        >
-                          {m.trend_percentage >= 0 ? '+' : ''}
-                          {m.trend_percentage.toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditMineral(m)}
-                          className="inline-flex items-center gap-1 rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-ink hover:text-paper"
-                        >
-                          <Edit3 size={12} />
-                          Edit Benchmark
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-moss">
+                          <PriceDisplay amountInUSD={m.local_market_price_usd} />
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-ink">
+                          <PriceDisplay amountInUSD={m.buying_centre_price_usd} />
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
+                          <span
+                            className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                              m.trend_percentage >= 0
+                                ? 'border-moss/40 bg-moss-light text-moss'
+                                : 'border-danger/40 bg-danger/15 text-danger'
+                            }`}
+                          >
+                            {m.trend_percentage >= 0 ? '+' : ''}
+                            {m.trend_percentage.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditMineral(m)}
+                            className="inline-flex items-center gap-1 rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-ink hover:text-paper"
+                          >
+                            <Edit3 size={12} />
+                            {ui('Edit Benchmark', 'Hariri Bei', 'Editar Precio')}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1585,13 +1636,13 @@ export function MasterAdminDashboard({
               </button>
             </div>
             <h3 className="mt-3 font-display text-2xl font-semibold">
-              {viewingContent.title}
+              {convertText(viewingContent.title)}
             </h3>
             <p className="mt-1 font-mono text-xs text-ochre">
-              {viewingContent.category_badge}
+              {convertText(viewingContent.category_badge)}
             </p>
             <p className="mt-4 whitespace-pre-wrap rounded-lg border border-ink/10 bg-paper-2 p-4 text-xs leading-relaxed">
-              {viewingContent.details}
+              {convertText(viewingContent.details)}
             </p>
             <div className="mt-4 space-y-1 font-mono text-xs text-stone">
               <div>

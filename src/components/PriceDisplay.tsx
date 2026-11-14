@@ -1,19 +1,23 @@
-'use client';
+'use client'
 
-import {
-  type FormatPriceOptions,
-  useCurrency,
-} from '@/context/CurrencyContext';
+import { useCurrency } from '../lib/currency'
+import { useLocalization } from '../context/LocalizationContext'
 
-export interface PriceDisplayProps extends FormatPriceOptions {
+export interface PriceDisplayProps {
   /** Base amount in USD to be dynamically converted and formatted */
-  amountInUSD: number;
+  amountInUSD: number
   /** Optional CSS classes for styling the price text */
-  className?: string;
-  /** Optional prefix or suffix label (e.g. "/mo") */
-  suffix?: string;
+  className?: string
+  /** Optional prefix or suffix label (e.g. "/mo", "/toz", "/g") */
+  suffix?: string
+  /** Compact notation (e.g. k, M, B) */
+  compact?: boolean
+  /** Override minimum fraction digits */
+  minimumFractionDigits?: number
+  /** Override maximum fraction digits */
+  maximumFractionDigits?: number
   /** Show original USD value on hover tooltip when viewing non-USD currency */
-  showBaseTooltip?: boolean;
+  showBaseTooltip?: boolean
 }
 
 export default function PriceDisplay({
@@ -25,33 +29,38 @@ export default function PriceDisplay({
   maximumFractionDigits,
   showBaseTooltip = true,
 }: PriceDisplayProps) {
-  const { currency, formatPrice } = useCurrency();
+  const { currency, formatUsd, formatExactUsd } = useCurrency()
 
-  const formattedValue = formatPrice(amountInUSD, {
-    compact,
-    minimumFractionDigits,
-    maximumFractionDigits,
-  });
+  let formatted: string
+  try {
+    const loc = useLocalization()
+    formatted = loc.formatPrice(amountInUSD, {
+      compact,
+      minimumFractionDigits,
+      maximumFractionDigits,
+    })
+  } catch {
+    formatted = compact ? formatUsd(amountInUSD) : formatExactUsd(amountInUSD)
+  }
 
-  const baseUsdLabel =
+  const usdTooltip =
     showBaseTooltip && currency !== 'USD'
-      ? `Base price: $${amountInUSD.toLocaleString('en-US', {
+      ? `Base Spot USD: $${amountInUSD.toLocaleString('en-US', {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
-        })} USD`
-      : undefined;
+        })}`
+      : undefined
 
   return (
     <span
-      title={baseUsdLabel}
-      className={`tabular-nums transition-colors duration-150 ${className}`}
+      title={usdTooltip}
+      data-currency={currency}
+      className={` tabular-nums transition-opacity duration-150 ${className}`}
     >
-      {formattedValue}
+      {formatted}
       {suffix ? (
-        <span className="ml-0.5 text-[0.85em] font-normal opacity-75">
-          {suffix}
-        </span>
+        <span className="ml-0.5 text-[0.82em] opacity-75">{suffix}</span>
       ) : null}
     </span>
-  );
+  )
 }

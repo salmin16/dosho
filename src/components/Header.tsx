@@ -1,7 +1,8 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Lock, Menu, ShieldCheck, User, X } from 'lucide-react'
-import { useI18n, type TranslationKey } from '../i18n'
+import { type TranslationKey } from '../i18n'
+import { useLocalization } from '../context/LocalizationContext'
 import { useAuthSession } from '../lib/supabaseAuth'
 import LanguageSwitcher from './LanguageSwitcher'
 import CurrencySwitcher from './CurrencySwitcher'
@@ -37,7 +38,7 @@ export function Logo({ light = false }: { light?: boolean }) {
 }
 
 export default function Header({ overlay = false }: { overlay?: boolean }) {
-  const { t } = useI18n()
+  const { t, ui } = useLocalization()
   const navigate = useNavigate()
   const session = useAuthSession()
   const [open, setOpen] = useState(false)
@@ -90,7 +91,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             className="link-underline flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-gold opacity-95 transition hover:opacity-100"
             activeProps={{ className: 'opacity-100 !bg-[length:100%_1px]' }}
           >
-            Markets
+            {ui('Markets', 'Masoko', 'Mercados')}
           </Link>
           {NAV.map((n) => (
             <Link
@@ -116,7 +117,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30"
               >
                 <ShieldCheck size={14} />
-                Vault ({session.user.fullName.split(' ')[0]})
+                {ui('Vault', 'Hifadhi', 'Bóveda')} ({session.user.fullName.split(' ')[0]})
               </Link>
               {session.user.role === 'admin' && (
                 <Link
@@ -124,7 +125,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                   className="inline-flex items-center gap-1.5 rounded-md border border-moss/60 bg-moss/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/30"
                 >
                   <ShieldCheck size={14} />
-                  Admin
+                  {ui('Admin', 'Utawala', 'Admin')}
                 </Link>
               )}
             </>
@@ -135,21 +136,21 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 className="inline-flex items-center gap-1.5 rounded-md border border-current/25 px-3 py-2 text-xs font-semibold transition hover:border-current/60 hover:bg-current/10"
               >
                 <User size={14} />
-                Sign In
+                {ui('Sign In', 'Ingia', 'Entrar')}
               </Link>
               <Link
                 to="/signup"
                 className="inline-flex items-center gap-1.5 rounded-md border border-ochre bg-ochre/15 px-3 py-2 text-xs font-semibold text-ochre transition hover:bg-ochre/25"
               >
                 <ShieldCheck size={14} />
-                Sign Up
+                {ui('Sign Up', 'Jisajili', 'Registrarse')}
               </Link>
               <Link
                 to="/admin"
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/25 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/35"
               >
                 <ShieldCheck size={14} />
-                Admin
+                {ui('Admin', 'Utawala', 'Admin')}
               </Link>
             </>
           )}
@@ -185,7 +186,9 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             onClick={() => setOpen(false)}
             className="flex items-center justify-between border-b border-ink/5 py-3.5 font-display text-xl text-ochre"
           >
-            <span>Indicative Mineral Markets</span>
+            <span>
+              {ui('Indicative Mineral Markets', 'Bei Elekezi za Madini', 'Mercados de Minerales')}
+            </span>
           </Link>
           {NAV.map((n) => (
             <Link

@@ -162,6 +162,7 @@ export function convertToUsd(
 
 /**
  * Dynamically converts inline USD text strings (e.g. "US$250k – US$3.5M", "$450")
+ * and inline TSh/TZS text strings (e.g. "TSh 120,000", "TSh 2,500,000")
  * into the active currency in real time.
  */
 export function convertInlineUsdText(
@@ -169,25 +170,55 @@ export function convertInlineUsdText(
   currencyCode: SupportedCurrency = activeCurrencyCode,
   rates: Record<SupportedCurrency, number> = activeRates
 ): string {
-  if (currencyCode === 'USD') return text;
-  return text.replace(
-    /(?:US\$|\$)(\d+(?:,\d{3})*(?:\.\d+)?)\s*([kKmMbB])?/g,
-    (_, rawNum: string, suffix?: string) => {
-      const base = parseFloat(rawNum.replace(/,/g, ''));
-      if (Number.isNaN(base)) return _;
-      let multiplier = 1;
-      if (suffix) {
-        const s = suffix.toLowerCase();
-        if (s === 'k') multiplier = 1_000;
-        else if (s === 'm') multiplier = 1_000_000;
-        else if (s === 'b') multiplier = 1_000_000_000;
+  if (!text) return text;
+  let result = text;
+
+  // 1. Convert inline USD figures when active currency is not USD
+  if (currencyCode !== 'USD') {
+    result = result.replace(
+      /(?:US\$|\$)(\d+(?:,\d{3})*(?:\.\d+)?)\s*([kKmMbB])?/g,
+      (match, rawNum: string, suffix?: string) => {
+        const base = parseFloat(rawNum.replace(/,/g, ''));
+        if (Number.isNaN(base)) return match;
+        let multiplier = 1;
+        if (suffix) {
+          const s = suffix.toLowerCase();
+          if (s === 'k') multiplier = 1_000;
+          else if (s === 'm') multiplier = 1_000_000;
+          else if (s === 'b') multiplier = 1_000_000_000;
+        }
+        const totalUsd = base * multiplier;
+        return suffix
+          ? formatCurrencyFromUsd(totalUsd, currencyCode, rates)
+          : formatExactFromUsd(totalUsd, currencyCode, rates);
       }
-      const totalUsd = base * multiplier;
-      return suffix
-        ? formatCurrencyFromUsd(totalUsd, currencyCode, rates)
-        : formatExactFromUsd(totalUsd, currencyCode, rates);
-    }
-  );
+    );
+  }
+
+  // 2. Convert inline TSh / TZS figures when active currency is not TZS
+  if (currencyCode !== 'TZS') {
+    const tzsRate = rates.TZS || FALLBACK_RATES_PER_USD.TZS || 2685;
+    result = result.replace(
+      /(?:TSh|TZS)\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*([kKmMbB])?/g,
+      (match, rawNum: string, suffix?: string) => {
+        const baseTzs = parseFloat(rawNum.replace(/,/g, ''));
+        if (Number.isNaN(baseTzs)) return match;
+        let multiplier = 1;
+        if (suffix) {
+          const s = suffix.toLowerCase();
+          if (s === 'k') multiplier = 1_000;
+          else if (s === 'm') multiplier = 1_000_000;
+          else if (s === 'b') multiplier = 1_000_000_000;
+        }
+        const totalUsd = (baseTzs * multiplier) / tzsRate;
+        return suffix
+          ? formatCurrencyFromUsd(totalUsd, currencyCode, rates)
+          : formatExactFromUsd(totalUsd, currencyCode, rates);
+      }
+    );
+  }
+
+  return result;
 }
 
 interface CurrencyContextValue {
@@ -227,8 +258,15 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(CURRENCY_STORAGE_KEY, code);
+        window.localStorage.setItem('dosho_preferred_currency', code);
         document.cookie = `${CURRENCY_COOKIE_NAME}=${code}; path=/; max-age=31536000; SameSite=Lax`;
+        const currentLang = window.localStorage.getItem('mc:lang') || 'en';
         window.dispatchEvent(new CustomEvent(CURRENCY_CHANGE_EVENT, { detail: code }));
+        window.dispatchEvent(
+          new CustomEvent('app-localization-update', {
+            detail: { currency: code, language: currentLang },
+          })
+        );
       } catch {
         // ignore storage errors
       }
@@ -282,6 +320,33 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     if (Date.now() - cached.updatedAt > CACHE_TTL_MS) {
       refreshRates();
     }
+
+    const handleCurrencySync = (e: Event) => {
+      const custom = e as CustomEvent<
+        SupportedCurrency | { currency?: SupportedCurrency; language?: string }
+      >;
+      const nextCode =
+        typeof custom.detail === 'string'
+          ? custom.detail
+          : custom.detail?.currency;
+      if (nextCode && nextCode in CURRENCIES) {
+        activeCurrencyCode = nextCode;
+        setCurrencyState(nextCode);
+      } else {
+        const stored = readInitialCurrency();
+        activeCurrencyCode = stored;
+        setCurrencyState(stored);
+      }
+    };
+
+    window.addEventListener(CURRENCY_CHANGE_EVENT, handleCurrencySync);
+    window.addEventListener('app-localization-update', handleCurrencySync);
+    window.addEventListener('storage', handleCurrencySync);
+    return () => {
+      window.removeEventListener(CURRENCY_CHANGE_EVENT, handleCurrencySync);
+      window.removeEventListener('app-localization-update', handleCurrencySync);
+      window.removeEventListener('storage', handleCurrencySync);
+    };
   }, [refreshRates]);
 
   const value = useMemo<CurrencyContextValue>(() => {
