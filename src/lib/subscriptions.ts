@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSession, recordAuditActivity, useAuthSession } from './supabaseAuth';
+import {
+  MERCHANT_SETTLEMENT_ACCOUNT,
+  buildMerchantSettlementEntry,
+  recordMerchantSettlementLedger,
+  type SettlementLedgerEntry,
+} from './payments/settlement';
 import type {
   BillingCycle,
   PaymentGatewayId,
@@ -432,6 +438,7 @@ export async function activateVerifiedSubscription(params: {
   success: boolean;
   subscription?: UserSubscriptionRecord;
   transaction?: PaymentTransactionRecord;
+  settlement?: SettlementLedgerEntry;
   error?: string;
 }> {
   const session = getSession();
@@ -501,6 +508,19 @@ export async function activateVerifiedSubscription(params: {
     created_at: now.toISOString(),
   };
 
+  const settlement = buildMerchantSettlementEntry({
+    transactionReference: externalReference,
+    userId: targetUserId,
+    tierName: verified.tierName,
+    billingCycle: verified.billingCycle,
+    gateway: params.gateway,
+    paymentChannel: params.paymentMethodLabel,
+    verifiedAmountTzs: verified.verifiedAmountTzs,
+    verifiedAmountUsd: verified.verifiedAmountUsd,
+    chargedCurrency: params.chargedCurrency,
+    chargedAmount: params.chargedAmount,
+  });
+
   if (typeof window !== 'undefined') {
     const allSubs = getAllStoredSubscriptions();
     allSubs[targetUserId] = subscription;
@@ -517,9 +537,11 @@ export async function activateVerifiedSubscription(params: {
       JSON.stringify(txList.slice(0, 200))
     );
 
+    recordMerchantSettlementLedger(settlement);
+
     window.dispatchEvent(
       new CustomEvent(SUBSCRIPTION_UPDATED_EVENT, {
-        detail: { subscription, transaction },
+        detail: { subscription, transaction, settlement },
       })
     );
   }
@@ -535,6 +557,11 @@ export async function activateVerifiedSubscription(params: {
       verifiedAmountTzs: verified.verifiedAmountTzs,
       verifiedAmountUsd: verified.verifiedAmountUsd,
       reference: externalReference,
+      settlementBank: MERCHANT_SETTLEMENT_ACCOUNT.bankName,
+      settlementAccountNumber: MERCHANT_SETTLEMENT_ACCOUNT.accountNumber,
+      settlementBeneficiary: MERCHANT_SETTLEMENT_ACCOUNT.accountName,
+      settlementStatus: settlement.settlementStatus,
+      settlementBatchId: settlement.batchId,
       expiresAt,
     },
   });
@@ -543,6 +570,7 @@ export async function activateVerifiedSubscription(params: {
     success: true,
     subscription,
     transaction,
+    settlement,
   };
 }
 
