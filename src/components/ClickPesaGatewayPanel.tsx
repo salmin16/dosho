@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
+  Check,
   CheckCircle2,
   CreditCard,
   KeyRound,
@@ -26,6 +27,11 @@ import {
   executeClickPesaSubscriptionPayment,
   resolveVerifiedTierPricing,
 } from '../lib/subscriptions';
+import {
+  ClickPesaBrandMark,
+  ClickPesaProviderLogo,
+  PROVIDER_BRAND_THEMES,
+} from './ClickPesaBrandLogos';
 import type {
   BillingCycle,
   ClickPesaProviderCode,
@@ -109,6 +115,7 @@ export default function ClickPesaGatewayPanel({
   }, [phoneInput, activeRail]);
 
   const activeChannel = CLICKPESA_CHANNELS[selectedProvider];
+  const activeBrandTheme = PROVIDER_BRAND_THEMES[selectedProvider];
 
   const idempotencyPreview = useMemo(
     () =>
@@ -222,13 +229,14 @@ export default function ClickPesaGatewayPanel({
       {/* ClickPesa Fintech Header Bar */}
       <div className="border-b border-ink/15 bg-ink px-6 py-5 text-paper">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <ClickPesaBrandMark className="h-8 w-8 shrink-0" />
             <span className="inline-flex items-center gap-1.5 rounded-md bg-gold px-2.5 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-ink">
               <Lock size={12} />
               ClickPesa FinTech Gateway
             </span>
             <span className="rounded-full border border-moss/50 bg-moss/30 px-2.5 py-0.5 font-mono text-[10px] text-[#9de4b4]">
-              PCI-DSS & BoT Licensed Rails
+              BoT Licensed · PCI-DSS 3DS 2.0
             </span>
           </div>
 
@@ -273,74 +281,130 @@ export default function ClickPesaGatewayPanel({
       </div>
 
       {/* Rail Selector Tabs: Mobile Money | Bank Payments | International Cards */}
-      <div className="border-b border-ink/10 bg-paper px-6 py-3.5">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="border-b border-ink/10 bg-paper px-6 py-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <button
             type="button"
             onClick={() => handleSelectRail('MOBILE_MONEY')}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+            className={`group relative flex items-center justify-between gap-3 overflow-hidden rounded-xl border px-4 py-3 text-left text-xs font-semibold transition ${
               activeRail === 'MOBILE_MONEY'
-                ? 'border-ochre bg-ink text-paper shadow-sm'
-                : 'border-ink/12 bg-white text-ink hover:border-ochre/40'
+                ? 'border-ochre bg-ink text-paper shadow-md ring-2 ring-ochre/30'
+                : 'border-ink/12 bg-white text-ink hover:border-ochre/45'
             }`}
           >
-            <Smartphone
-              size={15}
-              className={
-                activeRail === 'MOBILE_MONEY' ? 'text-gold' : 'text-ochre'
-              }
-            />
-            <div className="text-left">
-              <div>{ui('Tanzania Mobile Money', 'Malipo ya Simu', 'Dinero Móvil')}</div>
-              <div className="font-mono text-[10px] opacity-75">
-                M-Pesa · Airtel · Mixx/Tigo · Halo · Ezy
+            <div className="flex items-center gap-2.5">
+              <Smartphone
+                size={18}
+                className={
+                  activeRail === 'MOBILE_MONEY' ? 'text-gold' : 'text-ochre'
+                }
+              />
+              <div>
+                <div className="text-sm font-bold">
+                  {ui('Tanzania Mobile Money', 'Malipo ya Simu', 'Dinero Móvil')}
+                </div>
+                <div className="font-mono text-[10px] opacity-75">
+                  M-Pesa · Airtel · Mixx/Tigo · Halo · Ezy
+                </div>
               </div>
+            </div>
+            <div className="flex -space-x-1.5">
+              <ClickPesaProviderLogo
+                code="MPESA_TZ"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="AIRTEL_MONEY_TZ"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="MIXX_BY_YAS"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
             </div>
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectRail('BANK_TRANSFER')}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+            className={`group relative flex items-center justify-between gap-3 overflow-hidden rounded-xl border px-4 py-3 text-left text-xs font-semibold transition ${
               activeRail === 'BANK_TRANSFER'
-                ? 'border-ochre bg-ink text-paper shadow-sm'
-                : 'border-ink/12 bg-white text-ink hover:border-ochre/40'
+                ? 'border-ochre bg-ink text-paper shadow-md ring-2 ring-ochre/30'
+                : 'border-ink/12 bg-white text-ink hover:border-ochre/45'
             }`}
           >
-            <Building2
-              size={15}
-              className={
-                activeRail === 'BANK_TRANSFER' ? 'text-gold' : 'text-ochre'
-              }
-            />
-            <div className="text-left">
-              <div>{ui('Bank Payments (TISS)', 'Malipo ya Benki', 'Pagos Bancarios')}</div>
-              <div className="font-mono text-[10px] opacity-75">
-                CRDB · NMB · NBC Control No.
+            <div className="flex items-center gap-2.5">
+              <Building2
+                size={18}
+                className={
+                  activeRail === 'BANK_TRANSFER' ? 'text-gold' : 'text-ochre'
+                }
+              />
+              <div>
+                <div className="text-sm font-bold">
+                  {ui('Bank Payments (TISS)', 'Malipo ya Benki', 'Pagos Bancarios')}
+                </div>
+                <div className="font-mono text-[10px] opacity-75">
+                  CRDB · NMB · NBC Control No.
+                </div>
               </div>
+            </div>
+            <div className="flex -space-x-1.5">
+              <ClickPesaProviderLogo
+                code="CRDB_BANK"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="NMB_BANK"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="NBC_BANK"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
             </div>
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectRail('INTERNATIONAL_CARD')}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+            className={`group relative flex items-center justify-between gap-3 overflow-hidden rounded-xl border px-4 py-3 text-left text-xs font-semibold transition ${
               activeRail === 'INTERNATIONAL_CARD'
-                ? 'border-ochre bg-ink text-paper shadow-sm'
-                : 'border-ink/12 bg-white text-ink hover:border-ochre/40'
+                ? 'border-ochre bg-ink text-paper shadow-md ring-2 ring-ochre/30'
+                : 'border-ink/12 bg-white text-ink hover:border-ochre/45'
             }`}
           >
-            <CreditCard
-              size={15}
-              className={
-                activeRail === 'INTERNATIONAL_CARD' ? 'text-gold' : 'text-ochre'
-              }
-            />
-            <div className="text-left">
-              <div>{ui('International Cards', 'Kadi za Kimataifa', 'Tarjetas')}</div>
-              <div className="font-mono text-[10px] opacity-75">
-                Visa · Mastercard · UnionPay
+            <div className="flex items-center gap-2.5">
+              <CreditCard
+                size={18}
+                className={
+                  activeRail === 'INTERNATIONAL_CARD'
+                    ? 'text-gold'
+                    : 'text-ochre'
+                }
+              />
+              <div>
+                <div className="text-sm font-bold">
+                  {ui('International Cards', 'Kadi za Kimataifa', 'Tarjetas')}
+                </div>
+                <div className="font-mono text-[10px] opacity-75">
+                  Visa · Mastercard · UnionPay
+                </div>
               </div>
+            </div>
+            <div className="flex -space-x-1.5">
+              <ClickPesaProviderLogo
+                code="VISA_CARD"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="MASTERCARD"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
+              <ClickPesaProviderLogo
+                code="UNIONPAY_CARD"
+                className="h-6 w-11 rounded shadow-xs ring-1 ring-black/10"
+              />
             </div>
           </button>
         </div>
@@ -348,9 +412,9 @@ export default function ClickPesaGatewayPanel({
 
       {/* Form Body */}
       <form onSubmit={handleSubmit} className="space-y-6 p-6">
-        {/* 1. MOBILE MONEY CHANNEL SELECTOR */}
+        {/* 1. MOBILE MONEY CHANNEL SELECTOR WITH OFFICIAL NETWORK LOGOS & BRANDED BACKGROUNDS */}
         {activeRail === 'MOBILE_MONEY' && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
               <label className="label">
                 {ui(
@@ -359,38 +423,78 @@ export default function ClickPesaGatewayPanel({
                   'Seleccione Operador de Dinero Móvil'
                 )}
               </label>
-              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+              <div className="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 {CLICKPESA_MOBILE_MONEY_LIST.map((mno) => {
-                  const selected = selectedProvider === mno.code;
+                  const code = mno.code as Exclude<
+                    ClickPesaProviderCode,
+                    'FREE'
+                  >;
+                  const selected = selectedProvider === code;
+                  const theme = PROVIDER_BRAND_THEMES[code];
+
                   return (
                     <button
                       key={mno.code}
                       type="button"
-                      onClick={() =>
-                        setSelectedProvider(
-                          mno.code as Exclude<ClickPesaProviderCode, 'FREE'>
-                        )
-                      }
-                      className={`flex flex-col justify-between rounded-xl border p-3 text-left transition ${
+                      onClick={() => setSelectedProvider(code)}
+                      style={{
+                        background: selected
+                          ? theme.selectedBgGradient
+                          : theme.cardBgGradient,
+                        borderColor: selected
+                          ? theme.primaryHex
+                          : 'rgba(21,18,15,0.14)',
+                      }}
+                      className={`group relative flex min-h-[132px] flex-col justify-between overflow-hidden rounded-2xl border-2 p-3.5 text-left transition-all duration-200 ${
                         selected
-                          ? 'border-ochre bg-ink text-paper ring-2 ring-ochre/35'
-                          : 'border-ink/12 bg-paper/60 text-ink hover:border-ochre/40'
+                          ? 'text-white shadow-xl ring-2 ring-gold/60 -translate-y-0.5'
+                          : 'text-ink shadow-xs hover:-translate-y-0.5 hover:shadow-md'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: mno.badgeColor }}
+                      {/* Official Network Logo Watermark in Card Background */}
+                      <div
+                        className={`pointer-events-none absolute -bottom-3 -right-3 transition-transform duration-300 group-hover:scale-105 ${
+                          selected ? 'opacity-25' : 'opacity-[0.13]'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="watermark"
+                          className="h-20 w-32 rounded-xl"
                         />
-                        <span className="font-mono text-[9px] opacity-70">
-                          {mno.ussdCode}
-                        </span>
                       </div>
-                      <div className="mt-2 font-display text-sm font-semibold">
-                        {mno.shortName}
+
+                      {/* Top Row: Official Brand Logo Badge + USSD Code */}
+                      <div className="relative z-10 flex items-start justify-between gap-2">
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="badge"
+                          className="h-10 w-20 rounded-lg shadow-sm ring-1 ring-white/25"
+                        />
+                        {selected ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 font-mono text-[9px] font-bold uppercase text-ink shadow-xs">
+                            <Check size={10} /> Active
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-ink/8 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-ink/75">
+                            {mno.ussdCode}
+                          </span>
+                        )}
                       </div>
-                      <div className="mt-0.5 font-mono text-[10px] opacity-70">
-                        +255 {mno.prefixes?.join('/')}
+
+                      {/* Bottom Row: Official Network Name & Prefixes */}
+                      <div className="relative z-10 mt-3">
+                        <div className="font-display text-base font-bold leading-tight">
+                          {mno.shortName}
+                        </div>
+                        <div
+                          className={`mt-0.5 font-mono text-[10px] font-medium ${
+                            selected ? 'text-white/85' : 'text-stone'
+                          }`}
+                        >
+                          +255 {mno.prefixes?.join(' / ')} · {mno.ussdCode}
+                        </div>
                       </div>
                     </button>
                   );
@@ -398,143 +502,278 @@ export default function ClickPesaGatewayPanel({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="cp-mno-phone" className="label">
-                  {ui(
-                    'Mobile Money Phone Number (+255)',
-                    'Namba ya Simu ya Malipo (+255)',
-                    'Número de Teléfono Móvil (+255)'
-                  )}
-                </label>
-                <input
-                  id="cp-mno-phone"
-                  type="tel"
-                  required
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  placeholder="+255 754 210 890"
-                  className="field font-mono"
+            {/* Branded Active Mobile Money Terminal Box */}
+            <div
+              style={{
+                background: activeBrandTheme.cardBgGradient,
+                borderColor: activeBrandTheme.primaryHex,
+              }}
+              className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            >
+              {/* Large Official Logo Watermark in the Terminal Background */}
+              <div
+                className="pointer-events-none absolute -right-4 -top-4 opacity-[0.11]"
+                aria-hidden="true"
+              >
+                <ClickPesaProviderLogo
+                  code={selectedProvider}
+                  variant="watermark"
+                  className="h-36 w-56 rounded-2xl"
                 />
-                <p className="mt-1 text-[11px] text-stone">
-                  Auto-detected network:{' '}
-                  <strong className="text-ink">{activeChannel.name}</strong> (
-                  {activeChannel.ussdCode})
-                </p>
               </div>
 
-              <div className="rounded-xl border border-ink/10 bg-paper p-4 font-mono text-xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-ochre">
-                  ClickPesa STK Push Flow
+              <div className="relative z-10 grid grid-cols-1 gap-5 lg:grid-cols-[1.35fr_1fr]">
+                <div>
+                  <div className="mb-3 flex items-center gap-3">
+                    <ClickPesaProviderLogo
+                      code={selectedProvider}
+                      variant="banner"
+                      className="h-11 w-24 rounded-lg shadow-sm"
+                    />
+                    <div>
+                      <span
+                        style={{ color: activeBrandTheme.primaryHex }}
+                        className="font-mono text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        {activeBrandTheme.tagline}
+                      </span>
+                      <h4 className="font-display text-lg font-semibold text-ink">
+                        {activeChannel.name} STK Push
+                      </h4>
+                    </div>
+                  </div>
+
+                  <label htmlFor="cp-mno-phone" className="label">
+                    {ui(
+                      'Enter Registered Mobile Money Number (+255)',
+                      'Ingiza Namba ya Simu ya Malipo (+255)',
+                      'Ingrese Número de Teléfono Móvil (+255)'
+                    )}
+                  </label>
+                  <input
+                    id="cp-mno-phone"
+                    type="tel"
+                    required
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    placeholder="+255 754 210 890"
+                    className="field bg-white/95 font-mono text-base font-semibold shadow-2xs"
+                  />
+                  <p className="mt-1.5 text-[11px] text-stone">
+                    Auto-detected operator:{' '}
+                    <strong className="text-ink">{activeChannel.name}</strong> ·
+                    USSD Shortcode:{' '}
+                    <code className="font-mono font-bold text-ink">
+                      {activeChannel.ussdCode}
+                    </code>
+                  </p>
                 </div>
-                <ol className="mt-2 space-y-1 text-[11px] text-stone">
-                  <li>1. Click &ldquo;Subscribe via {activeChannel.shortName}&rdquo;</li>
-                  <li>
-                    2. Approve PIN prompt on your handset ({activeChannel.ussdCode})
-                  </li>
-                  <li>
-                    3. ClickPesa webhook reconciles &amp; unlocks{' '}
-                    <strong className="text-ink">{tierName}</strong>
-                  </li>
-                </ol>
+
+                <div className="rounded-xl border border-ink/12 bg-white/90 p-4 font-mono text-xs backdrop-blur-xs">
+                  <div
+                    style={{ color: activeBrandTheme.primaryHex }}
+                    className="text-[10px] font-bold uppercase tracking-wider"
+                  >
+                    {activeChannel.shortName} Direct USSD Authorization
+                  </div>
+                  <ol className="mt-2 space-y-1.5 text-[11px] text-stone">
+                    <li>
+                      1. Click{' '}
+                      <strong className="text-ink">
+                        &ldquo;Subscribe via {activeChannel.shortName}&rdquo;
+                      </strong>
+                    </li>
+                    <li>
+                      2. Confirm STK PIN prompt on handset (
+                      <strong className="text-ink">
+                        {activeChannel.ussdCode}
+                      </strong>
+                      )
+                    </li>
+                    <li>
+                      3. ClickPesa webhook reconciles &amp; unlocks{' '}
+                      <strong className="text-ink">{tierName}</strong>
+                    </li>
+                  </ol>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 2. TANZANIAN BANK PAYMENTS (CRDB, NMB, NBC) */}
+        {/* 2. TANZANIAN BANK PAYMENTS (CRDB, NMB, NBC) WITH OFFICIAL BANK LOGOS & BRANDED BACKGROUNDS */}
         {activeRail === 'BANK_TRANSFER' && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
               <label className="label">
                 {ui(
-                  'Select Tanzanian Settlement Bank (ClickPesa Control Number & Direct Debit)',
+                  'Select Tanzanian Settlement Bank (CRDB, NMB, NBC Official Channels)',
                   'Chagua Benki ya Malipo (CRDB, NMB, NBC)',
                   'Seleccione Banco de Liquidación (CRDB, NMB, NBC)'
                 )}
               </label>
-              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="mt-2.5 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
                 {CLICKPESA_BANK_LIST.map((bank) => {
-                  const selected = selectedProvider === bank.code;
+                  const code = bank.code as Exclude<
+                    ClickPesaProviderCode,
+                    'FREE'
+                  >;
+                  const selected = selectedProvider === code;
+                  const theme = PROVIDER_BRAND_THEMES[code];
+
                   return (
                     <button
                       key={bank.code}
                       type="button"
-                      onClick={() =>
-                        setSelectedProvider(
-                          bank.code as Exclude<ClickPesaProviderCode, 'FREE'>
-                        )
-                      }
-                      className={`flex flex-col justify-between rounded-xl border p-4 text-left transition ${
+                      onClick={() => setSelectedProvider(code)}
+                      style={{
+                        background: selected
+                          ? theme.selectedBgGradient
+                          : theme.cardBgGradient,
+                        borderColor: selected
+                          ? theme.primaryHex
+                          : 'rgba(21,18,15,0.14)',
+                      }}
+                      className={`group relative flex min-h-[148px] flex-col justify-between overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
                         selected
-                          ? 'border-ochre bg-ink text-paper ring-2 ring-ochre/35'
-                          : 'border-ink/12 bg-paper/60 text-ink hover:border-ochre/40'
+                          ? 'text-white shadow-xl ring-2 ring-gold/60 -translate-y-0.5'
+                          : 'text-ink shadow-xs hover:-translate-y-0.5 hover:shadow-md'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-display text-base font-semibold">
-                          {bank.shortName}
-                        </span>
-                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] text-gold">
-                          {bank.ussdCode}
-                        </span>
+                      {/* Official Bank Logo Watermark in Background */}
+                      <div
+                        className={`pointer-events-none absolute -bottom-3 -right-3 transition-transform duration-300 group-hover:scale-105 ${
+                          selected ? 'opacity-25' : 'opacity-[0.14]'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="watermark"
+                          className="h-24 w-36 rounded-xl"
+                        />
                       </div>
-                      <p className="mt-1.5 text-xs opacity-80">
-                        {bank.subtitle}
-                      </p>
-                      <span className="mt-2 font-mono text-[10px] text-ochre">
-                        {bank.settlementTime}
-                      </span>
+
+                      <div className="relative z-10 flex items-start justify-between gap-2">
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="badge"
+                          className="h-11 w-24 rounded-lg shadow-sm ring-1 ring-white/25"
+                        />
+                        {selected ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 font-mono text-[9px] font-bold uppercase text-ink shadow-xs">
+                            <Check size={10} /> Selected
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-ink/8 px-2 py-0.5 font-mono text-[10px] font-semibold text-ink/80">
+                            {bank.ussdCode}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative z-10 mt-3">
+                        <div className="font-display text-lg font-bold">
+                          {bank.name}
+                        </div>
+                        <p
+                          className={`mt-0.5 text-xs ${
+                            selected ? 'text-white/85' : 'text-stone'
+                          }`}
+                        >
+                          {bank.subtitle}
+                        </p>
+                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="cp-bank-holder" className="label">
-                  {ui(
-                    'Account Holder / Company Name',
-                    'Jina la Mwenye Akaunti / Kampuni',
-                    'Titular de la Cuenta / Empresa'
-                  )}
-                </label>
-                <input
-                  id="cp-bank-holder"
-                  type="text"
-                  required
-                  value={bankAccountHolder}
-                  onChange={(e) => setBankAccountHolder(e.target.value)}
-                  className="field"
+            {/* Branded Active Bank Settlement Box */}
+            <div
+              style={{
+                background: activeBrandTheme.cardBgGradient,
+                borderColor: activeBrandTheme.primaryHex,
+              }}
+              className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            >
+              <div
+                className="pointer-events-none absolute -right-4 -top-4 opacity-[0.11]"
+                aria-hidden="true"
+              >
+                <ClickPesaProviderLogo
+                  code={selectedProvider}
+                  variant="watermark"
+                  className="h-36 w-56 rounded-2xl"
                 />
               </div>
 
-              <div>
-                <label htmlFor="cp-bank-acct" className="label">
-                  {activeChannel.shortName}{' '}
-                  {ui(
-                    'Account / SimBanking / NMB Mkononi Number',
-                    'Namba ya Akaunti ya Benki',
-                    'Número de Cuenta Bancaria'
-                  )}
-                </label>
-                <input
-                  id="cp-bank-acct"
-                  type="text"
-                  required
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value)}
-                  className="field font-mono"
-                />
+              <div className="relative z-10">
+                <div className="mb-4 flex items-center gap-3">
+                  <ClickPesaProviderLogo
+                    code={selectedProvider}
+                    variant="banner"
+                    className="h-11 w-24 rounded-lg shadow-sm"
+                  />
+                  <div>
+                    <span
+                      style={{ color: activeBrandTheme.primaryHex }}
+                      className="font-mono text-[10px] font-bold uppercase tracking-wider"
+                    >
+                      {activeBrandTheme.tagline}
+                    </span>
+                    <h4 className="font-display text-lg font-semibold text-ink">
+                      {activeChannel.name} Settlement Desk
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="cp-bank-holder" className="label">
+                      {ui(
+                        'Account Holder / Mining Company Name',
+                        'Jina la Mwenye Akaunti / Kampuni',
+                        'Titular de la Cuenta / Empresa'
+                      )}
+                    </label>
+                    <input
+                      id="cp-bank-holder"
+                      type="text"
+                      required
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      className="field bg-white/95 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="cp-bank-acct" className="label">
+                      {activeChannel.shortName}{' '}
+                      {ui(
+                        'Account / SimBanking / NMB Mkononi Number',
+                        'Namba ya Akaunti ya Benki',
+                        'Número de Cuenta Bancaria'
+                      )}
+                    </label>
+                    <input
+                      id="cp-bank-acct"
+                      type="text"
+                      required
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                      className="field bg-white/95 font-mono font-semibold shadow-2xs"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 3. INTERNATIONAL CARDS (VISA, MASTERCARD, UNIONPAY) */}
+        {/* 3. INTERNATIONAL CARDS (VISA, MASTERCARD, UNIONPAY) WITH OFFICIAL LOGOS & BRANDED BACKGROUNDS */}
         {activeRail === 'INTERNATIONAL_CARD' && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
               <label className="label">
                 {ui(
@@ -543,98 +782,193 @@ export default function ClickPesaGatewayPanel({
                   'Seleccione Red de Tarjeta Internacional'
                 )}
               </label>
-              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="mt-2.5 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
                 {CLICKPESA_CARD_LIST.map((card) => {
-                  const selected = selectedProvider === card.code;
+                  const code = card.code as Exclude<
+                    ClickPesaProviderCode,
+                    'FREE'
+                  >;
+                  const selected = selectedProvider === code;
+                  const theme = PROVIDER_BRAND_THEMES[code];
+
                   return (
                     <button
                       key={card.code}
                       type="button"
-                      onClick={() =>
-                        setSelectedProvider(
-                          card.code as Exclude<ClickPesaProviderCode, 'FREE'>
-                        )
-                      }
-                      className={`flex flex-col justify-between rounded-xl border p-4 text-left transition ${
+                      onClick={() => setSelectedProvider(code)}
+                      style={{
+                        background: selected
+                          ? theme.selectedBgGradient
+                          : theme.cardBgGradient,
+                        borderColor: selected
+                          ? theme.primaryHex
+                          : 'rgba(21,18,15,0.14)',
+                      }}
+                      className={`group relative flex min-h-[140px] flex-col justify-between overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
                         selected
-                          ? 'border-ochre bg-ink text-paper ring-2 ring-ochre/35'
-                          : 'border-ink/12 bg-paper/60 text-ink hover:border-ochre/40'
+                          ? 'text-white shadow-xl ring-2 ring-gold/60 -translate-y-0.5'
+                          : 'text-ink shadow-xs hover:-translate-y-0.5 hover:shadow-md'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-display text-base font-semibold">
-                          {card.shortName}
-                        </span>
-                        <span className="rounded bg-moss/30 px-2 py-0.5 font-mono text-[10px] text-[#9de4b4]">
-                          3DS 2.0
-                        </span>
+                      {/* Official Card Network Logo Watermark in Background */}
+                      <div
+                        className={`pointer-events-none absolute -bottom-3 -right-3 transition-transform duration-300 group-hover:scale-105 ${
+                          selected ? 'opacity-25' : 'opacity-[0.14]'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="watermark"
+                          className="h-24 w-36 rounded-xl"
+                        />
                       </div>
-                      <p className="mt-1.5 text-xs opacity-80">
-                        {card.subtitle}
-                      </p>
+
+                      <div className="relative z-10 flex items-start justify-between gap-2">
+                        <ClickPesaProviderLogo
+                          code={code}
+                          variant="badge"
+                          className="h-11 w-24 rounded-lg shadow-sm ring-1 ring-white/25"
+                        />
+                        {selected ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 font-mono text-[9px] font-bold uppercase text-ink shadow-xs">
+                            <Check size={10} /> Active
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-moss/20 px-2 py-0.5 font-mono text-[10px] font-bold text-moss">
+                            3DS 2.0
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative z-10 mt-3">
+                        <div className="font-display text-lg font-bold">
+                          {card.name}
+                        </div>
+                        <p
+                          className={`mt-0.5 text-xs ${
+                            selected ? 'text-white/85' : 'text-stone'
+                          }`}
+                        >
+                          {card.subtitle}
+                        </p>
+                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="cp-card-name" className="label">
-                  {ui('Cardholder Name', 'Jina Kwenye Kadi', 'Nombre en la Tarjeta')}
-                </label>
-                <input
-                  id="cp-card-name"
-                  type="text"
-                  required
-                  value={cardholderName}
-                  onChange={(e) => setCardholderName(e.target.value)}
-                  className="field"
+            {/* Branded Active International Card Terminal */}
+            <div
+              style={{
+                background: activeBrandTheme.cardBgGradient,
+                borderColor: activeBrandTheme.primaryHex,
+              }}
+              className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            >
+              <div
+                className="pointer-events-none absolute -right-4 -top-4 opacity-[0.11]"
+                aria-hidden="true"
+              >
+                <ClickPesaProviderLogo
+                  code={selectedProvider}
+                  variant="watermark"
+                  className="h-36 w-56 rounded-2xl"
                 />
               </div>
 
-              <div>
-                <label htmlFor="cp-card-number" className="label">
-                  {activeChannel.shortName}{' '}
-                  {ui('Card Number', 'Namba ya Kadi', 'Número de Tarjeta')}
-                </label>
-                <input
-                  id="cp-card-number"
-                  type="text"
-                  required
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
+              <div className="relative z-10">
+                <div className="mb-4 flex items-center gap-3">
+                  <ClickPesaProviderLogo
+                    code={selectedProvider}
+                    variant="banner"
+                    className="h-11 w-24 rounded-lg shadow-sm"
+                  />
+                  <div>
+                    <span
+                      style={{ color: activeBrandTheme.primaryHex }}
+                      className="font-mono text-[10px] font-bold uppercase tracking-wider"
+                    >
+                      {activeBrandTheme.tagline}
+                    </span>
+                    <h4 className="font-display text-lg font-semibold text-ink">
+                      {activeChannel.name} Checkout
+                    </h4>
+                  </div>
+                </div>
 
-              <div>
-                <label htmlFor="cp-card-exp" className="label">
-                  {ui('Expiry (MM/YY)', 'Muda wa Kuisha (MM/YY)', 'Vencimiento (MM/AA)')}
-                </label>
-                <input
-                  id="cp-card-exp"
-                  type="text"
-                  required
-                  value={cardExpiry}
-                  onChange={(e) => setCardExpiry(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="cp-card-name" className="label">
+                      {ui(
+                        'Cardholder Name',
+                        'Jina Kwenye Kadi',
+                        'Nombre en la Tarjeta'
+                      )}
+                    </label>
+                    <input
+                      id="cp-card-name"
+                      type="text"
+                      required
+                      value={cardholderName}
+                      onChange={(e) => setCardholderName(e.target.value)}
+                      className="field bg-white/95 shadow-2xs"
+                    />
+                  </div>
 
-              <div>
-                <label htmlFor="cp-card-cvc" className="label">
-                  {ui('CVC / Security Code', 'Namba ya Siri (CVC)', 'Código CVC')}
-                </label>
-                <input
-                  id="cp-card-cvc"
-                  type="password"
-                  maxLength={4}
-                  required
-                  value={cardCvc}
-                  onChange={(e) => setCardCvc(e.target.value)}
-                  className="field font-mono"
-                />
+                  <div>
+                    <label htmlFor="cp-card-number" className="label">
+                      {activeChannel.shortName}{' '}
+                      {ui('Card Number', 'Namba ya Kadi', 'Número de Tarjeta')}
+                    </label>
+                    <input
+                      id="cp-card-number"
+                      type="text"
+                      required
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      className="field bg-white/95 font-mono font-semibold shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="cp-card-exp" className="label">
+                      {ui(
+                        'Expiry (MM/YY)',
+                        'Muda wa Kuisha (MM/YY)',
+                        'Vencimiento (MM/AA)'
+                      )}
+                    </label>
+                    <input
+                      id="cp-card-exp"
+                      type="text"
+                      required
+                      value={cardExpiry}
+                      onChange={(e) => setCardExpiry(e.target.value)}
+                      className="field bg-white/95 font-mono shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="cp-card-cvc" className="label">
+                      {ui(
+                        'CVC / Security Code',
+                        'Namba ya Siri (CVC)',
+                        'Código CVC'
+                      )}
+                    </label>
+                    <input
+                      id="cp-card-cvc"
+                      type="password"
+                      maxLength={4}
+                      required
+                      value={cardCvc}
+                      onChange={(e) => setCardCvc(e.target.value)}
+                      className="field bg-white/95 font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -692,7 +1026,10 @@ export default function ClickPesaGatewayPanel({
           {liveTx && (
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 pt-2 text-[11px] text-stone">
               <span>
-                Order ID: <strong className="text-ink">{liveTx.clickpesa_order_id}</strong>
+                Order ID:{' '}
+                <strong className="text-ink">
+                  {liveTx.clickpesa_order_id}
+                </strong>
               </span>
               {liveTx.clickpesa_control_number && (
                 <span>
@@ -730,7 +1067,12 @@ export default function ClickPesaGatewayPanel({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2 font-mono text-[11px] text-stone">
+          <div className="flex items-center gap-2.5 font-mono text-[11px] text-stone">
+            <ClickPesaProviderLogo
+              code={selectedProvider}
+              variant="badge"
+              className="h-7 w-14 rounded shadow-2xs"
+            />
             <ShieldCheck size={15} className="text-moss" />
             <span>
               HMAC-SHA256 Webhook Reconciled · Instant{' '}
@@ -741,7 +1083,10 @@ export default function ClickPesaGatewayPanel({
           <button
             type="submit"
             disabled={txState === 'INITIATED' || txState === 'PROCESSING'}
-            className="btn-primary min-w-[260px] justify-center !py-3.5 !px-6 text-sm disabled:opacity-60"
+            style={{
+              backgroundColor: activeBrandTheme.primaryHex,
+            }}
+            className="btn-primary min-w-[280px] justify-center !py-3.5 !px-6 text-sm text-white shadow-lg transition hover:brightness-110 disabled:opacity-60"
           >
             {txState === 'INITIATED' || txState === 'PROCESSING' ? (
               <>
@@ -756,9 +1101,9 @@ export default function ClickPesaGatewayPanel({
               <>
                 <Sparkles size={16} />
                 {ui(
-                  `Subscribe to ${tierName} (${formattedDisplayPrice})`,
-                  `Jiunge na ${tierName} (${formattedDisplayPrice})`,
-                  `Suscribirse a ${tierName} (${formattedDisplayPrice})`
+                  `Subscribe via ${activeChannel.shortName} (${formattedDisplayPrice})`,
+                  `Jiunge kupitia ${activeChannel.shortName} (${formattedDisplayPrice})`,
+                  `Suscribirse vía ${activeChannel.shortName} (${formattedDisplayPrice})`
                 )}
               </>
             )}
