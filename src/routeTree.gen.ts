@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdminContentRouteImport } from './routes/admin_.content'
 import { Route as AdminApprovalsRouteImport } from './routes/admin_.approvals'
 import { Route as AdminUsersRouteImport } from './routes/admin_.users'
+import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DashboardOpportunitiesRouteImport } from './routes/dashboard_.opportunities'
 import { Route as DashboardServicesRouteImport } from './routes/dashboard_.services'
@@ -26,6 +27,7 @@ import { Route as OpportunitiesRouteImport } from './routes/opportunities'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ServicesRouteImport } from './routes/services'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as VaultRouteImport } from './routes/vault'
 import { Route as VerificationRouteImport } from './routes/verification'
 import { Route as OpportunitiesProjectIdRouteImport } from './routes/opportunities_.$projectId'
 
@@ -52,6 +54,11 @@ const AdminApprovalsRoute = AdminApprovalsRouteImport.update({
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/admin_/users',
   path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CheckoutRoute = CheckoutRouteImport.update({
+  id: '/checkout',
+  path: '/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -114,6 +121,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VerificationRoute = VerificationRouteImport.update({
   id: '/verification',
   path: '/verification',
@@ -131,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/admin/content': typeof AdminContentRoute
   '/admin/approvals': typeof AdminApprovalsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/checkout': typeof CheckoutRoute
   '/dashboard': typeof DashboardRoute
   '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard/services': typeof DashboardServicesRoute
@@ -143,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
+  '/vault': typeof VaultRoute
   '/verification': typeof VerificationRoute
   '/opportunities/$projectId': typeof OpportunitiesProjectIdRoute
 }
@@ -152,6 +166,7 @@ export interface FileRoutesByTo {
   '/admin/content': typeof AdminContentRoute
   '/admin/approvals': typeof AdminApprovalsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/checkout': typeof CheckoutRoute
   '/dashboard': typeof DashboardRoute
   '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard/services': typeof DashboardServicesRoute
@@ -164,6 +179,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
+  '/vault': typeof VaultRoute
   '/verification': typeof VerificationRoute
   '/opportunities/$projectId': typeof OpportunitiesProjectIdRoute
 }
@@ -174,6 +190,7 @@ export interface FileRoutesById {
   '/admin_/content': typeof AdminContentRoute
   '/admin_/approvals': typeof AdminApprovalsRoute
   '/admin_/users': typeof AdminUsersRoute
+  '/checkout': typeof CheckoutRoute
   '/dashboard': typeof DashboardRoute
   '/dashboard_/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard_/services': typeof DashboardServicesRoute
@@ -186,6 +203,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
+  '/vault': typeof VaultRoute
   '/verification': typeof VerificationRoute
   '/opportunities_/$projectId': typeof OpportunitiesProjectIdRoute
 }
@@ -197,6 +215,7 @@ export interface FileRouteTypes {
     | '/admin/content'
     | '/admin/approvals'
     | '/admin/users'
+    | '/checkout'
     | '/dashboard'
     | '/dashboard/opportunities'
     | '/dashboard/services'
@@ -209,6 +228,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/services'
     | '/signup'
+    | '/vault'
     | '/verification'
     | '/opportunities/$projectId'
   fileRoutesByTo: FileRoutesByTo
@@ -218,6 +238,7 @@ export interface FileRouteTypes {
     | '/admin/content'
     | '/admin/approvals'
     | '/admin/users'
+    | '/checkout'
     | '/dashboard'
     | '/dashboard/opportunities'
     | '/dashboard/services'
@@ -230,6 +251,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/services'
     | '/signup'
+    | '/vault'
     | '/verification'
     | '/opportunities/$projectId'
   id:
@@ -239,6 +261,7 @@ export interface FileRouteTypes {
     | '/admin_/content'
     | '/admin_/approvals'
     | '/admin_/users'
+    | '/checkout'
     | '/dashboard'
     | '/dashboard_/opportunities'
     | '/dashboard_/services'
@@ -251,6 +274,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/services'
     | '/signup'
+    | '/vault'
     | '/verification'
     | '/opportunities_/$projectId'
   fileRoutesById: FileRoutesById
@@ -261,6 +285,7 @@ export interface RootRouteChildren {
   AdminContentRoute: typeof AdminContentRoute
   AdminApprovalsRoute: typeof AdminApprovalsRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  CheckoutRoute: typeof CheckoutRoute
   DashboardRoute: typeof DashboardRoute
   DashboardOpportunitiesRoute: typeof DashboardOpportunitiesRoute
   DashboardServicesRoute: typeof DashboardServicesRoute
@@ -273,6 +298,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   ServicesRoute: typeof ServicesRoute
   SignupRoute: typeof SignupRoute
+  VaultRoute: typeof VaultRoute
   VerificationRoute: typeof VerificationRoute
   OpportunitiesProjectIdRoute: typeof OpportunitiesProjectIdRoute
 }
@@ -312,6 +338,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checkout': {
+      id: '/checkout'
+      path: '/checkout'
+      fullPath: '/checkout'
+      preLoaderRoute: typeof CheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -398,6 +431,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/verification': {
       id: '/verification'
       path: '/verification'
@@ -421,6 +461,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminContentRoute: AdminContentRoute,
   AdminApprovalsRoute: AdminApprovalsRoute,
   AdminUsersRoute: AdminUsersRoute,
+  CheckoutRoute: CheckoutRoute,
   DashboardRoute: DashboardRoute,
   DashboardOpportunitiesRoute: DashboardOpportunitiesRoute,
   DashboardServicesRoute: DashboardServicesRoute,
@@ -433,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   ServicesRoute: ServicesRoute,
   SignupRoute: SignupRoute,
+  VaultRoute: VaultRoute,
   VerificationRoute: VerificationRoute,
   OpportunitiesProjectIdRoute: OpportunitiesProjectIdRoute,
 }

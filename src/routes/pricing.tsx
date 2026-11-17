@@ -4,26 +4,26 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
-  CreditCard,
   Crown,
   ExternalLink,
   Lock,
   ShieldCheck,
-  Smartphone,
   X,
 } from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
-import InternationalCheckout from '../components/InternationalCheckout'
-import LocalMobileCheckout from '../components/LocalMobileCheckout'
-import type { SettlementLedgerEntry } from '../lib/payments/settlement'
+import ClickPesaGatewayPanel from '../components/ClickPesaGatewayPanel'
 import {
   SUBSCRIPTION_TIERS,
   normalizeSubscriptionTier,
-  resolveVerifiedTierPricing,
   useSubscription,
 } from '../lib/subscriptions'
 import { ensureAdminDemoSession, useAuthSession } from '../lib/supabaseAuth'
-import type { BillingCycle, SubscriptionTierName } from '../types/database'
+import type {
+  BillingCycle,
+  PaymentTransactionRecord,
+  SubscriptionTierName,
+  UserSubscriptionRecord,
+} from '../types/database'
 
 export const Route = createFileRoute('/pricing')({
   head: () => ({ meta: [{ title: 'Membership & pricing — MineConnect' }] }),
@@ -40,18 +40,10 @@ function Pricing() {
   const [yearly, setYearly] = useState(false)
   const [selectedCheckoutTier, setSelectedCheckoutTier] =
     useState<SubscriptionTierName | null>('Investor')
-  const [activeGatewayTab, setActiveGatewayTab] = useState<
-    'both' | 'mobile_money' | 'international'
-  >('both')
-  const [receipt, setReceipt] = useState<{
-    reference: string
-    tierName: SubscriptionTierName
-    billingCycle: BillingCycle
-    gatewayLabel: string
-    amountTzs: number
-    amountUsd: number
-    expiresAt: string
-    settlement?: SettlementLedgerEntry
+  const [settledReceipt, setSettledReceipt] = useState<{
+    subscription: UserSubscriptionRecord
+    transaction: PaymentTransactionRecord
+    webhookSignature?: string
   } | null>(null)
 
   const paymentOptionsRef = useRef<HTMLDivElement | null>(null)
@@ -63,29 +55,10 @@ function Pricing() {
     return ensureAdminDemoSession().user.id
   }, [session?.user.id])
 
-  const verifiedPricing = useMemo(
-    () =>
-      resolveVerifiedTierPricing(
-        selectedCheckoutTier ?? 'Investor',
-        billingCycle,
-      ),
-    [selectedCheckoutTier, billingCycle],
-  )
-
-  const displayPrimaryAmount = useMemo(() => {
-    if (verifiedPricing.verifiedAmountTzs === 0) {
-      return ui('Free (TSh 0)', 'Bure (TSh 0)', 'Gratis (TSh 0)')
-    }
-    if (currency === 'TZS') {
-      return `TSh ${verifiedPricing.verifiedAmountTzs.toLocaleString('en-US')}`
-    }
-    return formatPrice(verifiedPricing.verifiedAmountUsd)
-  }, [currency, verifiedPricing, formatPrice, ui])
-
   const handleSubscribeClick = (planId: string) => {
     const normalized = normalizeSubscriptionTier(planId)
     setSelectedCheckoutTier(normalized)
-    setReceipt(null)
+    setSettledReceipt(null)
     setTimeout(() => {
       paymentOptionsRef.current?.scrollIntoView({
         behavior: 'smooth',
@@ -239,7 +212,7 @@ function Pricing() {
                     hl || isSelectedForCheckout ? 'btn-primary' : 'btn-ghost'
                   } w-full justify-center`}
                 >
-                  {ui('Subscribe', 'Jiunge Sasa', 'Suscribirse')}
+                  {ui('Subscribe', 'Subscribe', 'Subscribe')}
                 </button>
               </article>
             )
@@ -247,88 +220,30 @@ function Pricing() {
         </div>
       </section>
 
-      {/* Instant Dual-Rail Payment Options Section (Appears immediately & scrolls into view when "Subscribe" is clicked) */}
+      {/* ClickPesa Fintech Gateway Section */}
       {selectedCheckoutTier && (
         <section
           ref={paymentOptionsRef}
-          id="payment-options"
+          id="clickpesa-gateway"
           className="scroll-mt-24 border-y border-ink/15 bg-paper-2 px-5 py-14 lg:px-8"
         >
-          <div className="mx-auto max-w-7xl">
-            {/* Section Header */}
-            <div className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-lg lg:flex-row lg:items-center">
+          <div className="mx-auto max-w-5xl">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-ochre/25 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-gold">
-                    <Crown size={12} />
-                    {ui(
-                      'Selected Plan for Payment:',
-                      'Mpango Uliochaguliwa:',
-                      'Plan Seleccionado:'
-                    )}{' '}
-                    {selectedCheckoutTier} ({billingCycle})
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/40 bg-moss/25 px-3 py-1 font-mono text-[10px] text-[#9de4b4]">
-                    <Lock size={11} />
-                    PCI-DSS TLS 1.3 & East Africa MNO Certified
-                  </span>
-                </div>
-
-                <h2 className="mt-2 font-display text-3xl font-light text-paper md:text-4xl">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-ochre/30 bg-ochre/10 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-ochre">
+                  <Lock size={12} />
+                  ClickPesa FinTech Gateway · Mobile Money, Banks &amp; Cards
+                </span>
+                <h2 className="mt-2 font-display text-3xl font-light text-ink">
                   {ui(
-                    'Complete Subscription via Mobile Money or International Card',
-                    'Kamilisha Malipo kwa Simu (M-Pesa / Airtel / Mixx) au Kadi',
-                    'Complete su Suscripción con Dinero Móvil o Tarjeta Internacional'
+                    `Subscribe to ${selectedCheckoutTier} Tier`,
+                    `Jiunge na Mpango wa ${selectedCheckoutTier}`,
+                    `Suscribirse al Nivel ${selectedCheckoutTier}`
                   )}
                 </h2>
-                <p className="mt-1 text-xs text-paper/70">
-                  {ui(
-                    `Verified Amount: ${displayPrimaryAmount} (TSh ${verifiedPricing.verifiedAmountTzs.toLocaleString('en-US')} / US$${verifiedPricing.verifiedAmountUsd.toLocaleString('en-US')}) · Instant tier activation`,
-                    `Kiasi kilichothibitishwa: ${displayPrimaryAmount} (TSh ${verifiedPricing.verifiedAmountTzs.toLocaleString('en-US')})`,
-                    `Monto verificado: ${displayPrimaryAmount}`
-                  )}
-                </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="inline-flex rounded-lg border border-paper/15 bg-ink-2 p-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setActiveGatewayTab('both')}
-                    className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
-                      activeGatewayTab === 'both'
-                        ? 'bg-ochre text-paper'
-                        : 'text-paper/70 hover:text-paper'
-                    }`}
-                  >
-                    {ui('All Payment Options', 'Njia Zote', 'Todas las Opciones')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveGatewayTab('mobile_money')}
-                    className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
-                      activeGatewayTab === 'mobile_money'
-                        ? 'bg-ochre text-paper'
-                        : 'text-paper/70 hover:text-paper'
-                    }`}
-                  >
-                    <Smartphone size={12} />
-                    Mobile Money
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveGatewayTab('international')}
-                    className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
-                      activeGatewayTab === 'international'
-                        ? 'bg-ochre text-paper'
-                        : 'text-paper/70 hover:text-paper'
-                    }`}
-                  >
-                    <CreditCard size={12} />
-                    Apple / Google Pay & Card
-                  </button>
-                </div>
-
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   onClick={() =>
@@ -340,36 +255,35 @@ function Pricing() {
                       },
                     })
                   }
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold transition hover:bg-gold/25"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-ink/15 bg-white px-3.5 py-2 font-mono text-xs font-semibold text-ink transition hover:border-ochre"
                 >
-                  <ExternalLink size={13} />
-                  {ui('Full Checkout Page', 'Ukurasa wa Malipo', 'Página de Pago')}
+                  <ExternalLink size={13} className="text-ochre" />
+                  {ui('Open Dedicated Checkout', 'Ukurasa wa Malipo', 'Página de Pago')}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedCheckoutTier(null)}
-                  className="rounded-lg border border-paper/15 bg-paper/5 p-2 text-paper/65 hover:text-paper"
-                  title="Close payment options"
+                  className="rounded-lg border border-ink/15 bg-white p-2 text-stone hover:text-ink"
+                  title="Close gateway"
                 >
                   <X size={15} />
                 </button>
               </div>
             </div>
 
-            {receipt ? (
-              /* Verified Payment & Subscription Activation Confirmation */
-              <div className="mx-auto max-w-2xl rounded-2xl border border-moss/40 bg-ink p-8 text-paper shadow-2xl">
+            {settledReceipt ? (
+              <div className="overflow-hidden rounded-2xl border border-moss/40 bg-ink p-8 text-paper shadow-2xl">
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-moss/30 text-[#9de4b4]">
                     <CheckCircle2 size={26} />
                   </div>
                   <div>
                     <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[#9de4b4]">
-                      WEBHOOK VERIFIED · SUBSCRIPTION ACTIVATED
+                      CLICKPESA WEBHOOK RECONCILED · STATE: SETTLED
                     </span>
                     <h3 className="font-display text-3xl text-paper">
-                      {receipt.tierName} Plan Activated!
+                      {settledReceipt.subscription.tier_name} Tier Activated!
                     </h3>
                   </div>
                 </div>
@@ -377,113 +291,67 @@ function Pricing() {
                 <dl className="mt-6 grid grid-cols-1 gap-4 rounded-xl border border-paper/12 bg-ink-2 p-5 font-mono text-xs sm:grid-cols-2">
                   <div>
                     <dt className="text-[10px] uppercase text-paper/50">
-                      Reference
+                      ClickPesa Order ID
                     </dt>
                     <dd className="mt-1 font-bold text-gold">
-                      {receipt.reference}
+                      {settledReceipt.transaction.clickpesa_order_id}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-[10px] uppercase text-paper/50">
-                      Payment Channel
-                    </dt>
-                    <dd className="mt-1 text-paper">{receipt.gatewayLabel}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] uppercase text-paper/50">
-                      Verification Status
-                    </dt>
-                    <dd className="mt-1 font-bold text-[#9de4b4]">
-                      VERIFIED · INSTANT TIER UNLOCK
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] uppercase text-paper/50">
-                      Amount Verified
+                      Payment Channel &amp; Rail
                     </dt>
                     <dd className="mt-1 text-paper">
-                      TSh {receipt.amountTzs.toLocaleString('en-US')} (
-                      {formatPrice(receipt.amountUsd)})
+                      {settledReceipt.transaction.payment_method_label} (
+                      {settledReceipt.transaction.rail})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase text-paper/50">
+                      Idempotency Key
+                    </dt>
+                    <dd className="mt-1 truncate text-paper/80">
+                      {settledReceipt.transaction.idempotency_key}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase text-paper/50">
+                      Verified Amount Settled
+                    </dt>
+                    <dd className="mt-1 font-bold text-[#9de4b4]">
+                      TSh{' '}
+                      {settledReceipt.transaction.verified_amount_tzs.toLocaleString(
+                        'en-US'
+                      )}{' '}
+                      (
+                      {formatPrice(
+                        settledReceipt.transaction.verified_amount_usd
+                      )}
+                      )
                     </dd>
                   </div>
                 </dl>
 
                 <div className="mt-6 flex flex-wrap gap-3">
                   <Link to="/dashboard" className="btn-primary">
-                    Open Dashboard & View Quotas <ArrowRight size={15} />
+                    Open Dashboard &amp; View Quotas <ArrowRight size={15} />
                   </Link>
                   <button
                     type="button"
-                    onClick={() => setReceipt(null)}
+                    onClick={() => setSettledReceipt(null)}
                     className="rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold text-paper hover:bg-paper/20"
                   >
-                    Make Another Payment
+                    Switch Tier / Make Another Payment
                   </button>
                 </div>
               </div>
             ) : (
-              /* Side-by-Side or Tabbed Dual-Rail Payment Components */
-              <div
-                className={`grid grid-cols-1 gap-8 ${
-                  activeGatewayTab === 'both'
-                    ? 'lg:grid-cols-2'
-                    : 'mx-auto max-w-2xl'
-                }`}
-              >
-                {(activeGatewayTab === 'both' ||
-                  activeGatewayTab === 'mobile_money') && (
-                  <LocalMobileCheckout
-                    userId={effectiveUserId}
-                    tierName={selectedCheckoutTier}
-                    billingCycle={billingCycle}
-                    formattedAmount={displayPrimaryAmount}
-                    verifiedAmountTzs={verifiedPricing.verifiedAmountTzs}
-                    pdpaConsent={true}
-                    onSwitchToCardRail={() =>
-                      setActiveGatewayTab('international')
-                    }
-                    onSuccess={(res) => {
-                      if (res.subscription && res.transaction) {
-                        setReceipt({
-                          reference: res.transaction.external_reference,
-                          tierName: res.subscription.tier_name,
-                          billingCycle: res.subscription.billing_cycle,
-                          gatewayLabel: res.transaction.payment_method_label,
-                          amountTzs: verifiedPricing.verifiedAmountTzs,
-                          amountUsd: verifiedPricing.verifiedAmountUsd,
-                          expiresAt: res.subscription.expires_at,
-                          settlement: res.settlement,
-                        })
-                      }
-                    }}
-                  />
-                )}
-
-                {(activeGatewayTab === 'both' ||
-                  activeGatewayTab === 'international') && (
-                  <InternationalCheckout
-                    userId={effectiveUserId}
-                    tierName={selectedCheckoutTier}
-                    billingCycle={billingCycle}
-                    formattedAmount={displayPrimaryAmount}
-                    pdpaConsent={true}
-                    onSuccess={(res) => {
-                      if (res.subscription && res.transaction) {
-                        setReceipt({
-                          reference: res.transaction.external_reference,
-                          tierName: res.subscription.tier_name,
-                          billingCycle: res.subscription.billing_cycle,
-                          gatewayLabel: res.transaction.payment_method_label,
-                          amountTzs: verifiedPricing.verifiedAmountTzs,
-                          amountUsd: verifiedPricing.verifiedAmountUsd,
-                          expiresAt: res.subscription.expires_at,
-                          settlement: res.settlement,
-                        })
-                      }
-                    }}
-                  />
-                )}
-              </div>
+              <ClickPesaGatewayPanel
+                userId={effectiveUserId}
+                tierName={selectedCheckoutTier}
+                billingCycle={billingCycle}
+                onSuccess={(res) => setSettledReceipt(res)}
+              />
             )}
           </div>
         </section>

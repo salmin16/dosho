@@ -260,11 +260,33 @@ export type SubscriptionTierName =
 export type SubscriptionStatus = 'active' | 'expired' | 'canceled';
 export type BillingCycle = 'monthly' | 'yearly';
 
-export type PaymentGatewayId =
-  | 'FREE_TIER'
-  | 'STRIPE_GLOBAL'
-  | 'AZAMPAY_MPESA_TZS'
-  | 'FLUTTERWAVE_AFRICA';
+export type PaymentGatewayId = 'FREE_TIER' | 'CLICKPESA';
+
+export type ClickPesaRail =
+  | 'FREE'
+  | 'MOBILE_MONEY'
+  | 'BANK_TRANSFER'
+  | 'INTERNATIONAL_CARD';
+
+export type ClickPesaProviderCode =
+  | 'FREE'
+  | 'MPESA_TZ'
+  | 'AIRTEL_MONEY_TZ'
+  | 'MIXX_BY_YAS'
+  | 'HALOPESA_TZ'
+  | 'EZYPESA_TZ'
+  | 'CRDB_BANK'
+  | 'NMB_BANK'
+  | 'NBC_BANK'
+  | 'VISA_CARD'
+  | 'MASTERCARD'
+  | 'UNIONPAY_CARD';
+
+export type ClickPesaTransactionState =
+  | 'INITIATED'
+  | 'PROCESSING'
+  | 'SETTLED'
+  | 'FAILED';
 
 export interface UserSubscriptionRecord {
   id: string;
@@ -275,6 +297,8 @@ export interface UserSubscriptionRecord {
   price_tzs: number;
   price_usd: number;
   payment_gateway: PaymentGatewayId;
+  payment_rail?: ClickPesaRail;
+  payment_provider?: ClickPesaProviderCode | null;
   payment_reference: string | null;
   expires_at: string;
   created_at: string;
@@ -283,18 +307,26 @@ export interface UserSubscriptionRecord {
 
 export interface PaymentTransactionRecord {
   id: string;
+  idempotency_key: string;
+  clickpesa_order_id: string;
+  clickpesa_control_number?: string | null;
   user_id: string;
   tier_name: SubscriptionTierName;
   billing_cycle: BillingCycle;
   gateway: PaymentGatewayId;
+  rail: ClickPesaRail;
+  provider_code: ClickPesaProviderCode;
   payment_method_label: string;
+  account_or_phone_masked?: string | null;
   verified_amount_tzs: number;
   verified_amount_usd: number;
   charged_currency: SupportedCurrency;
   charged_amount: number;
-  external_reference: string;
-  webhook_status: 'PENDING' | 'VERIFIED' | 'FAILED';
+  state: ClickPesaTransactionState;
+  webhook_signature_verified: boolean;
+  reconciled_at?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface UnifiedContentRecord {

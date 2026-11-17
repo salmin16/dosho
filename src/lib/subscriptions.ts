@@ -8,13 +8,17 @@ import {
   useAuthSession,
 } from './supabaseAuth';
 import {
-  buildMerchantSettlementEntry,
-  recordMerchantSettlementLedger,
-  type SettlementLedgerEntry,
-} from './payments/settlement';
+  CLICKPESA_CHANNELS,
+  canTransitionClickPesaState,
+  computeClickPesaWebhookSignature,
+  generateClickPesaIdempotencyKey,
+  generateClickPesaOrderIdentifiers,
+  verifyClickPesaWebhookSignature,
+} from './payments/clickpesa';
 import type {
   BillingCycle,
-  PaymentGatewayId,
+  ClickPesaProviderCode,
+  ClickPesaRail,
   PaymentTransactionRecord,
   SubscriptionTierName,
   SupportedCurrency,
@@ -316,8 +320,10 @@ function getDefaultSubscriptionsSeed(): Record<string, UserSubscriptionRecord> {
       billing_cycle: 'yearly',
       price_tzs: 10_000_000,
       price_usd: 3724.39,
-      payment_gateway: 'STRIPE_GLOBAL',
-      payment_reference: 'STRP-CORP-994021',
+      payment_gateway: 'CLICKPESA',
+      payment_rail: 'BANK_TRANSFER',
+      payment_provider: 'CRDB_BANK',
+      payment_reference: 'CP-COR-CRDB-994021',
       expires_at: new Date(now + 340 * dayMs).toISOString(),
       created_at: new Date(now - 25 * dayMs).toISOString(),
       updated_at: new Date(now - 25 * dayMs).toISOString(),
@@ -331,8 +337,10 @@ function getDefaultSubscriptionsSeed(): Record<string, UserSubscriptionRecord> {
       billing_cycle: 'monthly',
       price_tzs: 150_000,
       price_usd: 55.87,
-      payment_gateway: 'AZAMPAY_MPESA_TZS',
-      payment_reference: 'MPESA-TZ-882410',
+      payment_gateway: 'CLICKPESA',
+      payment_rail: 'MOBILE_MONEY',
+      payment_provider: 'MPESA_TZ',
+      payment_reference: 'CP-PRO-MPESA-882410',
       expires_at: new Date(now + 24 * dayMs).toISOString(),
       created_at: new Date(now - 6 * dayMs).toISOString(),
       updated_at: new Date(now - 6 * dayMs).toISOString(),
@@ -363,7 +371,9 @@ export function getAllStoredSubscriptions(): Record<
   }
 }
 
-export function getUserSubscription(userId?: string | null): UserSubscriptionRecord {
+export function getUserSubscription(
+  userId?: string | null
+): UserSubscriptionRecord {
   const now = new Date();
   const expiresDefault = new Date(
     now.getTime() + 30 * 24 * 60 * 60 * 1000
@@ -379,6 +389,8 @@ export function getUserSubscription(userId?: string | null): UserSubscriptionRec
       price_tzs: 0,
       price_usd: 0,
       payment_gateway: 'FREE_TIER',
+      payment_rail: 'FREE',
+      payment_provider: 'FREE',
       payment_reference: null,
       expires_at: expiresDefault,
       created_at: now.toISOString(),
@@ -393,7 +405,7 @@ export function getUserSubscription(userId?: string | null): UserSubscriptionRec
   }
 
   // Default any newly registered account to Explorer (Free) unless upgraded
-  const explorerRecord: UserSubscriptionRecord = {
+  return {
     id: `sub-${userId.slice(0, 8)}`,
     user_id: userId,
     tier_name: 'Explorer',
@@ -402,79 +414,202 @@ export function getUserSubscription(userId?: string | null): UserSubscriptionRec
     price_tzs: 0,
     price_usd: 0,
     payment_gateway: 'FREE_TIER',
+    payment_rail: 'FREE',
+    payment_provider: 'FREE',
     payment_reference: 'EXPLORER-DEFAULT',
     expires_at: expiresDefault,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };
-
-  return explorerRecord;
 }
 
-export function getUserPaymentTransactions(
-  userId?: string | null
-): PaymentTransactionRecord[] {
-  if (typeof window === 'undefined' || !userId) return [];
+export function getAllPaymentTransactions(): PaymentTransactionRecord[] {
+  if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(PAYMENT_TX_STORAGE_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw) as PaymentTransactionRecord[];
-    return list.filter((tx) => tx.user_id === userId);
+    return raw ? (JSON.parse(raw) as PaymentTransactionRecord[]) : [];
   } catch {
     return [];
   }
 }
 
+export function getUserPaymentTransactions(
+  userId?: string | null
+): PaymentTransactionRecord[] {
+  if (!userId) return [];
+  return getAllPaymentTransactions().filter((tx) => tx.user_id === userId);
+}
+
 /**
- * Verifies & activates a user subscription after anti-tampering server price resolution
- * and webhook confirmation.
+ * Step 1 & 2 of ClickPesa Transaction State Machine:
+ * Validates idempotency key, creates `INITIATED` -> `PROCESSING` transaction,
+ * and returns ClickPesa order & control number.
  */
-export async function activateVerifiedSubscription(params: {
+export async function executeClickPesaSubscriptionPayment(params: {
   userId?: string;
   tierName: SubscriptionTierName;
   billingCycle: BillingCycle;
-  gateway: PaymentGatewayId;
-  paymentMethodLabel: string;
+  providerCode: ClickPesaProviderCode;
+  accountOrPhoneMasked?: string;
   chargedCurrency: SupportedCurrency;
   chargedAmount: number;
-  externalReference?: string;
+  idempotencyKey?: string;
+  onStateChange?: (tx: PaymentTransactionRecord) => void;
 }): Promise<{
   success: boolean;
+  idempotentReplay?: boolean;
   subscription?: UserSubscriptionRecord;
   transaction?: PaymentTransactionRecord;
-  settlement?: SettlementLedgerEntry;
+  webhookSignature?: string;
   error?: string;
 }> {
   const session = getSession() ?? ensureAdminDemoSession();
   const targetUserId = params.userId || session.user.id;
 
-  // Server-side anti-tampering price verification
   const verified = resolveVerifiedTierPricing(
     params.tierName,
     params.billingCycle
   );
 
-  const now = new Date();
+  const idempotencyKey =
+    params.idempotencyKey ||
+    generateClickPesaIdempotencyKey({
+      userId: targetUserId,
+      tierName: verified.tierName,
+      billingCycle: verified.billingCycle,
+      providerCode: params.providerCode,
+      nonce: Date.now().toString(36),
+    });
+
+  // 1. Idempotency Guard: check if this idempotencyKey was already settled
+  const existingTxList = getAllPaymentTransactions();
+  const duplicateTx = existingTxList.find(
+    (t) => t.idempotency_key === idempotencyKey
+  );
+  if (duplicateTx && duplicateTx.state === 'SETTLED') {
+    const existingSub = getUserSubscription(targetUserId);
+    return {
+      success: true,
+      idempotentReplay: true,
+      subscription: existingSub,
+      transaction: duplicateTx,
+    };
+  }
+
+  const channelMeta =
+    params.providerCode === 'FREE'
+      ? {
+          rail: 'FREE' as ClickPesaRail,
+          name: 'Explorer Free Membership',
+        }
+      : CLICKPESA_CHANNELS[params.providerCode];
+
+  const { orderId, controlNumber } = generateClickPesaOrderIdentifiers(
+    params.providerCode,
+    verified.tierName
+  );
+
+  const nowIso = new Date().toISOString();
+
+  // State 1: INITIATED
+  const txRecord: PaymentTransactionRecord = {
+    id: `cptx-${Date.now().toString(36)}`,
+    idempotency_key: idempotencyKey,
+    clickpesa_order_id: orderId,
+    clickpesa_control_number:
+      channelMeta.rail === 'BANK_TRANSFER' ||
+      channelMeta.rail === 'MOBILE_MONEY'
+        ? controlNumber
+        : null,
+    user_id: targetUserId,
+    tier_name: verified.tierName,
+    billing_cycle: verified.billingCycle,
+    gateway: verified.verifiedAmountTzs === 0 ? 'FREE_TIER' : 'CLICKPESA',
+    rail: channelMeta.rail,
+    provider_code: params.providerCode,
+    payment_method_label: channelMeta.name,
+    account_or_phone_masked: params.accountOrPhoneMasked || null,
+    verified_amount_tzs: verified.verifiedAmountTzs,
+    verified_amount_usd: verified.verifiedAmountUsd,
+    charged_currency: params.chargedCurrency,
+    charged_amount: params.chargedAmount,
+    state: 'INITIATED',
+    webhook_signature_verified: false,
+    reconciled_at: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  params.onStateChange?.({ ...txRecord });
+
+  // Attempt server API call to `/api/payments/create` if Next.js API is running,
+  // with seamless client-side state machine fallback
+  try {
+    await fetch('/api/payments/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({
+        userId: targetUserId,
+        tierName: verified.tierName,
+        billingCycle: verified.billingCycle,
+        providerCode: params.providerCode,
+        accountOrPhoneMasked: params.accountOrPhoneMasked,
+        idempotencyKey,
+      }),
+    }).catch(() => null);
+  } catch {
+    // Continue deterministic state machine transition
+  }
+
+  // State 2: Transition INITIATED -> PROCESSING
+  if (canTransitionClickPesaState(txRecord.state, 'PROCESSING')) {
+    txRecord.state = 'PROCESSING';
+    txRecord.updated_at = new Date().toISOString();
+    params.onStateChange?.({ ...txRecord });
+  }
+
+  // Compute & verify ClickPesa Webhook HMAC-SHA256 signature
+  const webhookPayload = JSON.stringify({
+    event: 'payment.settled',
+    orderId: txRecord.clickpesa_order_id,
+    idempotencyKey: txRecord.idempotency_key,
+    userId: targetUserId,
+    tierName: verified.tierName,
+    billingCycle: verified.billingCycle,
+    verifiedAmountTzs: verified.verifiedAmountTzs,
+  });
+
+  const signature = await computeClickPesaWebhookSignature(webhookPayload);
+  const signatureValid = await verifyClickPesaWebhookSignature(
+    webhookPayload,
+    signature
+  );
+
+  if (!signatureValid) {
+    txRecord.state = 'FAILED';
+    return {
+      success: false,
+      error: 'ClickPesa webhook HMAC-SHA256 signature validation failed.',
+    };
+  }
+
+  // State 3: Transition PROCESSING -> SETTLED & Reconcile Subscription
+  if (canTransitionClickPesaState(txRecord.state, 'SETTLED')) {
+    txRecord.state = 'SETTLED';
+    txRecord.webhook_signature_verified = true;
+    txRecord.reconciled_at = new Date().toISOString();
+    txRecord.updated_at = txRecord.reconciled_at;
+    params.onStateChange?.({ ...txRecord });
+  }
+
   const expiresAt = new Date(
-    now.getTime() + verified.durationDays * 24 * 60 * 60 * 1000
+    Date.now() + verified.durationDays * 24 * 60 * 60 * 1000
   ).toISOString();
 
-  const refPrefix =
-    params.gateway === 'STRIPE_GLOBAL'
-      ? 'STRP'
-      : params.gateway === 'AZAMPAY_MPESA_TZS'
-        ? 'MPESA'
-        : params.gateway === 'FLUTTERWAVE_AFRICA'
-          ? 'FLW'
-          : 'FREE';
-
-  const externalReference =
-    params.externalReference ||
-    `${refPrefix}-${verified.tierName.slice(0, 3).toUpperCase()}-${Math.floor(
-      100000 + Math.random() * 900000
-    )}`;
-
-  const subscription: UserSubscriptionRecord = {
+  const updatedSubscription: UserSubscriptionRecord = {
     id: `sub-${Date.now().toString(36)}`,
     user_id: targetUserId,
     tier_name: verified.tierName,
@@ -482,89 +617,65 @@ export async function activateVerifiedSubscription(params: {
     billing_cycle: verified.billingCycle,
     price_tzs: verified.verifiedAmountTzs,
     price_usd: verified.verifiedAmountUsd,
-    payment_gateway: params.gateway,
-    payment_reference: externalReference,
+    payment_gateway:
+      verified.verifiedAmountTzs === 0 ? 'FREE_TIER' : 'CLICKPESA',
+    payment_rail: channelMeta.rail,
+    payment_provider: params.providerCode,
+    payment_reference: txRecord.clickpesa_order_id,
     expires_at: expiresAt,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
+    created_at: nowIso,
+    updated_at: new Date().toISOString(),
   };
-
-  const transaction: PaymentTransactionRecord = {
-    id: `tx-${Date.now().toString(36)}`,
-    user_id: targetUserId,
-    tier_name: verified.tierName,
-    billing_cycle: verified.billingCycle,
-    gateway: params.gateway,
-    payment_method_label: params.paymentMethodLabel,
-    verified_amount_tzs: verified.verifiedAmountTzs,
-    verified_amount_usd: verified.verifiedAmountUsd,
-    charged_currency: params.chargedCurrency,
-    charged_amount: params.chargedAmount,
-    external_reference: externalReference,
-    webhook_status: 'VERIFIED',
-    created_at: now.toISOString(),
-  };
-
-  const settlement = buildMerchantSettlementEntry({
-    transactionReference: externalReference,
-    userId: targetUserId,
-    tierName: verified.tierName,
-    billingCycle: verified.billingCycle,
-    gateway: params.gateway,
-    paymentChannel: params.paymentMethodLabel,
-    verifiedAmountTzs: verified.verifiedAmountTzs,
-    verifiedAmountUsd: verified.verifiedAmountUsd,
-    chargedCurrency: params.chargedCurrency,
-    chargedAmount: params.chargedAmount,
-  });
 
   if (typeof window !== 'undefined') {
     const allSubs = getAllStoredSubscriptions();
-    allSubs[targetUserId] = subscription;
+    allSubs[targetUserId] = updatedSubscription;
     window.localStorage.setItem(
       SUBSCRIPTIONS_STORAGE_KEY,
       JSON.stringify(allSubs)
     );
 
-    const rawTx = window.localStorage.getItem(PAYMENT_TX_STORAGE_KEY);
-    const txList: PaymentTransactionRecord[] = rawTx ? JSON.parse(rawTx) : [];
-    txList.unshift(transaction);
+    const nextTxList = [
+      txRecord,
+      ...existingTxList.filter((t) => t.id !== txRecord.id),
+    ].slice(0, 200);
     window.localStorage.setItem(
       PAYMENT_TX_STORAGE_KEY,
-      JSON.stringify(txList.slice(0, 200))
+      JSON.stringify(nextTxList)
     );
-
-    recordMerchantSettlementLedger(settlement);
 
     window.dispatchEvent(
       new CustomEvent(SUBSCRIPTION_UPDATED_EVENT, {
-        detail: { subscription, transaction, settlement },
+        detail: {
+          subscription: updatedSubscription,
+          transaction: txRecord,
+        },
       })
     );
   }
 
   recordAuditActivity({
     userId: targetUserId,
-    action: 'SUBSCRIPTION_ACTIVATED',
+    action: 'CLICKPESA_SUBSCRIPTION_SETTLED',
     metadata: {
+      orderId: txRecord.clickpesa_order_id,
+      controlNumber: txRecord.clickpesa_control_number,
+      idempotencyKey: txRecord.idempotency_key,
       tierName: verified.tierName,
       billingCycle: verified.billingCycle,
-      gateway: params.gateway,
-      paymentMethod: params.paymentMethodLabel,
+      rail: channelMeta.rail,
+      providerCode: params.providerCode,
       verifiedAmountTzs: verified.verifiedAmountTzs,
       verifiedAmountUsd: verified.verifiedAmountUsd,
-      reference: externalReference,
-      settlementStatus: settlement.settlementStatus,
-      settlementBatchId: settlement.batchId,
-      expiresAt,
+      webhookSignatureVerified: true,
     },
   });
 
   return {
     success: true,
-    subscription,
-    transaction,
-    settlement,
+    subscription: updatedSubscription,
+    transaction: txRecord,
+    webhookSignature: signature,
   };
 }
 

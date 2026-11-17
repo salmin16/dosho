@@ -5,7 +5,6 @@ import {
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
-  CreditCard,
   Crown,
   Lock,
   ShieldCheck,
@@ -34,8 +33,7 @@ export default function SubscriptionStatusWidget({
   servicesUsed,
 }: SubscriptionStatusWidgetProps) {
   const { currency, formatPrice, ui } = useLocalization();
-  const { subscription, tierConfig, tierName, checkQuota, transactions } =
-    useSubscription();
+  const { subscription, tierConfig, tierName, checkQuota } = useSubscription();
 
   const projectQuota = checkQuota('maxProjectListings', projectsUsed);
   const documentQuota = checkQuota('maxVaultDocuments', documentsUsed);
@@ -108,16 +106,9 @@ export default function SubscriptionStatusWidget({
               <span className="h-1.5 w-1.5 rounded-full bg-[#9de4b4]" />
               {subscription.status.toUpperCase()} ·{' '}
               {subscription.billing_cycle === 'yearly'
-                ? ui('Yearly Billing', 'Malipo ya Mwaka', 'Anual')
-                : ui('Monthly Billing', 'Malipo ya Mwezi', 'Mensual')}
+                ? ui('Yearly Plan', 'Mpango wa Mwaka', 'Anual')
+                : ui('Monthly Plan', 'Mpango wa Mwezi', 'Mensual')}
             </span>
-
-            {subscription.payment_reference && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-paper/15 bg-paper/5 px-2.5 py-1 font-mono text-[10px] text-paper/65">
-                <CreditCard size={11} className="text-gold" />
-                Ref: {subscription.payment_reference}
-              </span>
-            )}
           </div>
 
           <h2 className="mt-3 font-display text-3xl font-light text-paper md:text-4xl">
@@ -139,7 +130,7 @@ export default function SubscriptionStatusWidget({
           <p className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-paper/70">
             <span className="inline-flex items-center gap-1.5">
               <CalendarClock size={13} className="text-gold" />
-              {ui('Renews / Expires:', 'Inaisha:', 'Vence:')}{' '}
+              {ui('Valid Until:', 'Inaisha:', 'Válido Hasta:')}{' '}
               <strong className="font-mono text-paper">
                 {renewalDateFormatted}
               </strong>{' '}
@@ -164,9 +155,9 @@ export default function SubscriptionStatusWidget({
             >
               <Zap size={14} />
               {ui(
-                `Upgrade to ${nextRecommendedTier}`,
-                `Pandisha hadi ${nextRecommendedTier}`,
-                `Mejorar a ${nextRecommendedTier}`
+                `Subscribe to ${nextRecommendedTier}`,
+                `Jiunge na ${nextRecommendedTier}`,
+                `Suscribirse a ${nextRecommendedTier}`
               )}
               <ArrowUpRight size={14} />
             </Link>
@@ -214,9 +205,9 @@ export default function SubscriptionStatusWidget({
             {projectQuota.limit === 0 ? (
               <span className="text-[#f59c8a]">
                 {ui(
-                  'Explorer tier cannot list projects. Upgrade to Miner (TSh 50,000/mo) for 3 listings.',
-                  'Mpango wa Explorer hauruhusu kusajili miradi. Pandisha hadi Miner (TSh 50,000/mwezi).',
-                  'El nivel Explorer no permite listar proyectos. Mejore a Miner.'
+                  'Explorer tier cannot list projects. View Miner (TSh 50,000/mo) for 3 listings.',
+                  'Mpango wa Explorer hauruhusu kusajili miradi. Tazama Miner (TSh 50,000/mwezi).',
+                  'El nivel Explorer no permite listar proyectos. Consulte Miner.'
                 )}
               </span>
             ) : projectQuota.allowed ? (
@@ -310,7 +301,7 @@ export default function SubscriptionStatusWidget({
         </div>
       </div>
 
-      {/* Bottom Row: Tier Feature Entitlements & Quick Upgrade Matrix */}
+      {/* Bottom Row: Tier Feature Entitlements */}
       <div className="mt-6 flex flex-col justify-between gap-4 rounded-xl border border-paper/10 bg-paper/[0.04] p-4 lg:flex-row lg:items-center">
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <span className="font-mono text-[10px] uppercase tracking-wider text-gold">
@@ -356,25 +347,16 @@ export default function SubscriptionStatusWidget({
 
         <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-paper/70">
           <ShieldCheck size={13} className="text-gold" />
-          {transactions.length > 0 ? (
-            <span>
-              {ui('Last Verified Payment:', 'Malipo ya Mwisho:', 'Último Pago:')}{' '}
-              <strong className="text-gold">
-                {transactions[0].external_reference}
-              </strong>
-            </span>
-          ) : (
-            <span>
-              {ui('Next Tier:', 'Ngazi Inayofuata:', 'Siguiente Nivel:')}{' '}
-              <strong className="text-gold">
-                {nextRecommendedTier} (
-                {currency === 'TZS'
-                  ? `TSh ${nextTierConfig.monthlyTzs.toLocaleString('en-US')}`
-                  : formatPrice(nextTierConfig.monthlyUsd)}
-                /mo)
-              </strong>
-            </span>
-          )}
+          <span>
+            {ui('Next Tier:', 'Ngazi Inayofuata:', 'Siguiente Nivel:')}{' '}
+            <strong className="text-gold">
+              {nextRecommendedTier} (
+              {currency === 'TZS'
+                ? `TSh ${nextTierConfig.monthlyTzs.toLocaleString('en-US')}`
+                : formatPrice(nextTierConfig.monthlyUsd)}
+              /mo)
+            </strong>
+          </span>
         </div>
       </div>
     </section>
