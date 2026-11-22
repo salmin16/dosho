@@ -29,17 +29,18 @@ AS $$
   );
 $$;
 
-REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, service_role;
 
-REVOKE ALL ON FUNCTION public.is_active_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_active_admin() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_active_admin() TO authenticated, service_role;
 
 -- 2. Lock Down Privileged SECURITY DEFINER RPCs Exclusively to service_role
-REVOKE ALL ON FUNCTION public.reconcile_clickpesa_payment(TEXT, BOOLEAN, TEXT) FROM PUBLIC;
+--    (Supabase default privileges grant EXECUTE directly to anon & authenticated, not just PUBLIC)
+REVOKE ALL ON FUNCTION public.reconcile_clickpesa_payment(TEXT, BOOLEAN, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_clickpesa_payment(TEXT, BOOLEAN, TEXT) TO service_role;
 
-REVOKE ALL ON FUNCTION public.upsert_live_mineral_spot(TEXT, NUMERIC, NUMERIC, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.upsert_live_mineral_spot(TEXT, NUMERIC, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_live_mineral_spot(TEXT, NUMERIC, NUMERIC, TEXT) TO service_role;
 
 -- 3. Unified Auth Trigger: Strictly Default New Sign-Ups to role = 'user'

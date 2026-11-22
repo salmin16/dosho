@@ -97,7 +97,7 @@ AS $$
   );
 $$;
 
-REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, service_role;
 
 -- Generic updated_at timestamp trigger
