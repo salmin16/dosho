@@ -214,6 +214,13 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quotes   ENABLE ROW LEVEL SECURITY;
 
+-- Grant table-level SQL privileges to PostgREST roles so RLS governs row access (fixes 42501 permission denied)
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO authenticated, service_role;
+GRANT SELECT ON public.projects TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.projects TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.quotes TO authenticated, service_role;
+
 -- Drop any legacy / potentially recursive (42P17) policies before recreating cleanly
 DO $$
 DECLARE
