@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -17,7 +17,7 @@ import {
   normalizeSubscriptionTier,
   useSubscription,
 } from '../lib/subscriptions'
-import { ensureAdminDemoSession, useAuthSession } from '../lib/supabaseAuth'
+import { useAuthState } from '../lib/supabaseAuth'
 import type {
   BillingCycle,
   PaymentTransactionRecord,
@@ -32,7 +32,7 @@ export const Route = createFileRoute('/pricing')({
 
 function Pricing() {
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session } = useAuthState()
   const { subscription } = useSubscription()
   const { t, fixtures, currency, formatPrice, convertText, ui } =
     useLocalization()
@@ -50,10 +50,7 @@ function Pricing() {
 
   const billingCycle: BillingCycle = yearly ? 'yearly' : 'monthly'
 
-  const effectiveUserId = useMemo(() => {
-    if (session?.user.id) return session.user.id
-    return ensureAdminDemoSession().user.id
-  }, [session?.user.id])
+  const effectiveUserId = session?.user.id ?? ''
 
   const handleSubscribeClick = (planId: string) => {
     const normalized = normalizeSubscriptionTier(planId)
@@ -345,13 +342,34 @@ function Pricing() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : effectiveUserId ? (
               <ClickPesaGatewayPanel
                 userId={effectiveUserId}
                 tierName={selectedCheckoutTier}
                 billingCycle={billingCycle}
                 onSuccess={(res) => setSettledReceipt(res)}
               />
+            ) : (
+              <div className="rounded-2xl border border-ochre/30 bg-paper-2 p-8 text-center">
+                <Lock size={26} className="mx-auto text-ochre" />
+                <h3 className="mt-3 font-display text-2xl text-ink">
+                  {ui('Sign In to Activate Membership', 'Ingia ili Kuwezesha Mpango', 'Inicie Sesión para Activar el Plan')}
+                </h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-stone">
+                  {ui(
+                    'Authenticate with your MineConnect Supabase account to bind your subscription tier and quotas.',
+                    'Ingia kwenye akaunti yako ya MineConnect Supabase ili kuunganisha mpango wako.',
+                    'Autentíquese con su cuenta de MineConnect Supabase para vincular su suscripción.'
+                  )}
+                </p>
+                <Link
+                  to="/login"
+                  search={{ next: '/pricing', reason: 'membership_required' } as unknown as undefined}
+                  className="btn-primary mt-5 inline-flex"
+                >
+                  {ui('Sign In to Continue', 'Ingia Kuendelea', 'Iniciar Sesión')}
+                </Link>
+              </div>
             )}
           </div>
         </section>

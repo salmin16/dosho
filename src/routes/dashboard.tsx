@@ -17,9 +17,8 @@ import {
   createGroundedDocument,
   deleteGroundedDocument,
   fetchGroundedUserData,
-  getSession,
   signOutUser,
-  useAuthSession,
+  useAuthState,
 } from '../lib/supabaseAuth'
 import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
@@ -45,7 +44,7 @@ export const Route = createFileRoute('/dashboard')({
 
 export function DashboardRouteComponent() {
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session, loading: authLoading } = useAuthState()
   const { saved: savedProjectIds } = useSavedProjects()
   const {
     currency,
@@ -82,15 +81,15 @@ export function DashboardRouteComponent() {
   }, [])
 
   useEffect(() => {
-    const current = getSession()
-    if (!current) {
+    if (authLoading) return
+    if (!session) {
       navigate({ to: '/login' })
       return
     }
-    loadData()
-  }, [navigate, loadData])
+    void loadData()
+  }, [authLoading, session, navigate, loadData])
 
-  if (!session) {
+  if (authLoading || !session) {
     return null
   }
 
@@ -126,8 +125,8 @@ export function DashboardRouteComponent() {
     await loadData()
   }
 
-  const handleSignOut = () => {
-    signOutUser()
+  const handleSignOut = async () => {
+    await signOutUser()
     navigate({ to: '/login' })
   }
 

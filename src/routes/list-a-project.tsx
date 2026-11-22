@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Crown, UploadCloud, FileText, X } from 'lucide-react'
 import { MINERALS, OPPORTUNITY_TYPES, REGIONS, STAGES } from '../data/fixtures'
 import { useI18n, type TranslationKey } from '../i18n'
-import { createGroundedProject, fetchGroundedUserData, getSession, useAuthSession } from '../lib/supabaseAuth'
+import { createGroundedProject, fetchGroundedUserData, getSession, useAuthState } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import { useSubscription } from '../lib/subscriptions'
 
@@ -26,7 +26,7 @@ type Form = Record<string, string | string[] | boolean>
 function ListProject() {
   const { t, tv, fixtures } = useI18n()
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session, loading: authLoading } = useAuthState()
   const { currency, toUsd } = useCurrency()
   const { tierName, checkQuota } = useSubscription()
   const [projectsCount, setProjectsCount] = useState(0)
@@ -56,13 +56,14 @@ function ListProject() {
   const [submitted, setSubmitted] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!getSession()) {
+    if (authLoading) return
+    if (!session) {
       navigate({
         to: '/signup',
         search: { next: '/list-a-project', reason: 'list_project' } as unknown as undefined,
       })
     }
-  }, [navigate, session])
+  }, [authLoading, navigate, session])
 
   const v = (k: string) => (form[k] as string) ?? ''
   const arr = (k: string) => (form[k] as string[]) ?? []

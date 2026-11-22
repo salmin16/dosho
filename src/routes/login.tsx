@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Lock, Mail, ShieldCheck } from 'lucide-react'
-import { getSession, signInWithEmail } from '../lib/supabaseAuth'
+import { signInWithEmail, useAuthState } from '../lib/supabaseAuth'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
@@ -13,6 +13,7 @@ export const Route = createFileRoute('/login')({
 
 function LoginRouteComponent() {
   const navigate = useNavigate()
+  const { session, loading: authLoading, configured } = useAuthState()
   const { next, reason } = Route.useSearch()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,10 +23,10 @@ function LoginRouteComponent() {
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
   useEffect(() => {
-    if (getSession()) {
+    if (!authLoading && session) {
       navigate({ to: targetDestination as '/dashboard' })
     }
-  }, [navigate, targetDestination])
+  }, [authLoading, session, navigate, targetDestination])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,19 +39,25 @@ function LoginRouteComponent() {
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Unexpected sign-in error. Please try again.'
+      )
     } finally {
       setSubmitting(false)
     }
   }
 
   const reasonBanner =
-    reason === 'list_project'
-      ? 'Mandatory Membership: You must be signed in as a verified member to list a mining project.'
-      : reason === 'request_quote'
-        ? 'Mandatory Membership: Please sign in to request a formal service quote.'
-        : reason === 'membership_required'
-          ? 'Mandatory Membership: Please sign in or create a free member account to access this section.'
-          : null
+    reason === 'admin_auth_required'
+      ? 'Administrative Clearance Required: Sign in with a verified MineConnect administrator account.'
+      : reason === 'list_project'
+        ? 'Mandatory Membership: You must be signed in as a verified member to list a mining project.'
+        : reason === 'request_quote'
+          ? 'Mandatory Membership: Please sign in to request a formal service quote.'
+          : reason === 'membership_required'
+            ? 'Mandatory Membership: Please sign in or create a free member account to access this section.'
+            : null
 
   return (
     <div className="min-h-screen bg-paper pb-20 pt-28 text-ink">
@@ -72,6 +79,15 @@ function LoginRouteComponent() {
             <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-ochre/30 bg-ochre/10 p-3.5 text-xs font-medium text-ink">
               <AlertTriangle size={16} className="mt-0.5 shrink-0 text-ochre" />
               <span>{reasonBanner}</span>
+            </div>
+          )}
+
+          {!configured && (
+            <div
+              role="alert"
+              className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
+            >
+              Supabase environment variables (`VITE_SUPABASE_URL` &amp; `VITE_SUPABASE_ANON_KEY`) are not configured. Sign-in requires an active Supabase connection.
             </div>
           )}
 

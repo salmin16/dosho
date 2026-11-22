@@ -3,7 +3,8 @@ import type {
   MarketSyncTelemetry,
   MineralPriceRecord,
 } from '../types/database';
-import { getSession, recordAuditActivity } from '../lib/supabaseAuth';
+import { getSession, recordAuditActivity, waitForAuthReady } from '../lib/supabaseAuth';
+import { getSupabaseClient, requireSupabaseClient } from '../lib/supabaseClient';
 import { AdminMineralPriceSchema } from '../lib/securityValidators';
 
 export const MINERAL_PRICES_STORAGE_KEY = 'mineconnect.db.mineral_prices.v3';
@@ -284,29 +285,31 @@ export function computeStatutoryTiersFromSpot(
   return { localMarketUsd, buyingCentreUsd };
 }
 
-export function getStoredMineralPrices(): MineralPriceRecord[] {
-  if (typeof window === 'undefined') {
+let supabaseMineralFetchStarted = false;
+
+export async function fetchMineralPricesFromSupabase(): Promise<MineralPriceRecord[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
     return inMemoryMineralCache ?? INITIAL_MINERAL_PRICES;
   }
-  try {
-    const raw = window.localStorage.getItem(MINERAL_PRICES_STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(
-        MINERAL_PRICES_STORAGE_KEY,
-        JSON.stringify(INITIAL_MINERAL_PRICES)
-      );
-      inMemoryMineralCache = INITIAL_MINERAL_PRICES;
-      return INITIAL_MINERAL_PRICES;
-    }
-    const parsed = JSON.parse(raw) as MineralPriceRecord[];
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      inMemoryMineralCache = parsed;
-      return parsed;
-    }
-  } catch {
-    // ignore storage errors
+  const { data, error } = await supabase
+    .from('mineral_prices')
+    .select('*')
+    .order('mineral_name', { ascending: true });
+
+  if (!error && Array.isArray(data) && data.length > 0) {
+    saveStoredMineralPrices(data);
+    return data;
   }
-  return INITIAL_MINERAL_PRICES;
+  return inMemoryMineralCache ?? INITIAL_MINERAL_PRICES;
+}
+
+export function getStoredMineralPrices(): MineralPriceRecord[] {
+  if (typeof window !== 'undefined' && !supabaseMineralFetchStarted) {
+    supabaseMineralFetchStarted = true;
+    void fetchMineralPricesFromSupabase();
+  }
+  return inMemoryMineralCache ?? INITIAL_MINERAL_PRICES;
 }
 
 export function saveStoredMineralPrices(
@@ -318,43 +321,15 @@ export function saveStoredMineralPrices(
     inMemoryTelemetry = telemetry;
   }
   if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(
-        MINERAL_PRICES_STORAGE_KEY,
-        JSON.stringify(records)
-      );
-      if (telemetry) {
-        window.localStorage.setItem(
-          MARKET_TELEMETRY_STORAGE_KEY,
-          JSON.stringify(telemetry)
-        );
-      }
-      window.dispatchEvent(
-        new CustomEvent(MINERAL_PRICES_EVENT, {
-          detail: { records, telemetry },
-        })
-      );
-    } catch {
-      // ignore storage quota errors
-    }
+    window.dispatchEvent(
+      new CustomEvent(MINERAL_PRICES_EVENT, {
+        detail: { records, telemetry },
+      })
+    );
   }
 }
 
 export function getMarketSyncTelemetry(): MarketSyncTelemetry {
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage.getItem(MARKET_TELEMETRY_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as MarketSyncTelemetry;
-        if (parsed && parsed.lastSyncedAt) {
-          inMemoryTelemetry = parsed;
-          return parsed;
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
   if (inMemoryTelemetry) return inMemoryTelemetry;
 
   const now = new Date();
@@ -365,7 +340,7 @@ export function getMarketSyncTelemetry(): MarketSyncTelemetry {
     syncMode: 'HYBRID_LIVE',
     status: 'LIVE',
     latencyMs: 118,
-    commoditiesSynced: INITIAL_MINERAL_PRICES.length,
+    commoditiesSynced: (inMemoryMineralCache ?? INITIAL_MINERAL_PRICES).length,
     liveSymbols: ['XAU', 'XAG', 'HG', 'NI', 'CO', 'SN'],
     lastSyncedAt: now.toISOString(),
     nextSyncAt: next.toISOString(),
@@ -375,10 +350,8 @@ export function getMarketSyncTelemetry(): MarketSyncTelemetry {
 export function subscribeMineralPrices(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
   window.addEventListener(MINERAL_PRICES_EVENT, callback);
-  window.addEventListener('storage', callback);
   return () => {
     window.removeEventListener(MINERAL_PRICES_EVENT, callback);
-    window.removeEventListener('storage', callback);
   };
 }
 
@@ -434,7 +407,7 @@ export async function adminUpdateMineralPrice(params: {
   buying_centre_price_usd: number;
   trend_percentage: number;
 }): Promise<{ record?: MineralPriceRecord; error?: string }> {
-  const session = getSession();
+  const session = await waitForAuthReady();
   if (!session || session.user.role !== 'admin') {
     return { error: '403 Forbidden: Administrative clearance required.' };
   }
@@ -444,7 +417,7 @@ export async function adminUpdateMineralPrice(params: {
     return { error: parsed.error.message };
   }
 
-  const list = getStoredMineralPrices();
+  const list = [...getStoredMineralPrices()];
   const idx = list.findIndex((m) => m.id === parsed.data.id);
   if (idx === -1) {
     return { error: 'Mineral benchmark record not found.' };
@@ -458,37 +431,52 @@ export async function adminUpdateMineralPrice(params: {
     (newWorld * (Number(params.trend_percentage) / 100)).toFixed(2)
   );
 
-  const updated: MineralPriceRecord = {
-    ...prev,
-    world_market_price_usd: newWorld,
-    local_market_price_usd: Number(params.local_market_price_usd),
-    buying_centre_price_usd: Number(params.buying_centre_price_usd),
-    trend_percentage: Number(params.trend_percentage),
-    change_24h_usd: change24h,
-    day_high_usd: Math.max(prev.day_high_usd ?? newWorld, newWorld),
-    day_low_usd: Math.min(prev.day_low_usd ?? newWorld, newWorld),
-    feed_source: 'LIVE_API' as MarketFeedSource,
-    sparkline_points: nextPoints,
-    updated_at: nowIso,
-  };
+  let supabase;
+  try {
+    supabase = requireSupabaseClient();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Supabase is not configured.' };
+  }
 
-  list[idx] = updated;
+  const { data: persisted, error } = await supabase
+    .from('mineral_prices')
+    .update({
+      world_market_price_usd: newWorld,
+      local_market_price_usd: Number(params.local_market_price_usd),
+      buying_centre_price_usd: Number(params.buying_centre_price_usd),
+      trend_percentage: Number(params.trend_percentage),
+      change_24h_usd: change24h,
+      day_high_usd: Math.max(prev.day_high_usd ?? newWorld, newWorld),
+      day_low_usd: Math.min(prev.day_low_usd ?? newWorld, newWorld),
+      feed_source: 'LIVE_API' as MarketFeedSource,
+      sparkline_points: nextPoints,
+      updated_at: nowIso,
+    })
+    .eq('symbol', prev.symbol)
+    .select('*')
+    .single();
+
+  if (error || !persisted) {
+    return { error: error?.message || 'Failed to update mineral price in Supabase.' };
+  }
+
+  list[idx] = persisted;
   saveStoredMineralPrices(list);
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'ADMIN_UPDATE_MINERAL_PRICE',
     metadata: {
-      mineral: updated.mineral_name,
-      symbol: updated.symbol,
-      worldMarketUsd: updated.world_market_price_usd,
-      localMarketUsd: updated.local_market_price_usd,
-      buyingCentreUsd: updated.buying_centre_price_usd,
-      trendPct: updated.trend_percentage,
+      mineral: persisted.mineral_name,
+      symbol: persisted.symbol,
+      worldMarketUsd: persisted.world_market_price_usd,
+      localMarketUsd: persisted.local_market_price_usd,
+      buyingCentreUsd: persisted.buying_centre_price_usd,
+      trendPct: persisted.trend_percentage,
     },
   });
 
-  return { record: updated };
+  return { record: persisted };
 }
 
 /**

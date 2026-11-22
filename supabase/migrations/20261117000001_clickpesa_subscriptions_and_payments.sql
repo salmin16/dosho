@@ -72,31 +72,28 @@ CREATE INDEX IF NOT EXISTS idx_payment_tx_idempotency
 CREATE INDEX IF NOT EXISTS idx_payment_tx_order_id
   ON public.payment_transactions(clickpesa_order_id);
 
--- 3. Row-Level Security (RLS) Enforcement
+-- 3. Row-Level Security (RLS) Enforcement (Server-Side service_role Writes Only)
 ALTER TABLE public.user_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
+
+REVOKE INSERT, UPDATE, DELETE ON public.user_subscriptions FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.payment_transactions FROM anon, authenticated;
 
 DROP POLICY IF EXISTS "Users can view own subscription" ON public.user_subscriptions;
 CREATE POLICY "Users can view own subscription"
   ON public.user_subscriptions
   FOR SELECT
   TO authenticated
-  USING (auth.uid() = user_id OR public.is_authenticated_admin());
+  USING ((SELECT auth.uid()) = user_id OR (SELECT public.is_active_admin()));
 
 DROP POLICY IF EXISTS "Admins can manage all subscriptions" ON public.user_subscriptions;
-CREATE POLICY "Admins can manage all subscriptions"
-  ON public.user_subscriptions
-  FOR ALL
-  TO authenticated
-  USING (public.is_authenticated_admin())
-  WITH CHECK (public.is_authenticated_admin());
 
 DROP POLICY IF EXISTS "Users can view own payment transactions" ON public.payment_transactions;
 CREATE POLICY "Users can view own payment transactions"
   ON public.payment_transactions
   FOR SELECT
   TO authenticated
-  USING (auth.uid() = user_id OR public.is_authenticated_admin());
+  USING ((SELECT auth.uid()) = user_id OR (SELECT public.is_active_admin()));
 
 -- 4. Atomic ClickPesa Webhook Reconciliation Function
 CREATE OR REPLACE FUNCTION public.reconcile_clickpesa_payment(

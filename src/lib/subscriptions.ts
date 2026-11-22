@@ -2,18 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ensureAdminDemoSession,
-  getSession,
   recordAuditActivity,
   useAuthSession,
+  waitForAuthReady,
 } from './supabaseAuth';
+import { getSupabaseClient } from './supabaseClient';
 import {
   CLICKPESA_CHANNELS,
   canTransitionClickPesaState,
-  computeClickPesaWebhookSignature,
   generateClickPesaIdempotencyKey,
   generateClickPesaOrderIdentifiers,
-  verifyClickPesaWebhookSignature,
 } from './payments/clickpesa';
 import type {
   BillingCycle,
@@ -25,8 +23,6 @@ import type {
   UserSubscriptionRecord,
 } from '../types/database';
 
-export const SUBSCRIPTIONS_STORAGE_KEY = 'mineconnect.db.user_subscriptions.v1';
-export const PAYMENT_TX_STORAGE_KEY = 'mineconnect.db.payment_transactions.v1';
 export const SUBSCRIPTION_UPDATED_EVENT = 'mineconnect:subscription-updated';
 
 /**
@@ -307,71 +303,10 @@ export function resolveVerifiedTierPricing(
   };
 }
 
-function getDefaultSubscriptionsSeed(): Record<string, UserSubscriptionRecord> {
-  const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-  return {
-    // Admin account defaults to Corporate tier
-    '00000000-0000-4000-8000-000000000001': {
-      id: 'sub-seed-admin-001',
-      user_id: '00000000-0000-4000-8000-000000000001',
-      tier_name: 'Corporate',
-      status: 'active',
-      billing_cycle: 'yearly',
-      price_tzs: 10_000_000,
-      price_usd: 3724.39,
-      payment_gateway: 'CLICKPESA',
-      payment_rail: 'BANK_TRANSFER',
-      payment_provider: 'CRDB_BANK',
-      payment_reference: 'CP-COR-CRDB-994021',
-      expires_at: new Date(now + 340 * dayMs).toISOString(),
-      created_at: new Date(now - 25 * dayMs).toISOString(),
-      updated_at: new Date(now - 25 * dayMs).toISOString(),
-    },
-    // Demo Geologist defaults to Professional tier
-    '00000000-0000-4000-8000-000000000002': {
-      id: 'sub-seed-prof-002',
-      user_id: '00000000-0000-4000-8000-000000000002',
-      tier_name: 'Professional',
-      status: 'active',
-      billing_cycle: 'monthly',
-      price_tzs: 150_000,
-      price_usd: 55.87,
-      payment_gateway: 'CLICKPESA',
-      payment_rail: 'MOBILE_MONEY',
-      payment_provider: 'MPESA_TZ',
-      payment_reference: 'CP-PRO-MPESA-882410',
-      expires_at: new Date(now + 24 * dayMs).toISOString(),
-      created_at: new Date(now - 6 * dayMs).toISOString(),
-      updated_at: new Date(now - 6 * dayMs).toISOString(),
-    },
-  };
-}
+const subscriptionCache = new Map<string, UserSubscriptionRecord>();
+const transactionsCache = new Map<string, PaymentTransactionRecord[]>();
 
-export function getAllStoredSubscriptions(): Record<
-  string,
-  UserSubscriptionRecord
-> {
-  if (typeof window === 'undefined') {
-    return getDefaultSubscriptionsSeed();
-  }
-  try {
-    const raw = window.localStorage.getItem(SUBSCRIPTIONS_STORAGE_KEY);
-    if (!raw) {
-      const seed = getDefaultSubscriptionsSeed();
-      window.localStorage.setItem(
-        SUBSCRIPTIONS_STORAGE_KEY,
-        JSON.stringify(seed)
-      );
-      return seed;
-    }
-    return JSON.parse(raw) as Record<string, UserSubscriptionRecord>;
-  } catch {
-    return getDefaultSubscriptionsSeed();
-  }
-}
-
-export function getUserSubscription(
+function createDefaultExplorerSubscription(
   userId?: string | null
 ): UserSubscriptionRecord {
   const now = new Date();
@@ -379,35 +314,9 @@ export function getUserSubscription(
     now.getTime() + 30 * 24 * 60 * 60 * 1000
   ).toISOString();
 
-  if (!userId) {
-    return {
-      id: 'sub-guest-explorer',
-      user_id: 'guest',
-      tier_name: 'Explorer',
-      status: 'active',
-      billing_cycle: 'monthly',
-      price_tzs: 0,
-      price_usd: 0,
-      payment_gateway: 'FREE_TIER',
-      payment_rail: 'FREE',
-      payment_provider: 'FREE',
-      payment_reference: null,
-      expires_at: expiresDefault,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString(),
-    };
-  }
-
-  const all = getAllStoredSubscriptions();
-  const existing = all[userId];
-  if (existing) {
-    return existing;
-  }
-
-  // Default any newly registered account to Explorer (Free) unless upgraded
   return {
-    id: `sub-${userId.slice(0, 8)}`,
-    user_id: userId,
+    id: userId ? `sub-${userId.slice(0, 8)}` : 'sub-guest-explorer',
+    user_id: userId || 'guest',
     tier_name: 'Explorer',
     status: 'active',
     billing_cycle: 'monthly',
@@ -416,34 +325,73 @@ export function getUserSubscription(
     payment_gateway: 'FREE_TIER',
     payment_rail: 'FREE',
     payment_provider: 'FREE',
-    payment_reference: 'EXPLORER-DEFAULT',
+    payment_reference: null,
     expires_at: expiresDefault,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };
 }
 
-export function getAllPaymentTransactions(): PaymentTransactionRecord[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(PAYMENT_TX_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PaymentTransactionRecord[]) : [];
-  } catch {
-    return [];
+export function getUserSubscription(
+  userId?: string | null
+): UserSubscriptionRecord {
+  if (!userId) {
+    return createDefaultExplorerSubscription(null);
   }
+  return (
+    subscriptionCache.get(userId) ?? createDefaultExplorerSubscription(userId)
+  );
 }
 
 export function getUserPaymentTransactions(
   userId?: string | null
 ): PaymentTransactionRecord[] {
   if (!userId) return [];
-  return getAllPaymentTransactions().filter((tx) => tx.user_id === userId);
+  return transactionsCache.get(userId) ?? [];
+}
+
+export async function fetchUserSubscriptionFromSupabase(
+  userId: string
+): Promise<{
+  subscription: UserSubscriptionRecord;
+  transactions: PaymentTransactionRecord[];
+}> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      subscription: createDefaultExplorerSubscription(userId),
+      transactions: [],
+    };
+  }
+
+  const [subRes, txRes] = await Promise.all([
+    supabase
+      .from('user_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('payment_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50),
+  ]);
+
+  const subscription =
+    subRes.data ?? createDefaultExplorerSubscription(userId);
+  const transactions = txRes.data ?? [];
+
+  subscriptionCache.set(userId, subscription);
+  transactionsCache.set(userId, transactions);
+
+  return { subscription, transactions };
 }
 
 /**
- * Step 1 & 2 of ClickPesa Transaction State Machine:
- * Validates idempotency key, creates `INITIATED` -> `PROCESSING` transaction,
- * and returns ClickPesa order & control number.
+ * ClickPesa Checkout Execution (Server-Reconciled):
+ * Requires a verified Supabase Auth session and sends checkout requests to
+ * `/api/payments/create` (never writing fake subscriptions to `localStorage`).
  */
 export async function executeClickPesaSubscriptionPayment(params: {
   userId?: string;
@@ -463,9 +411,15 @@ export async function executeClickPesaSubscriptionPayment(params: {
   webhookSignature?: string;
   error?: string;
 }> {
-  const session = getSession() ?? ensureAdminDemoSession();
-  const targetUserId = params.userId || session.user.id;
+  const session = await waitForAuthReady();
+  if (!session) {
+    return {
+      success: false,
+      error: 'Authentication required: Please sign in with your Supabase account before subscribing.',
+    };
+  }
 
+  const targetUserId = session.user.id;
   const verified = resolveVerifiedTierPricing(
     params.tierName,
     params.billingCycle
@@ -481,8 +435,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
       nonce: Date.now().toString(36),
     });
 
-  // 1. Idempotency Guard: check if this idempotencyKey was already settled
-  const existingTxList = getAllPaymentTransactions();
+  const existingTxList = getUserPaymentTransactions(targetUserId);
   const duplicateTx = existingTxList.find(
     (t) => t.idempotency_key === idempotencyKey
   );
@@ -511,7 +464,6 @@ export async function executeClickPesaSubscriptionPayment(params: {
 
   const nowIso = new Date().toISOString();
 
-  // State 1: INITIATED
   const txRecord: PaymentTransactionRecord = {
     id: `cptx-${Date.now().toString(36)}`,
     idempotency_key: idempotencyKey,
@@ -542,13 +494,13 @@ export async function executeClickPesaSubscriptionPayment(params: {
 
   params.onStateChange?.({ ...txRecord });
 
-  // Attempt server API call to `/api/payments/create` if Next.js API is running,
-  // with seamless client-side state machine fallback
+  let apiResponse: Response;
   try {
-    await fetch('/api/payments/create', {
+    apiResponse = await fetch('/api/payments/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.accessToken}`,
         'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
@@ -559,95 +511,44 @@ export async function executeClickPesaSubscriptionPayment(params: {
         accountOrPhoneMasked: params.accountOrPhoneMasked,
         idempotencyKey,
       }),
-    }).catch(() => null);
+    });
   } catch {
-    // Continue deterministic state machine transition
+    txRecord.state = 'FAILED';
+    params.onStateChange?.({ ...txRecord });
+    return {
+      success: false,
+      error:
+        'Unable to reach server payment gateway (/api/payments/create). Subscriptions can only be reconciled server-side.',
+    };
   }
 
-  // State 2: Transition INITIATED -> PROCESSING
+  if (!apiResponse.ok) {
+    txRecord.state = 'FAILED';
+    params.onStateChange?.({ ...txRecord });
+    let errMessage = `Payment initialization failed (HTTP ${apiResponse.status}).`;
+    try {
+      const errBody = (await apiResponse.json()) as { error?: string };
+      if (errBody.error) errMessage = errBody.error;
+    } catch {
+      // keep default HTTP status message
+    }
+    return { success: false, error: errMessage };
+  }
+
   if (canTransitionClickPesaState(txRecord.state, 'PROCESSING')) {
     txRecord.state = 'PROCESSING';
     txRecord.updated_at = new Date().toISOString();
     params.onStateChange?.({ ...txRecord });
   }
 
-  // Compute & verify ClickPesa Webhook HMAC-SHA256 signature
-  const webhookPayload = JSON.stringify({
-    event: 'payment.settled',
-    orderId: txRecord.clickpesa_order_id,
-    idempotencyKey: txRecord.idempotency_key,
-    userId: targetUserId,
-    tierName: verified.tierName,
-    billingCycle: verified.billingCycle,
-    verifiedAmountTzs: verified.verifiedAmountTzs,
-  });
-
-  const signature = await computeClickPesaWebhookSignature(webhookPayload);
-  const signatureValid = await verifyClickPesaWebhookSignature(
-    webhookPayload,
-    signature
-  );
-
-  if (!signatureValid) {
-    txRecord.state = 'FAILED';
-    return {
-      success: false,
-      error: 'ClickPesa webhook HMAC-SHA256 signature validation failed.',
-    };
-  }
-
-  // State 3: Transition PROCESSING -> SETTLED & Reconcile Subscription
-  if (canTransitionClickPesaState(txRecord.state, 'SETTLED')) {
-    txRecord.state = 'SETTLED';
-    txRecord.webhook_signature_verified = true;
-    txRecord.reconciled_at = new Date().toISOString();
-    txRecord.updated_at = txRecord.reconciled_at;
-    params.onStateChange?.({ ...txRecord });
-  }
-
-  const expiresAt = new Date(
-    Date.now() + verified.durationDays * 24 * 60 * 60 * 1000
-  ).toISOString();
-
-  const updatedSubscription: UserSubscriptionRecord = {
-    id: `sub-${Date.now().toString(36)}`,
-    user_id: targetUserId,
-    tier_name: verified.tierName,
-    status: 'active',
-    billing_cycle: verified.billingCycle,
-    price_tzs: verified.verifiedAmountTzs,
-    price_usd: verified.verifiedAmountUsd,
-    payment_gateway:
-      verified.verifiedAmountTzs === 0 ? 'FREE_TIER' : 'CLICKPESA',
-    payment_rail: channelMeta.rail,
-    payment_provider: params.providerCode,
-    payment_reference: txRecord.clickpesa_order_id,
-    expires_at: expiresAt,
-    created_at: nowIso,
-    updated_at: new Date().toISOString(),
-  };
+  // Refresh authoritative subscription & transactions from Supabase after server response
+  const refreshed = await fetchUserSubscriptionFromSupabase(targetUserId);
 
   if (typeof window !== 'undefined') {
-    const allSubs = getAllStoredSubscriptions();
-    allSubs[targetUserId] = updatedSubscription;
-    window.localStorage.setItem(
-      SUBSCRIPTIONS_STORAGE_KEY,
-      JSON.stringify(allSubs)
-    );
-
-    const nextTxList = [
-      txRecord,
-      ...existingTxList.filter((t) => t.id !== txRecord.id),
-    ].slice(0, 200);
-    window.localStorage.setItem(
-      PAYMENT_TX_STORAGE_KEY,
-      JSON.stringify(nextTxList)
-    );
-
     window.dispatchEvent(
       new CustomEvent(SUBSCRIPTION_UPDATED_EVENT, {
         detail: {
-          subscription: updatedSubscription,
+          subscription: refreshed.subscription,
           transaction: txRecord,
         },
       })
@@ -656,32 +557,27 @@ export async function executeClickPesaSubscriptionPayment(params: {
 
   recordAuditActivity({
     userId: targetUserId,
-    action: 'CLICKPESA_SUBSCRIPTION_SETTLED',
+    action: 'CLICKPESA_CHECKOUT_INITIATED',
     metadata: {
       orderId: txRecord.clickpesa_order_id,
-      controlNumber: txRecord.clickpesa_control_number,
       idempotencyKey: txRecord.idempotency_key,
       tierName: verified.tierName,
       billingCycle: verified.billingCycle,
       rail: channelMeta.rail,
       providerCode: params.providerCode,
-      verifiedAmountTzs: verified.verifiedAmountTzs,
-      verifiedAmountUsd: verified.verifiedAmountUsd,
-      webhookSignatureVerified: true,
     },
   });
 
   return {
     success: true,
-    subscription: updatedSubscription,
+    subscription: refreshed.subscription,
     transaction: txRecord,
-    webhookSignature: signature,
   };
 }
 
 /**
  * Custom React Hook (`useSubscription()`)
- * Synchronizes active user subscription, tier permissions, and quota limits in real time.
+ * Synchronizes active user subscription & transactions directly from Supabase (`public.user_subscriptions`).
  */
 export function useSubscription() {
   const session = useAuthSession();
@@ -690,19 +586,38 @@ export function useSubscription() {
   const [subscription, setSubscription] = useState<UserSubscriptionRecord>(() =>
     getUserSubscription(userId)
   );
+  const [transactions, setTransactions] = useState<PaymentTransactionRecord[]>(
+    () => getUserPaymentTransactions(userId)
+  );
 
   useEffect(() => {
-    setSubscription(getUserSubscription(userId));
+    let active = true;
+
+    const load = async () => {
+      if (!userId) {
+        if (active) {
+          setSubscription(createDefaultExplorerSubscription(null));
+          setTransactions([]);
+        }
+        return;
+      }
+      const res = await fetchUserSubscriptionFromSupabase(userId);
+      if (active) {
+        setSubscription(res.subscription);
+        setTransactions(res.transactions);
+      }
+    };
+
+    void load();
 
     const handleSync = () => {
-      setSubscription(getUserSubscription(userId));
+      void load();
     };
 
     window.addEventListener(SUBSCRIPTION_UPDATED_EVENT, handleSync);
-    window.addEventListener('storage', handleSync);
     return () => {
+      active = false;
       window.removeEventListener(SUBSCRIPTION_UPDATED_EVENT, handleSync);
-      window.removeEventListener('storage', handleSync);
     };
   }, [userId]);
 
@@ -710,11 +625,6 @@ export function useSubscription() {
     () =>
       SUBSCRIPTION_TIERS[subscription.tier_name] ?? SUBSCRIPTION_TIERS.Explorer,
     [subscription.tier_name]
-  );
-
-  const transactions = useMemo(
-    () => getUserPaymentTransactions(userId),
-    [userId, subscription.updated_at]
   );
 
   const hasMinimumTier = useCallback(

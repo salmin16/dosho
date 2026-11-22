@@ -348,11 +348,34 @@ export interface UnifiedContentRecord {
   updated_at: string;
 }
 
-export interface Database {
+type TableRow<T> = { [K in keyof T]: T[K] };
+
+export type Database = {
   public: {
     Tables: {
+      profiles: {
+        Row: TableRow<UserProfile>;
+        Insert: {
+          id: string;
+          email: string;
+          full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
+          preferred_currency?: SupportedCurrency;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
+          preferred_currency?: SupportedCurrency;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       mineral_prices: {
-        Row: MineralPriceRecord;
+        Row: TableRow<MineralPriceRecord>;
         Insert: {
           id?: string;
           mineral_name: string;
@@ -379,12 +402,17 @@ export interface Database {
           buying_centre_price_usd?: number;
           royalty_rate_pct?: number;
           trend_percentage?: number;
+          change_24h_usd?: number;
+          day_high_usd?: number;
+          day_low_usd?: number;
+          feed_source?: MarketFeedSource;
           sparkline_points?: Json;
           updated_at?: string;
         };
+        Relationships: [];
       };
       user_profiles: {
-        Row: UserProfile;
+        Row: TableRow<UserProfile>;
         Insert: {
           id: string;
           email: string;
@@ -402,9 +430,10 @@ export interface Database {
           preferred_currency?: SupportedCurrency;
           updated_at?: string;
         };
+        Relationships: [];
       };
       audit_logs: {
-        Row: AuditLog;
+        Row: TableRow<AuditLog>;
         Insert: {
           id?: string;
           user_id?: string | null;
@@ -415,9 +444,10 @@ export interface Database {
           created_at?: string;
         };
         Update: never;
+        Relationships: [];
       };
       user_documents: {
-        Row: UserDocument;
+        Row: TableRow<UserDocument>;
         Insert: {
           id?: string;
           user_id?: string;
@@ -441,9 +471,10 @@ export interface Database {
           reviewed_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       user_projects: {
-        Row: UserListedProject;
+        Row: TableRow<UserListedProject>;
         Insert: {
           id?: string;
           user_id?: string;
@@ -482,9 +513,10 @@ export interface Database {
           reviewed_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
-      quote_requests: {
-        Row: QuoteRequestRecord;
+      quotes: {
+        Row: TableRow<QuoteRequestRecord>;
         Insert: {
           id?: string;
           user_id?: string;
@@ -509,9 +541,38 @@ export interface Database {
           reviewed_by?: string | null;
           reviewed_at?: string | null;
         };
+        Relationships: [];
+      };
+      quote_requests: {
+        Row: TableRow<QuoteRequestRecord>;
+        Insert: {
+          id?: string;
+          user_id?: string;
+          provider_id: string;
+          provider_name: string;
+          service_requested: string;
+          estimated_budget_usd: number;
+          currency_code?: SupportedCurrency;
+          scope_notes: string;
+          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          service_requested?: string;
+          scope_notes?: string;
+          estimated_budget_usd?: number;
+          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+        };
+        Relationships: [];
       };
       opportunities: {
-        Row: UserOpportunityRecord;
+        Row: TableRow<UserOpportunityRecord>;
         Insert: {
           id?: string;
           user_id?: string;
@@ -546,9 +607,10 @@ export interface Database {
           reviewed_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       services: {
-        Row: UserServiceRecord;
+        Row: TableRow<UserServiceRecord>;
         Insert: {
           id?: string;
           user_id?: string;
@@ -585,7 +647,120 @@ export interface Database {
           reviewed_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      users: {
+        Row: TableRow<UserProfile>;
+        Insert: {
+          id: string;
+          email: string;
+          full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
+          preferred_currency?: SupportedCurrency;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          full_name?: string | null;
+          role?: UserRole;
+          status?: UserStatus;
+          preferred_currency?: SupportedCurrency;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      projects: {
+        Row: TableRow<UserListedProject>;
+        Insert: {
+          id?: string;
+          user_id?: string;
+          title: string;
+          mineral: string;
+          region: string;
+          licence_type: string;
+          licence_reference: string;
+          investment_usd: number;
+          submitted_currency?: SupportedCurrency;
+          summary: string;
+          status?:
+            | 'PENDING_VERIFICATION'
+            | 'VERIFIED'
+            | 'ARCHIVED'
+            | 'FLAGGED'
+            | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          summary?: string;
+          investment_usd?: number;
+          status?:
+            | 'PENDING_VERIFICATION'
+            | 'VERIFIED'
+            | 'ARCHIVED'
+            | 'FLAGGED'
+            | 'REJECTED';
+          approved?: boolean;
+          moderation_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      user_subscriptions: {
+        Row: TableRow<UserSubscriptionRecord>;
+        Insert: TableRow<
+          Omit<UserSubscriptionRecord, 'id' | 'created_at' | 'updated_at'> & {
+            id?: string;
+            created_at?: string;
+            updated_at?: string;
+          }
+        >;
+        Update: TableRow<
+          Partial<Omit<UserSubscriptionRecord, 'id' | 'user_id' | 'created_at'>>
+        >;
+        Relationships: [];
+      };
+      payment_transactions: {
+        Row: TableRow<PaymentTransactionRecord>;
+        Insert: TableRow<
+          Omit<PaymentTransactionRecord, 'id' | 'created_at' | 'updated_at'> & {
+            id?: string;
+            created_at?: string;
+            updated_at?: string;
+          }
+        >;
+        Update: TableRow<
+          Partial<Omit<PaymentTransactionRecord, 'id' | 'user_id' | 'created_at'>>
+        >;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: {
+      is_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      is_active_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      reconcile_clickpesa_payment: {
+        Args: {
+          p_clickpesa_order_id: string;
+          p_signature_verified: boolean;
+          p_new_state?: string;
+        };
+        Returns: Json;
+      };
+    };
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
-}
+};

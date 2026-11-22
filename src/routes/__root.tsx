@@ -9,7 +9,7 @@ import { useEffect } from 'react'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { LocalizationProvider, useLocalization } from '../context/LocalizationContext'
-import { getSession, useAuthSession } from '../lib/supabaseAuth'
+import { useAuthState } from '../lib/supabaseAuth'
 
 import '../styles.css'
 
@@ -45,7 +45,7 @@ function RootComponent() {
 
 function Chrome({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session, loading: authLoading } = useAuthState()
   // Subscribe Chrome & child routes to active currency AND language changes so all formatting and translation calls re-render immediately
   const { currency, rateForSelected, lang } = useLocalization()
 
@@ -70,10 +70,10 @@ function Chrome({ children }: { children: React.ReactNode }) {
     normalizedPath.startsWith('/signup/')
 
   // Strict Mandatory Membership Guard:
-  // Unauthenticated visitors may only view the public Landing Page (`/`), Markets Board (`/markets`), Regional GIS Map (`/map`), Auth Pages (`/login`, `/signup`), and `/admin` (which enforces its own RBAC guard).
+  // Wait for Supabase Auth hydration before enforcing redirect so authenticated users never bounce.
   useEffect(() => {
-    const activeSession = getSession()
-    if (!isHome && !isMarketsPage && !isMapPage && !isAuthPage && !isAdminPage && !activeSession) {
+    if (authLoading) return
+    if (!isHome && !isMarketsPage && !isMapPage && !isAuthPage && !isAdminPage && !session) {
       navigate({
         to: '/signup',
         search: {
@@ -87,7 +87,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
         } as unknown as undefined,
       })
     }
-  }, [isHome, isMarketsPage, isMapPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
+  }, [authLoading, isHome, isMarketsPage, isMapPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
     <div data-currency={currency} data-fx-rate={rateForSelected} data-lang={lang}>

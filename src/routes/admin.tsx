@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -25,9 +25,8 @@ import {
   adminPurgeContentItem,
   adminUpdateContentItem,
   adminUpdateUserProfile,
-  ensureAdminDemoSession,
   fetchAdminGovernanceData,
-  useAuthSession,
+  useAuthState,
 } from '../lib/supabaseAuth'
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
@@ -106,7 +105,8 @@ export function MasterAdminDashboard({
 }: {
   initialSection?: MasterAdminSection
 }) {
-  const session = useAuthSession()
+  const navigate = useNavigate()
+  const { session, loading: authLoading } = useAuthState()
   const {
     currency,
     language,
@@ -118,7 +118,8 @@ export function MasterAdminDashboard({
     ui,
   } = useLocalization()
 
-  const [authorized, setAuthorized] = useState<boolean>(true)
+  const [authorized, setAuthorized] = useState<boolean>(false)
+  const [loadingGovernance, setLoadingGovernance] = useState<boolean>(true)
   const [users, setUsers] = useState<UserProfile[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [unifiedContent, setUnifiedContent] = useState<UnifiedContentRecord[]>([])
@@ -172,21 +173,45 @@ export function MasterAdminDashboard({
   }, [initialSection])
 
   const loadGovernanceTelemetry = useCallback(async () => {
-    ensureAdminDemoSession()
-    const data = await fetchAdminGovernanceData()
-    setAuthorized(data.authorized)
-    setUsers(data.users)
-    setAuditLogs(data.auditLogs)
-    setUnifiedContent(data.unifiedContent)
-    setTotalDocuments(data.totalDocuments)
-    setTotalProjects(data.totalProjects)
-    setTotalQuotes(data.totalQuotes)
-    setDbLatencyMs(data.dbLatencyMs)
+    setLoadingGovernance(true)
+    try {
+      const data = await fetchAdminGovernanceData()
+      setAuthorized(data.authorized)
+      setUsers(data.users)
+      setAuditLogs(data.auditLogs)
+      setUnifiedContent(data.unifiedContent)
+      setTotalDocuments(data.totalDocuments)
+      setTotalProjects(data.totalProjects)
+      setTotalQuotes(data.totalQuotes)
+      setDbLatencyMs(data.dbLatencyMs)
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message:
+          err instanceof Error
+            ? `Failed to load Supabase admin telemetry: ${err.message}`
+            : 'Failed to load Supabase admin telemetry.',
+      })
+    } finally {
+      setLoadingGovernance(false)
+    }
   }, [])
 
   useEffect(() => {
+    if (authLoading) return
+    if (!session) {
+      setAuthorized(false)
+      setLoadingGovernance(false)
+      return
+    }
+    if (session.user.role !== 'admin') {
+      setAuthorized(false)
+      setLoadingGovernance(false)
+      navigate({ to: '/dashboard' })
+      return
+    }
     void loadGovernanceTelemetry()
-  }, [loadGovernanceTelemetry])
+  }, [authLoading, session, navigate, loadGovernanceTelemetry])
 
   useEffect(() => {
     setMineralBenchmarks(getStoredMineralPrices())
@@ -300,8 +325,43 @@ export function MasterAdminDashboard({
     return unifiedContent.filter((c) => c.user_id === inspectingUser.id)
   }, [unifiedContent, inspectingUser])
 
+  if (authLoading || loadingGovernance) {
+    return (
+      <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
+        <div className="mx-auto max-w-xl rounded-xl border border-ink/15 bg-paper-2 p-8 text-center">
+          <ShieldCheck size={36} className="mx-auto animate-pulse text-ochre" />
+          <h1 className="mt-4 font-display text-2xl font-semibold">
+            Verifying Administrative Clearance
+          </h1>
+          <p className="mt-2 text-sm text-stone">
+            Validating your Supabase session and PostgreSQL RBAC role (`public.user_profiles`)...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   if (!session) {
-    return null
+    return (
+      <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
+        <div className="mx-auto max-w-xl rounded-xl border border-danger/30 bg-paper-2 p-8 text-center">
+          <ShieldAlert size={40} className="mx-auto text-danger" />
+          <h1 className="mt-4 font-display text-2xl font-semibold">
+            401 Unauthorized — Admin Sign-In Required
+          </h1>
+          <p className="mt-2 text-sm text-stone">
+            Sign in with an authenticated Supabase administrator account to access MineConnect Governance.
+          </p>
+          <Link
+            to="/login"
+            search={{ next: '/admin', reason: 'admin_auth_required' } as unknown as undefined}
+            className="btn-primary mt-6 inline-flex"
+          >
+            Sign In as Administrator
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   if (!authorized || session.user.role !== 'admin') {
@@ -313,7 +373,7 @@ export function MasterAdminDashboard({
             403 Forbidden — Administrative Clearance Required
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Your session (`role = {session.user.role}`) does not hold administrative privileges required by Next.js Middleware and PostgreSQL RLS (`public.is_admin()`).
+            Your Supabase session (`role = {session.user.role}`) does not hold administrative privileges required by PostgreSQL RLS (`public.is_active_admin()`).
           </p>
           <Link to="/dashboard" className="btn-primary mt-6 inline-flex">
             Return to Member Vault

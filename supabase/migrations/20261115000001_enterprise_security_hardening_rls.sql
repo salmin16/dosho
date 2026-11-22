@@ -112,6 +112,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  -- Permit server-side service_role and database maintenance roles
+  IF current_setting('role', true) = 'service_role'
+     OR current_user IN ('postgres', 'supabase_admin') THEN
+    NEW.updated_at := NOW();
+    RETURN NEW;
+  END IF;
+
   IF (NEW.role IS DISTINCT FROM OLD.role OR NEW.status IS DISTINCT FROM OLD.status) THEN
     IF NOT public.is_active_admin() THEN
       RAISE EXCEPTION '403 Forbidden: Privilege escalation blocked. Only active administrators may modify role or account status.';

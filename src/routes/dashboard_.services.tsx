@@ -15,8 +15,7 @@ import {
 } from 'lucide-react'
 import {
   fetchGroundedUserData,
-  getSession,
-  useAuthSession,
+  useAuthState,
 } from '../lib/supabaseAuth'
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
@@ -31,7 +30,7 @@ export const Route = createFileRoute('/dashboard_/services')({
 
 function DashboardServicesRouteComponent() {
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session, loading: authLoading } = useAuthState()
   const {
     currency,
     language,
@@ -49,15 +48,15 @@ function DashboardServicesRouteComponent() {
   }, [])
 
   useEffect(() => {
-    const current = getSession()
-    if (!current) {
+    if (authLoading) return
+    if (!session) {
       navigate({ to: '/login' })
       return
     }
-    loadData()
-  }, [navigate, loadData])
+    void loadData()
+  }, [authLoading, session, navigate, loadData])
 
-  if (!session) {
+  if (authLoading || !session) {
     return null
   }
 

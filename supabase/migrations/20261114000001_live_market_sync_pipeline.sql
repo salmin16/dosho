@@ -45,6 +45,7 @@ CREATE OR REPLACE FUNCTION public.upsert_live_mineral_spot(
 RETURNS public.mineral_prices
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_row public.mineral_prices;

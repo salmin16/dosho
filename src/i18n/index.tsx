@@ -45,6 +45,25 @@ function readInitialLang(): LanguageCode {
   return 'en'
 }
 
+type BaseLocalizedFixtures = ReturnType<typeof getLocalizedFixtures>
+
+export interface LocalizedPlan {
+  id: string
+  name: string
+  price: string
+  period: string
+  yearly?: string
+  highlighted?: boolean
+  audience: string
+  features: readonly string[]
+}
+
+export interface LocalizedFixtures extends Omit<BaseLocalizedFixtures, 'plans' | 'servicesPricing' | 'listPackages'> {
+  plans: LocalizedPlan[]
+  servicesPricing: Array<Omit<BaseLocalizedFixtures['servicesPricing'][number], 'price'> & { price: string }>
+  listPackages: Array<Omit<BaseLocalizedFixtures['listPackages'][number], 'price'> & { price: string }>
+}
+
 interface I18nContextValue {
   lang: LanguageCode
   setLang: (lang: LanguageCode) => void
@@ -52,7 +71,7 @@ interface I18nContextValue {
   tv: (value: string) => string
   localizeProject: (project: Project) => Project
   formatDate: (iso: string) => string
-  fixtures: ReturnType<typeof getLocalizedFixtures>
+  fixtures: LocalizedFixtures
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null)

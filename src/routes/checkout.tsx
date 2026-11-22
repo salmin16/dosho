@@ -17,7 +17,7 @@ import {
   normalizeSubscriptionTier,
   resolveVerifiedTierPricing,
 } from '../lib/subscriptions';
-import { ensureAdminDemoSession, useAuthSession } from '../lib/supabaseAuth';
+import { useAuthState } from '../lib/supabaseAuth';
 import type {
   BillingCycle,
   PaymentTransactionRecord,
@@ -48,7 +48,7 @@ export const Route = createFileRoute('/checkout')({
 
 function CheckoutPageComponent() {
   const search = Route.useSearch();
-  const session = useAuthSession();
+  const { session } = useAuthState();
   const { currency, formatPrice, ui } = useLocalization();
 
   const [selectedTier, setSelectedTier] = useState<SubscriptionTierName>(() =>
@@ -69,10 +69,7 @@ function CheckoutPageComponent() {
     webhookSignature?: string;
   } | null>(null);
 
-  const effectiveUserId = useMemo(() => {
-    if (session?.user.id) return session.user.id;
-    return ensureAdminDemoSession().user.id;
-  }, [session?.user.id]);
+  const effectiveUserId = session?.user.id ?? '';
 
   const verifiedPricing = useMemo(
     () => resolveVerifiedTierPricing(selectedTier, billingCycle),
@@ -336,12 +333,35 @@ function CheckoutPageComponent() {
             </div>
 
             {/* Step 2: ClickPesa Gateway Panel */}
-            <ClickPesaGatewayPanel
-              userId={effectiveUserId}
-              tierName={selectedTier}
-              billingCycle={billingCycle}
-              onSuccess={(res) => setSettledReceipt(res)}
-            />
+            {effectiveUserId ? (
+              <ClickPesaGatewayPanel
+                userId={effectiveUserId}
+                tierName={selectedTier}
+                billingCycle={billingCycle}
+                onSuccess={(res) => setSettledReceipt(res)}
+              />
+            ) : (
+              <div className="rounded-2xl border border-ochre/30 bg-paper-2 p-8 text-center">
+                <Lock size={28} className="mx-auto text-ochre" />
+                <h3 className="mt-3 font-display text-2xl text-ink">
+                  {ui('Sign In to Complete Subscription', 'Ingia ili Kukamilisha Usajili', 'Inicie Sesión para Completar la Suscripción')}
+                </h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-stone">
+                  {ui(
+                    'ClickPesa subscriptions are bound strictly to your verified Supabase member UUID.',
+                    'Usajili wa ClickPesa unaunganishwa moja kwa moja na akaunti yako ya Supabase.',
+                    'Las suscripciones de ClickPesa están vinculadas estrictamente a su cuenta verificada de Supabase.'
+                  )}
+                </p>
+                <Link
+                  to="/login"
+                  search={{ next: '/checkout', reason: 'membership_required' } as unknown as undefined}
+                  className="btn-primary mt-5 inline-flex"
+                >
+                  {ui('Sign In to Subscribe', 'Ingia Kujiunga', 'Iniciar Sesión')}
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </section>

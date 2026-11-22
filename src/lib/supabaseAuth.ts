@@ -1,4 +1,10 @@
 import { useEffect, useState } from 'react'
+import type { Session as SupabaseSdkSession } from '@supabase/supabase-js'
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+  requireSupabaseClient,
+} from './supabaseClient'
 import {
   OpportunitySubmissionSchema,
   ServiceSubmissionSchema,
@@ -9,6 +15,7 @@ import type {
   AuditLog,
   ContentStatus,
   DocumentClassification,
+  Json,
   OpportunitySubmissionCategory,
   QuoteRequestRecord,
   ServiceExpertiseArea,
@@ -37,454 +44,304 @@ export interface AuthUser {
 export interface AuthSession {
   accessToken: string
   user: AuthUser
-  mode: 'supabase' | 'grounded-local'
+  mode: 'supabase'
 }
 
-const SESSION_KEY = 'mineconnect.auth.session.v1'
-const USERS_KEY = 'mineconnect.auth.users.v1'
-const PROFILES_KEY = 'mineconnect.db.user_profiles.v1'
-const DOCUMENTS_KEY = 'mineconnect.db.user_documents.v1'
-const PROJECTS_KEY = 'mineconnect.db.user_projects.v1'
-const QUOTES_KEY = 'mineconnect.db.quote_requests.v1'
-const OPPORTUNITIES_KEY = 'mineconnect.db.opportunities.v1'
-const SERVICES_KEY = 'mineconnect.db.services.v1'
-const AUDIT_LOGS_KEY = 'mineconnect.db.audit_logs.v1'
-const SEED_VERSION_KEY = 'mineconnect.db.seed_version.v2'
+export interface AuthState {
+  session: AuthSession | null
+  loading: boolean
+  configured: boolean
+}
+
 const AUTH_EVENT = 'mineconnect:auth-changed'
 
-interface StoredAccount {
-  id: string
-  email: string
-  fullName: string
-  passwordHash: string
-  role: UserRole
-  status: UserStatus
-  preferredCurrency?: SupportedCurrency
-  createdAt: string
+let currentSession: AuthSession | null = null
+let authLoading = true
+let authBootstrapped = false
+let authInitPromise: Promise<AuthSession | null> | null = null
+
+function notifyAuthListeners() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_EVENT))
+  }
 }
 
-function getSupabaseConfig(): { url: string; anonKey: string } | null {
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {}
-  const url = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (url && anonKey && !url.includes('your-project-id')) {
-    return { url: url.replace(/\/$/, ''), anonKey }
+function setCurrentSession(next: AuthSession | null) {
+  currentSession = next
+  notifyAuthListeners()
+}
+
+type ProfileTableName = 'profiles' | 'user_profiles' | 'users'
+type ProjectTableName = 'projects' | 'user_projects'
+type QuoteTableName = 'quotes' | 'quote_requests'
+
+let resolvedProfileTable: ProfileTableName | null = null
+let resolvedProjectTable: ProjectTableName | null = null
+let resolvedQuoteTable: QuoteTableName | null = null
+
+function isMissingRelationError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === '42P01' ||
+    error.code === 'PGRST205' ||
+    /relation .* does not exist|could not find the table/i.test(error.message || '')
+  )
+}
+
+async function resolveProfileTable(): Promise<ProfileTableName> {
+  if (resolvedProfileTable) return resolvedProfileTable
+  const supabase = getSupabaseClient()
+  if (!supabase) return 'profiles'
+
+  const { error: profilesErr } = await supabase
+    .from('profiles')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+  if (!isMissingRelationError(profilesErr)) {
+    resolvedProfileTable = 'profiles'
+    return 'profiles'
   }
+
+  const { error: userProfilesErr } = await supabase
+    .from('user_profiles')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+  if (!isMissingRelationError(userProfilesErr)) {
+    resolvedProfileTable = 'user_profiles'
+    return 'user_profiles'
+  }
+
+  resolvedProfileTable = 'users'
+  return 'users'
+}
+
+async function resolveProjectTable(): Promise<ProjectTableName> {
+  if (resolvedProjectTable) return resolvedProjectTable
+  const supabase = getSupabaseClient()
+  if (!supabase) return 'projects'
+
+  const { error: projectsErr } = await supabase
+    .from('projects')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+  if (!isMissingRelationError(projectsErr)) {
+    resolvedProjectTable = 'projects'
+    return 'projects'
+  }
+
+  resolvedProjectTable = 'user_projects'
+  return 'user_projects'
+}
+
+async function resolveQuoteTable(): Promise<QuoteTableName> {
+  if (resolvedQuoteTable) return resolvedQuoteTable
+  const supabase = getSupabaseClient()
+  if (!supabase) return 'quotes'
+
+  const { error: quotesErr } = await supabase
+    .from('quotes')
+    .select('id', { head: true, count: 'exact' })
+    .limit(1)
+  if (!isMissingRelationError(quotesErr)) {
+    resolvedQuoteTable = 'quotes'
+    return 'quotes'
+  }
+
+  resolvedQuoteTable = 'quote_requests'
+  return 'quote_requests'
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Fetches the authoritative profile row from `public.profiles` (falling back to
+ * `public.user_profiles` / `public.users`). Retries briefly on fresh sign-ups so
+ * PostgreSQL `AFTER INSERT` trigger timing never crashes session hydration.
+ */
+async function fetchProfileRecord(
+  userId: string,
+  retries = 3
+): Promise<UserProfile | null> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return null
+
+  const primaryTable = await resolveProfileTable()
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const { data, error } = await supabase
+      .from(primaryTable)
+      .select('id, email, full_name, role, status, preferred_currency, created_at, updated_at')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!error && data) {
+      return data
+    }
+
+    if (primaryTable !== 'user_profiles') {
+      const { data: legacy } = await supabase
+        .from('user_profiles')
+        .select('id, email, full_name, role, status, preferred_currency, created_at, updated_at')
+        .eq('id', userId)
+        .maybeSingle()
+      if (legacy) return legacy
+    }
+
+    if (attempt < retries - 1) {
+      await sleep(150 * (attempt + 1))
+    }
+  }
+
   return null
 }
 
-async function sha256(input: string): Promise<string> {
-  if (typeof window !== 'undefined' && window.crypto?.subtle) {
-    const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-    return Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
+async function hydrateFromSupabaseSession(
+  sdkSession: SupabaseSdkSession | null
+): Promise<AuthSession | null> {
+  if (!sdkSession?.user) {
+    setCurrentSession(null)
+    return null
   }
-  return btoa(input)
+
+  const profile = await fetchProfileRecord(sdkSession.user.id)
+
+  // Block suspended accounts immediately at session hydration
+  if (profile?.status === 'suspended') {
+    const supabase = getSupabaseClient()
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
+    setCurrentSession(null)
+    return null
+  }
+
+  const meta = (sdkSession.user.user_metadata ?? {}) as Record<string, unknown>
+  const email = profile?.email || sdkSession.user.email || ''
+  const fullName =
+    profile?.full_name ||
+    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+    email.split('@')[0] ||
+    'Member'
+
+  // Strict zero-trust RBAC: role comes ONLY from authoritative PostgreSQL row, never client metadata
+  const role: UserRole = profile?.role === 'admin' ? 'admin' : 'user'
+  const status: UserStatus = 'active'
+  const preferredCurrency =
+    (profile?.preferred_currency as SupportedCurrency | undefined) || 'USD'
+
+  const hydrated: AuthSession = {
+    accessToken: sdkSession.access_token,
+    mode: 'supabase',
+    user: {
+      id: sdkSession.user.id,
+      email,
+      fullName,
+      role,
+      status,
+      preferredCurrency,
+      createdAt: profile?.created_at || sdkSession.user.created_at,
+    },
+  }
+
+  setCurrentSession(hydrated)
+  return hydrated
 }
 
-function generateUuid(): string {
-  if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
-    return window.crypto.randomUUID()
+function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
+  if (typeof window === 'undefined') {
+    authLoading = false
+    return Promise.resolve(null)
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0
-    const v = c === 'x' ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
+
+  if (authInitPromise) {
+    return authInitPromise
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    authBootstrapped = true
+    authLoading = false
+    setCurrentSession(null)
+    return Promise.resolve(null)
+  }
+
+  if (!authBootstrapped) {
+    authBootstrapped = true
+    supabase.auth.onAuthStateChange((_event, nextSdkSession) => {
+      void hydrateFromSupabaseSession(nextSdkSession).finally(() => {
+        authLoading = false
+        notifyAuthListeners()
+      })
+    })
+  }
+
+  authInitPromise = supabase.auth
+    .getSession()
+    .then(async ({ data }) => {
+      return await hydrateFromSupabaseSession(data.session)
+    })
+    .catch(() => {
+      setCurrentSession(null)
+      return null
+    })
+    .finally(() => {
+      authLoading = false
+      notifyAuthListeners()
+    })
+
+  return authInitPromise
 }
 
-/**
- * Ensures initial seed profiles, documents, pending project submissions, quote requests,
- * and audit logs exist so the Master Control & Oversight Module has rich, realistic data immediately.
- */
-function ensureSeedGovernanceData() {
-  if (typeof window === 'undefined') return
-  try {
-    const seededV2 = window.localStorage.getItem(SEED_VERSION_KEY)
-    const now = Date.now()
-    const dayMs = 24 * 60 * 60 * 1000
+if (typeof window !== 'undefined') {
+  void bootstrapSupabaseAuth()
+}
 
-    const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-    const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-    if (profiles.length < 4 || !seededV2) {
-      const defaultProfiles: UserProfile[] = [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          email: 'admin@mineconnect.co.tz',
-          full_name: 'Salmin Mwenesi (Chief Security Architect)',
-          role: 'admin',
-          status: 'active',
-          preferred_currency: 'USD',
-          created_at: new Date(now - 6 * dayMs).toISOString(),
-          updated_at: new Date(now - 1 * dayMs).toISOString(),
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000002',
-          email: 'geology.director@tanzaniagold.co.tz',
-          full_name: 'Dr. Amani Nyerere',
-          role: 'user',
-          status: 'active',
-          preferred_currency: 'TZS',
-          created_at: new Date(now - 4 * dayMs).toISOString(),
-          updated_at: new Date(now - 2 * dayMs).toISOString(),
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000003',
-          email: 'investments@kilimanjaromineral.co.uk',
-          full_name: 'Eleanor Vance (VP Acquisitions)',
-          role: 'user',
-          status: 'active',
-          preferred_currency: 'GBP',
-          created_at: new Date(now - 2 * dayMs).toISOString(),
-          updated_at: new Date(now - 1 * dayMs).toISOString(),
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000004',
-          email: 'compliance.audit@mererani-gems.co.tz',
-          full_name: 'Juma Mwinyi (Operations Lead)',
-          role: 'user',
-          status: 'active',
-          preferred_currency: 'EUR',
-          created_at: new Date(now - 12 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 2 * 3600 * 1000).toISOString(),
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000005',
-          email: 'flagged.broker@unverified-syndicate.org',
-          full_name: 'Viktor K. (Suspended Broker)',
-          role: 'user',
-          status: 'suspended',
-          preferred_currency: 'USD',
-          created_at: new Date(now - 5 * dayMs).toISOString(),
-          updated_at: new Date(now - 3 * dayMs).toISOString(),
-        },
-      ]
+export function getSession(): AuthSession | null {
+  return currentSession
+}
 
-      const existingIds = new Set(profiles.map((p) => p.id))
-      for (const dp of defaultProfiles) {
-        if (!existingIds.has(dp.id)) {
-          profiles.push(dp)
-        }
-      }
-      window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
+export function getAuthLoading(): boolean {
+  return authLoading
+}
+
+export async function waitForAuthReady(): Promise<AuthSession | null> {
+  return bootstrapSupabaseAuth()
+}
+
+export function useAuthState(): AuthState {
+  const [state, setState] = useState<AuthState>(() => ({
+    session: currentSession,
+    loading: authLoading,
+    configured: isSupabaseConfigured(),
+  }))
+
+  useEffect(() => {
+    void bootstrapSupabaseAuth()
+    const sync = () => {
+      setState({
+        session: currentSession,
+        loading: authLoading,
+        configured: isSupabaseConfigured(),
+      })
     }
-
-    const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
-    const projects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
-    if (projects.length === 0 || !seededV2) {
-      const seedProjects: UserListedProject[] = [
-        {
-          id: 'proj-seed-001',
-          user_id: '00000000-0000-4000-8000-000000000002',
-          title: 'Kahama South-East Shear Zone Gold JV',
-          mineral: 'Gold',
-          region: 'Shinyanga',
-          licence_type: 'PL (Prospecting Licence)',
-          licence_reference: 'PL/11842/2025',
-          investment_usd: 1850000,
-          submitted_currency: 'USD',
-          summary:
-            '24.6 sq km prospecting licence bordering major Lake Victoria Greenstone Belt producer. 1,400m RC drilling completed with 4.2g/t Au intercepts. Awaiting L2 licence cadastre verification.',
-          status: 'PENDING_VERIFICATION',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 18 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 18 * 3600 * 1000).toISOString(),
-        },
-        {
-          id: 'proj-seed-002',
-          user_id: '00000000-0000-4000-8000-000000000004',
-          title: 'Mererani Block D Deep Tanzanite Shaft Expansion',
-          mineral: 'Tanzanite',
-          region: 'Manyara',
-          licence_type: 'PML (Primary Mining Licence)',
-          licence_reference: 'PML/009412/MANYARA',
-          investment_usd: 620000,
-          submitted_currency: 'TZS',
-          summary:
-            'Active underground gemstone operation seeking mechanized ventilation, hoist upgrade, and optical sorting equipment partner. Full environmental permit attached.',
-          status: 'PENDING_VERIFICATION',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 7 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 7 * 3600 * 1000).toISOString(),
-        },
-        {
-          id: 'proj-seed-003',
-          user_id: '00000000-0000-4000-8000-000000000003',
-          title: 'Mahenge Flake Graphite Concentrate Offtake & Equity',
-          mineral: 'Graphite',
-          region: 'Morogoro',
-          licence_type: 'ML (Special Mining Licence)',
-          licence_reference: 'ML/0619/2024',
-          investment_usd: 4500000,
-          submitted_currency: 'GBP',
-          summary:
-            'JORC-compliant 97.4% TGC large-flake graphite deposit in Ulanga District. Verified L3 geological & title package cleared by compliance team.',
-          status: 'VERIFIED',
-          approved: true,
-          moderation_notes: 'Licence ownership & GST assay certificates verified.',
-          reviewed_by: '00000000-0000-4000-8000-000000000001',
-          reviewed_at: new Date(now - 2 * dayMs).toISOString(),
-          created_at: new Date(now - 3 * dayMs).toISOString(),
-          updated_at: new Date(now - 2 * dayMs).toISOString(),
-        },
-      ]
-      const existingProjIds = new Set(projects.map((p) => p.id))
-      for (const sp of seedProjects) {
-        if (!existingProjIds.has(sp.id)) {
-          projects.push(sp)
-        }
-      }
-      window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects))
+    sync()
+    window.addEventListener(AUTH_EVENT, sync)
+    return () => {
+      window.removeEventListener(AUTH_EVENT, sync)
     }
+  }, [])
 
-    const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-    const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-    if (docs.length < 3 || !seededV2) {
-      const seedDocs: UserDocument[] = [
-        {
-          id: 'doc-seed-001',
-          user_id: '00000000-0000-4000-8000-000000000002',
-          title: 'SGS Mwanza Fire Assay Certificate — Batch #TZ-8841',
-          content:
-            'Certified laboratory fire assay results for 48 core samples from Drillhole KHM-DD-04. Peak interval: 6.0m @ 5.84 g/t Au from 74m depth. Submitted for L3 Geological Verification badge.',
-          classification: 'CONFIDENTIAL',
-          status: 'pending',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 9 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 9 * 3600 * 1000).toISOString(),
-        },
-        {
-          id: 'doc-seed-002',
-          user_id: '00000000-0000-4000-8000-000000000003',
-          title: 'Ulanga Graphite Environmental Impact Assessment (NEMC Certificate)',
-          content:
-            'Approved National Environment Management Council (NEMC) EIA certificate #EC/EIS/2025/0419 covering open-pit extraction and tailings storage facility.',
-          classification: 'INTERNAL',
-          status: 'active',
-          approved: true,
-          moderation_notes: 'Verified against NEMC registry.',
-          created_at: new Date(now - 3 * dayMs).toISOString(),
-          updated_at: new Date(now - 2 * dayMs).toISOString(),
-        },
-        {
-          id: 'doc-seed-003',
-          user_id: '00000000-0000-4000-8000-000000000005',
-          title: 'Unverified Alluvial Gold Export Mandate Claim',
-          content:
-            'Purported 500kg doré bar spot offer without valid Mining Commission export permit or dealer licence reference. Flagged by automated compliance rules.',
-          classification: 'RESTRICTED',
-          status: 'flagged',
-          approved: false,
-          moderation_notes: 'Flagged: Missing Mining Commission Dealer Licence.',
-          created_at: new Date(now - 4 * dayMs).toISOString(),
-          updated_at: new Date(now - 3 * dayMs).toISOString(),
-        },
-      ]
-      const existingDocIds = new Set(docs.map((d) => d.id))
-      for (const sd of seedDocs) {
-        if (!existingDocIds.has(sd.id)) {
-          docs.push(sd)
-        }
-      }
-      window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs))
-    }
+  return state
+}
 
-    const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
-    const quotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
-    if (quotes.length === 0 || !seededV2) {
-      const seedQuotes: QuoteRequestRecord[] = [
-        {
-          id: 'quote-seed-001',
-          user_id: '00000000-0000-4000-8000-000000000002',
-          provider_id: 'prv-1',
-          provider_name: 'Victoria GeoConsult & Drilling Ltd',
-          service_requested: 'Diamond Core Drilling (2,500m NQ) & Downhole Survey',
-          estimated_budget_usd: 340000,
-          currency_code: 'TZS',
-          scope_notes:
-            'Requesting mobilization quote to Kahama site in Q2. Includes core orientation, logging shed setup, and QA/QC sample prep.',
-          status: 'SUBMITTED',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 5 * 3600 * 1000).toISOString(),
-        },
-      ]
-      const existingQuoteIds = new Set(quotes.map((q) => q.id))
-      for (const sq of seedQuotes) {
-        if (!existingQuoteIds.has(sq.id)) {
-          quotes.push(sq)
-        }
-      }
-      window.localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes))
-    }
-
-    const rawOpportunities = window.localStorage.getItem(OPPORTUNITIES_KEY)
-    const opportunities: UserOpportunityRecord[] = rawOpportunities
-      ? JSON.parse(rawOpportunities)
-      : []
-    if (opportunities.length === 0) {
-      const seedOpportunities: UserOpportunityRecord[] = [
-        {
-          id: 'opp-seed-001',
-          user_id: '00000000-0000-4000-8000-000000000002',
-          title: '5,000m Reverse Circulation & Diamond Core Drilling Tender — Geita West',
-          organization: 'Lake Victoria Goldfields Exploration Ltd',
-          category: 'Tender',
-          location: 'Geita',
-          deadline: '2026-12-20',
-          compensation_usd: 420000,
-          description:
-            'Competitive tender for 3,500m RC and 1,500m NQ diamond core drilling across Shear Zone B in Geita Region. Contractor must provide downhole survey instrumentation, core orientation, and daily shift logs.',
-          requirements: [
-            'Valid Tanzania Mining Commission Local Content Compliance Certificate',
-            'Minimum 2 track-mounted multipurpose RC/DD rigs available in Lake Zone',
-            'OSHA & Environmental Management Plan compliance',
-          ],
-          reference_code: 'OPP-TND-8901',
-          status: 'pending',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 3 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 3 * 3600 * 1000).toISOString(),
-        },
-        {
-          id: 'opp-seed-002',
-          user_id: '00000000-0000-4000-8000-000000000003',
-          title: 'Senior JORC / NI 43-101 Resource Estimation Consultancy — Lindi Graphite',
-          organization: 'Kilimanjaro Critical Minerals PLC',
-          category: 'Consultancy',
-          location: 'Lindi',
-          deadline: '2026-12-15',
-          compensation_usd: 85000,
-          description:
-            'Independent geological consultancy to audit 48 drill holes, construct 3D wireframes, and sign off as Competent Person (CP) on an updated JORC-2012 Mineral Resource Estimate for coarse-flake graphite.',
-          requirements: [
-            'Registered AusIMM or SACNASP Competent Person (5+ years industrial minerals)',
-            'Proficiency in Leapfrog Geo & Datamine Studio RM',
-          ],
-          reference_code: 'OPP-CNS-4412',
-          status: 'active',
-          approved: true,
-          moderation_notes: 'Verified CP scope and corporate registration.',
-          created_at: new Date(now - 28 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 20 * 3600 * 1000).toISOString(),
-        },
-      ]
-      window.localStorage.setItem(
-        OPPORTUNITIES_KEY,
-        JSON.stringify(seedOpportunities)
-      )
-    }
-
-    const rawServices = window.localStorage.getItem(SERVICES_KEY)
-    const services: UserServiceRecord[] = rawServices
-      ? JSON.parse(rawServices)
-      : []
-    if (services.length === 0) {
-      const seedServices: UserServiceRecord[] = [
-        {
-          id: 'srv-seed-001',
-          user_id: '00000000-0000-4000-8000-000000000004',
-          service_name: 'High-Resolution Drone Magnetics & Induced Polarization (IP) Geophysics',
-          provider_organization: 'Rift Valley GeoPhysics & Survey Tanzania Ltd',
-          expertise_area: 'Geological & Exploration',
-          regional_coverage: 'Geita, Shinyanga, Dodoma, Singida, Mbeya',
-          rate_or_pricing_model: 'Per Line-Kilometre ($95/line-km)',
-          estimated_rate_usd: 28500,
-          scope_description:
-            'UAV-bornefluxgate aeromagnetic surveys and ground gradient array IP/Resistivity for shear-hosted gold and base metal target generation. Deliverable includes 3D magnetic susceptibility inversion models.',
-          portfolio_links: 'https://mineconnect.co.tz/providers/rift-valley-geophysics',
-          certifications: 'ERB Tanzania Registered Consulting Firm · NCAA Commercial UAV Permit',
-          reference_code: 'SRV-GEO-3104',
-          status: 'pending',
-          approved: false,
-          moderation_notes: null,
-          created_at: new Date(now - 2 * 3600 * 1000).toISOString(),
-          updated_at: new Date(now - 2 * 3600 * 1000).toISOString(),
-        },
-      ]
-      window.localStorage.setItem(SERVICES_KEY, JSON.stringify(seedServices))
-    }
-
-    const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
-    if (!rawLogs || !seededV2) {
-      const existingLogs: AuditLog[] = rawLogs ? JSON.parse(rawLogs) : []
-      if (existingLogs.length < 4) {
-        const initialLogs: AuditLog[] = [
-          {
-            id: generateUuid(),
-            user_id: '00000000-0000-4000-8000-000000000001',
-            action: 'LOGIN_SUCCESS',
-            ip_address: '197.250.224.14',
-            user_agent: navigator.userAgent,
-            metadata: { email: 'admin@mineconnect.co.tz', clearance: 'admin', mfa: true },
-            created_at: new Date(now - 1000 * 60 * 42).toISOString(),
-          },
-          {
-            id: generateUuid(),
-            user_id: '00000000-0000-4000-8000-000000000002',
-            action: 'LIST_PROJECT',
-            ip_address: '41.59.88.210',
-            user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            metadata: {
-              title: 'Kahama South-East Shear Zone Gold JV',
-              mineral: 'Gold',
-              region: 'Shinyanga',
-              status: 'PENDING_VERIFICATION',
-            },
-            created_at: new Date(now - 1000 * 60 * 35).toISOString(),
-          },
-          {
-            id: generateUuid(),
-            user_id: '00000000-0000-4000-8000-000000000004',
-            action: 'LIST_PROJECT',
-            ip_address: '197.186.14.92',
-            user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4)',
-            metadata: {
-              title: 'Mererani Block D Deep Tanzanite Shaft Expansion',
-              mineral: 'Tanzanite',
-              region: 'Manyara',
-            },
-            created_at: new Date(now - 1000 * 60 * 24).toISOString(),
-          },
-          {
-            id: generateUuid(),
-            user_id: '00000000-0000-4000-8000-000000000001',
-            action: 'ADMIN_SUSPEND_USER',
-            ip_address: '197.250.224.14',
-            user_agent: navigator.userAgent,
-            metadata: {
-              targetEmail: 'flagged.broker@unverified-syndicate.org',
-              reason: 'Missing Mining Commission Dealer Licence',
-            },
-            created_at: new Date(now - 1000 * 60 * 19).toISOString(),
-          },
-          {
-            id: generateUuid(),
-            user_id: null,
-            action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
-            ip_address: '185.220.101.45',
-            user_agent: 'curl/8.4.0',
-            metadata: { path: '/api/admin/users', blockedBy: 'Next.js Edge Middleware (403)' },
-            created_at: new Date(now - 1000 * 60 * 11).toISOString(),
-          },
-        ]
-        window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(initialLogs))
-      }
-    }
-
-    window.localStorage.setItem(SEED_VERSION_KEY, 'true')
-  } catch {
-    // ignore storage errors
-  }
+export function useAuthSession(): AuthSession | null {
+  return useAuthState().session
 }
 
 /**
- * Non-blocking asynchronous audit trail logger for client & Supabase REST actions.
+ * Non-blocking audit trail writer to `public.audit_logs` via Supabase RLS.
  */
 export function recordAuditActivity(params: {
   userId?: string | null
@@ -493,172 +350,58 @@ export function recordAuditActivity(params: {
 }): void {
   void (async () => {
     try {
-      ensureSeedGovernanceData()
-      const session = getSession()
-      const resolvedUserId = params.userId !== undefined ? params.userId : session?.user.id ?? null
-      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Browser-Client'
-      const ipAddress = '197.250.224.18'
-      const createdAt = new Date().toISOString()
+      const supabase = getSupabaseClient()
+      if (!supabase) return
 
-      const newLog: AuditLog = {
-        id: generateUuid(),
+      const resolvedUserId =
+        params.userId !== undefined ? params.userId : currentSession?.user.id ?? null
+
+      if (!resolvedUserId) return
+
+      const userAgent =
+        typeof navigator !== 'undefined' ? navigator.userAgent : 'Browser-Client'
+
+      await supabase.from('audit_logs').insert({
         user_id: resolvedUserId,
         action: params.action,
-        ip_address: ipAddress,
+        ip_address: null,
         user_agent: userAgent,
-        metadata: params.metadata ?? {},
-        created_at: createdAt,
-      }
-
-      if (typeof window !== 'undefined') {
-        const raw = window.localStorage.getItem(AUDIT_LOGS_KEY)
-        const logs: AuditLog[] = raw ? JSON.parse(raw) : []
-        logs.unshift(newLog)
-        window.localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(logs.slice(0, 500)))
-      }
-
-      const supa = getSupabaseConfig()
-      if (supa && session?.mode === 'supabase') {
-        await fetch(`${supa.url}/rest/v1/audit_logs`, {
-          method: 'POST',
-          headers: {
-            apikey: supa.anonKey,
-            Authorization: `Bearer ${session.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            user_id: resolvedUserId,
-            action: params.action,
-            ip_address: ipAddress,
-            user_agent: userAgent,
-            metadata: params.metadata ?? {},
-          }),
-        }).catch(() => {})
-      }
+        metadata: (params.metadata ?? {}) as Json,
+      })
     } catch {
-      // Never block main request lifecycle
+      // Never block user flows if telemetry logging fails
     }
   })()
 }
 
-export function getSession(): AuthSession | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as AuthSession
-    if (parsed?.user) {
-      if (!parsed.user.role || (parsed.user.role as string) === 'authenticated') {
-        parsed.user.role = 'admin'
-      }
-      if (!parsed.user.status) {
-        parsed.user.status = 'active'
-      }
-    }
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-export function ensureAdminDemoSession(): AuthSession {
-  ensureSeedGovernanceData()
-  const existing = getSession()
-  if (existing) return existing
-  const now = new Date().toISOString()
-  const demoSession: AuthSession = {
-    accessToken: `mc_jwt_${generateUuid()}`,
-    mode: 'grounded-local',
-    user: {
-      id: '00000000-0000-4000-8000-000000000001',
-      email: 'admin@mineconnect.co.tz',
-      fullName: 'Salmin Mwenesi (Chief Security Architect)',
-      role: 'admin',
-      status: 'active',
-      preferredCurrency: 'USD',
-      createdAt: now,
-    },
-  }
-  saveSession(demoSession)
-  recordAuditActivity({
-    userId: demoSession.user.id,
-    action: 'LOGIN_SUCCESS',
-    metadata: { email: demoSession.user.email, role: 'admin', method: 'Admin Console Direct' },
-  })
-  return demoSession
-}
-
-function saveSession(session: AuthSession | null) {
-  if (typeof window === 'undefined') return
-  if (session) {
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    document.cookie = `sb-access-token=${session.accessToken}; path=/; SameSite=Lax`
-  } else {
-    window.localStorage.removeItem(SESSION_KEY)
-    document.cookie = 'sb-access-token=; Max-Age=0; path=/; SameSite=Lax'
-  }
-  window.dispatchEvent(new CustomEvent(AUTH_EVENT))
-}
-
-export function useAuthSession() {
-  const [session, setSession] = useState<AuthSession | null>(() => getSession())
-
-  useEffect(() => {
-    setSession(getSession())
-    const onUpdate = () => setSession(getSession())
-    window.addEventListener(AUTH_EVENT, onUpdate)
-    window.addEventListener('storage', onUpdate)
-    return () => {
-      window.removeEventListener(AUTH_EVENT, onUpdate)
-      window.removeEventListener('storage', onUpdate)
-    }
-  }, [])
-
-  return session
-}
-
-export async function updatePreferredCurrency(currency: SupportedCurrency): Promise<void> {
-  const session = getSession()
+export async function updatePreferredCurrency(
+  currency: SupportedCurrency
+): Promise<void> {
+  const session = await waitForAuthReady()
   if (!session) return
 
-  const updatedSession: AuthSession = {
-    ...session,
-    user: {
-      ...session.user,
-      preferredCurrency: currency,
-    },
-  }
-  saveSession(updatedSession)
+  const supabase = getSupabaseClient()
+  if (!supabase) return
 
-  recordAuditActivity({
-    userId: session.user.id,
-    action: 'UPDATE_SETTINGS',
-    metadata: { setting: 'preferred_currency', value: currency },
-  })
+  const profileTable = await resolveProfileTable()
+  const { error } = await supabase
+    .from(profileTable)
+    .update({ preferred_currency: currency })
+    .eq('id', session.user.id)
 
-  const supa = getSupabaseConfig()
-  if (supa && session.mode === 'supabase') {
-    await fetch(`${supa.url}/rest/v1/user_profiles?id=eq.${session.user.id}`, {
-      method: 'PATCH',
-      headers: {
-        apikey: supa.anonKey,
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
+  if (!error) {
+    setCurrentSession({
+      ...session,
+      user: {
+        ...session.user,
+        preferredCurrency: currency,
       },
-      body: JSON.stringify({ preferred_currency: currency }),
-    }).catch(() => {})
-    return
-  }
-
-  if (typeof window !== 'undefined') {
-    const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-    const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-    const nextProfiles = profiles.map((p) =>
-      p.id === session.user.id
-        ? { ...p, preferred_currency: currency, updated_at: new Date().toISOString() }
-        : p
-    )
-    window.localStorage.setItem(PROFILES_KEY, JSON.stringify(nextProfiles))
+    })
+    recordAuditActivity({
+      userId: session.user.id,
+      action: 'UPDATE_SETTINGS',
+      metadata: { setting: 'preferred_currency', value: currency },
+    })
   }
 }
 
@@ -668,8 +411,7 @@ export async function signUpWithEmail(params: {
   confirmPassword: string
   fullName?: string
   preferredCurrency?: SupportedCurrency
-}): Promise<{ session?: AuthSession; error?: string }> {
-  ensureSeedGovernanceData()
+}): Promise<{ session?: AuthSession; confirmationRequired?: boolean; error?: string }> {
   const email = params.email.trim().toLowerCase()
   const { password, confirmPassword } = params
   const fullName = params.fullName?.trim() || email.split('@')[0]
@@ -683,91 +425,63 @@ export async function signUpWithEmail(params: {
   }
   if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
     return {
-      error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
+      error:
+        'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
     }
   }
   if (password !== confirmPassword) {
     return { error: 'Passwords do not match.' }
   }
 
-  const rawUsers = window.localStorage.getItem(USERS_KEY)
-  const users: StoredAccount[] = rawUsers ? JSON.parse(rawUsers) : []
-  if (users.some((u) => u.email === email)) {
-    return { error: 'An account with this email already exists. Please sign in.' }
+  let supabase
+  try {
+    supabase = requireSupabaseClient()
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Supabase is not configured.' }
   }
 
-  const passwordHash = await sha256(`${email}:${password}`)
-  const now = new Date().toISOString()
-  const newUser: StoredAccount = {
-    id: generateUuid(),
+  // Strictly omit `role` from signup metadata; PostgreSQL `handle_new_user()` enforces role = 'user'
+  const { data, error } = await supabase.auth.signUp({
     email,
-    fullName,
-    passwordHash,
-    role: 'admin',
-    status: 'active',
-    preferredCurrency,
-    createdAt: now,
-  }
-  users.push(newUser)
-  window.localStorage.setItem(USERS_KEY, JSON.stringify(users))
-
-  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  profiles.unshift({
-    id: newUser.id,
-    email: newUser.email,
-    full_name: newUser.fullName,
-    role: 'admin',
-    status: 'active',
-    preferred_currency: preferredCurrency,
-    created_at: now,
-    updated_at: now,
-  })
-  window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
-
-  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-  const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  docs.unshift({
-    id: generateUuid(),
-    user_id: newUser.id,
-    title: 'Geita Gold Belt — Initial Due Diligence Dossier',
-    content:
-      'Private technical notes, JORC compliance checklist, and assay verification records grounded strictly to your user UUID via Row-Level Security (auth.uid() = user_id).',
-    classification: 'CONFIDENTIAL',
-    status: 'active',
-    approved: true,
-    created_at: now,
-    updated_at: now,
-  })
-  window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs))
-
-  const session: AuthSession = {
-    accessToken: `mc_jwt_${generateUuid()}`,
-    mode: 'grounded-local',
-    user: {
-      id: newUser.id,
-      email: newUser.email,
-      fullName: newUser.fullName,
-      preferredCurrency,
-      role: 'admin',
-      status: 'active',
-      createdAt: now,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+        preferred_currency: preferredCurrency,
+      },
     },
-  }
-  saveSession(session)
-  recordAuditActivity({
-    userId: newUser.id,
-    action: 'SIGNUP_SUCCESS',
-    metadata: { email: newUser.email, role: 'admin' },
   })
-  return { session }
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (!data.session) {
+    return {
+      confirmationRequired: true,
+      error:
+        'Account created! Please check your email inbox to confirm your address before signing in.',
+    }
+  }
+
+  const hydrated = await hydrateFromSupabaseSession(data.session)
+  if (!hydrated) {
+    return { error: 'Account provisioned, but session hydration failed. Please sign in.' }
+  }
+
+  recordAuditActivity({
+    userId: hydrated.user.id,
+    action: 'SIGNUP_SUCCESS',
+    metadata: { email: hydrated.user.email, role: hydrated.user.role },
+  })
+
+  return { session: hydrated }
 }
 
 export async function signInWithEmail(params: {
   email: string
   password: string
 }): Promise<{ session?: AuthSession; error?: string }> {
-  ensureSeedGovernanceData()
   const email = params.email.trim().toLowerCase()
   const { password } = params
 
@@ -778,61 +492,99 @@ export async function signInWithEmail(params: {
     return { error: 'Password is required.' }
   }
 
-  const rawUsers = window.localStorage.getItem(USERS_KEY)
-  const users: StoredAccount[] = rawUsers ? JSON.parse(rawUsers) : []
-  const passwordHash = await sha256(`${email}:${password}`)
-  const account = users.find((u) => u.email === email && u.passwordHash === passwordHash)
-
-  if (!account) {
-    recordAuditActivity({
-      userId: null,
-      action: 'LOGIN_FAILED',
-      metadata: { email, reason: 'Invalid email or password' },
-    })
-    return { error: 'Invalid email or password. Please try again.' }
+  let supabase
+  try {
+    supabase = requireSupabaseClient()
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Supabase is not configured.' }
   }
 
-  if (account.status === 'suspended') {
-    recordAuditActivity({
-      userId: account.id,
-      action: 'LOGIN_FAILED',
-      metadata: { email, reason: 'Account suspended' },
-    })
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+
+  if (error || !data.session) {
+    return { error: error?.message || 'Invalid email or password. Please try again.' }
+  }
+
+  const profile = await fetchProfileRecord(data.session.user.id)
+  if (profile?.status === 'suspended') {
+    await supabase.auth.signOut()
+    setCurrentSession(null)
     return { error: 'Your account has been suspended by an administrator.' }
   }
 
-  const session: AuthSession = {
-    accessToken: `mc_jwt_${generateUuid()}`,
-    mode: 'grounded-local',
-    user: {
-      id: account.id,
-      email: account.email,
-      fullName: account.fullName,
-      preferredCurrency: account.preferredCurrency || 'USD',
-      role: account.role || 'admin',
-      status: account.status || 'active',
-      createdAt: account.createdAt,
-    },
+  const hydrated = await hydrateFromSupabaseSession(data.session)
+  if (!hydrated) {
+    return { error: 'Unable to load your account profile. Please try again.' }
   }
-  saveSession(session)
+
   recordAuditActivity({
-    userId: account.id,
+    userId: hydrated.user.id,
     action: 'LOGIN_SUCCESS',
-    metadata: { email: account.email, role: session.user.role },
+    metadata: { email: hydrated.user.email, role: hydrated.user.role },
   })
-  return { session }
+
+  return { session: hydrated }
 }
 
-export function signOutUser() {
-  const session = getSession()
-  if (session) {
+export async function signOutUser(): Promise<void> {
+  const prev = currentSession
+  if (prev) {
     recordAuditActivity({
-      userId: session.user.id,
+      userId: prev.user.id,
       action: 'LOGOUT',
-      metadata: { email: session.user.email },
+      metadata: { email: prev.user.email },
     })
   }
-  saveSession(null)
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    await supabase.auth.signOut()
+  }
+  setCurrentSession(null)
+}
+
+/**
+ * Authoritative Zero-Trust Admin Verification:
+ * Always validates JWT with Supabase Auth server (`getUser()`) AND checks
+ * `public.user_profiles` (`role === 'admin' && status === 'active'`).
+ */
+async function verifyActiveAdmin(): Promise<
+  { authorized: true; userId: string } | { authorized: false; error: string }
+> {
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return { authorized: false, error: 'Supabase client is not configured.' }
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return { authorized: false, error: '403 Forbidden: Authentication required.' }
+  }
+
+  const profile = await fetchProfileRecord(user.id)
+  if (!profile || profile.role !== 'admin' || profile.status !== 'active') {
+    recordAuditActivity({
+      userId: user.id,
+      action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
+      metadata: {
+        email: user.email,
+        resolvedRole: profile?.role ?? 'user',
+        resolvedStatus: profile?.status ?? 'unknown',
+      },
+    })
+    return {
+      authorized: false,
+      error: '403 Forbidden: Administrative clearance required.',
+    }
+  }
+
+  return { authorized: true, userId: user.id }
 }
 
 export async function fetchGroundedUserData(): Promise<{
@@ -843,9 +595,10 @@ export async function fetchGroundedUserData(): Promise<{
   userOpportunities: UserOpportunityRecord[]
   userServices: UserServiceRecord[]
 }> {
-  ensureSeedGovernanceData()
-  const session = getSession()
-  if (!session) {
+  const session = await waitForAuthReady()
+  const supabase = getSupabaseClient()
+
+  if (!session || !supabase) {
     return {
       profile: null,
       documents: [],
@@ -856,65 +609,56 @@ export async function fetchGroundedUserData(): Promise<{
     }
   }
 
-  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  let profile = profiles.find((p) => p.id === session.user.id)
-  if (!profile) {
-    profile = {
-      id: session.user.id,
-      email: session.user.email,
-      full_name: session.user.fullName,
-      role: session.user.role || 'admin',
-      status: session.user.status || 'active',
-      preferred_currency: session.user.preferredCurrency || 'USD',
-      created_at: session.user.createdAt,
-      updated_at: session.user.createdAt,
-    }
-    profiles.unshift(profile)
-    window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
-  }
+  const userId = session.user.id
+  const [projectTable, quoteTable] = await Promise.all([
+    resolveProjectTable(),
+    resolveQuoteTable(),
+  ])
 
-  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-  const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  const documents = allDocs
-    .filter((d) => d.user_id === session.user.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-  const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
-  const allProjects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
-  const listedProjects = allProjects
-    .filter((p) => p.user_id === session.user.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-  const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
-  const allQuotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
-  const quoteRequests = allQuotes
-    .filter((q) => q.user_id === session.user.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-  const rawOpps = window.localStorage.getItem(OPPORTUNITIES_KEY)
-  const allOpps: UserOpportunityRecord[] = rawOpps ? JSON.parse(rawOpps) : []
-  const userOpportunities = allOpps
-    .filter((o) => o.user_id === session.user.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-  const rawSrvs = window.localStorage.getItem(SERVICES_KEY)
-  const allSrvs: UserServiceRecord[] = rawSrvs ? JSON.parse(rawSrvs) : []
-  const userServices = allSrvs
-    .filter((s) => s.user_id === session.user.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const [profile, docsRes, projectsRes, quotesRes, oppsRes, servicesRes] =
+    await Promise.all([
+      fetchProfileRecord(userId, 1),
+      supabase
+        .from('user_documents')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from(projectTable)
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from(quoteTable)
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('opportunities')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('services')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+    ])
 
   return {
     profile,
-    documents,
-    listedProjects,
-    quoteRequests,
-    userOpportunities,
-    userServices,
+    documents: docsRes.data ?? [],
+    listedProjects: projectsRes.data ?? [],
+    quoteRequests: quotesRes.data ?? [],
+    userOpportunities: oppsRes.data ?? [],
+    userServices: servicesRes.data ?? [],
   }
 }
 
-function normalizeProjectStatus(status: UserListedProject['status'], approved?: boolean): ContentStatus {
+function normalizeProjectStatus(
+  status: UserListedProject['status'],
+  approved?: boolean
+): ContentStatus {
   if (status === 'REJECTED') return 'rejected'
   if (status === 'FLAGGED') return 'flagged'
   if (status === 'ARCHIVED') return 'archived'
@@ -922,7 +666,10 @@ function normalizeProjectStatus(status: UserListedProject['status'], approved?: 
   return 'pending'
 }
 
-function normalizeQuoteStatus(status: QuoteRequestRecord['status'], approved?: boolean): ContentStatus {
+function normalizeQuoteStatus(
+  status: QuoteRequestRecord['status'],
+  approved?: boolean
+): ContentStatus {
   if (status === 'REJECTED') return 'rejected'
   if (status === 'FLAGGED') return 'flagged'
   if (status === 'CLOSED') return 'archived'
@@ -931,9 +678,9 @@ function normalizeQuoteStatus(status: QuoteRequestRecord['status'], approved?: b
 }
 
 /**
- * Master Control & Oversight Query (`public.is_admin()`):
- * Aggregates all platform users, audit logs, and unified content records across
- * `user_documents`, `user_projects`, and `quote_requests`.
+ * Master Control & Oversight Query (`public.is_active_admin()`):
+ * Loads all rows across `user_profiles`, `user_projects`, `quote_requests`,
+ * `user_documents`, `opportunities`, `services`, and `audit_logs` directly from Supabase.
  */
 export async function fetchAdminGovernanceData(): Promise<{
   authorized: boolean
@@ -947,15 +694,9 @@ export async function fetchAdminGovernanceData(): Promise<{
   dbLatencyMs: number
 }> {
   const start = performance.now()
-  ensureSeedGovernanceData()
-  const session = getSession()
+  const adminCheck = await verifyActiveAdmin()
 
-  if (!session || session.user.role !== 'admin' || session.user.status === 'suspended') {
-    recordAuditActivity({
-      userId: session?.user.id ?? null,
-      action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
-      metadata: { route: '/admin' },
-    })
+  if (!adminCheck.authorized) {
     return {
       authorized: false,
       users: [],
@@ -965,38 +706,67 @@ export async function fetchAdminGovernanceData(): Promise<{
       totalProjects: 0,
       totalQuotes: 0,
       pendingApprovalsCount: 0,
-      dbLatencyMs: 1,
+      dbLatencyMs: Math.max(1, Math.round(performance.now() - start)),
     }
   }
 
-  await fetchGroundedUserData()
+  const supabase = requireSupabaseClient()
+  const [profileTable, projectTable, quoteTable] = await Promise.all([
+    resolveProfileTable(),
+    resolveProjectTable(),
+    resolveQuoteTable(),
+  ])
 
-  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-  const users: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
+  const [
+    profilesRes,
+    auditLogsRes,
+    docsRes,
+    projectsRes,
+    quotesRes,
+    oppsRes,
+    servicesRes,
+  ] = await Promise.all([
+    supabase
+      .from(profileTable)
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(250),
+    supabase
+      .from('user_documents')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from(projectTable)
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from(quoteTable)
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('opportunities')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('services')
+      .select('*')
+      .order('created_at', { ascending: false }),
+  ])
+
+  const users = profilesRes.data ?? []
+  const auditLogs = auditLogsRes.data ?? []
+  const docs = docsRes.data ?? []
+  const projects = projectsRes.data ?? []
+  const quotes = quotesRes.data ?? []
+  const opportunities = oppsRes.data ?? []
+  const services = servicesRes.data ?? []
+
   const profileMap = new Map<string, UserProfile>()
   users.forEach((u) => profileMap.set(u.id, u))
-
-  const rawLogs = window.localStorage.getItem(AUDIT_LOGS_KEY)
-  const auditLogs: AuditLog[] = rawLogs ? JSON.parse(rawLogs) : []
-
-  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-  const docs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-
-  const rawProjects = window.localStorage.getItem(PROJECTS_KEY)
-  const projects: UserListedProject[] = rawProjects ? JSON.parse(rawProjects) : []
-
-  const rawQuotes = window.localStorage.getItem(QUOTES_KEY)
-  const quotes: QuoteRequestRecord[] = rawQuotes ? JSON.parse(rawQuotes) : []
-
-  const rawOpportunities = window.localStorage.getItem(OPPORTUNITIES_KEY)
-  const opportunities: UserOpportunityRecord[] = rawOpportunities
-    ? JSON.parse(rawOpportunities)
-    : []
-
-  const rawServices = window.localStorage.getItem(SERVICES_KEY)
-  const services: UserServiceRecord[] = rawServices
-    ? JSON.parse(rawServices)
-    : []
 
   const unifiedContent: UnifiedContentRecord[] = [
     ...opportunities.map((o): UnifiedContentRecord => {
@@ -1065,7 +835,8 @@ export async function fetchAdminGovernanceData(): Promise<{
     }),
     ...docs.map((d): UnifiedContentRecord => {
       const owner = profileMap.get(d.user_id)
-      const docStatus: ContentStatus = d.status ?? (d.approved === false ? 'pending' : 'active')
+      const docStatus: ContentStatus =
+        d.status ?? (d.approved === false ? 'pending' : 'active')
       return {
         id: d.id,
         type: 'DOCUMENT',
@@ -1107,10 +878,13 @@ export async function fetchAdminGovernanceData(): Promise<{
         updated_at: q.created_at,
       }
     }),
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  ].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 
   const pendingApprovalsCount = unifiedContent.filter(
-    (item) => item.status === 'pending' || item.status === 'flagged' || !item.approved
+    (item) =>
+      item.status === 'pending' || item.status === 'flagged' || !item.approved
   ).length
 
   const dbLatencyMs = Math.max(1, Math.round(performance.now() - start))
@@ -1128,20 +902,18 @@ export async function fetchAdminGovernanceData(): Promise<{
   }
 }
 
-/**
- * Moderation Action Handler: Approve or Reject a pending submission (`/admin/approvals`)
- */
 export async function adminModerateSubmission(params: {
   id: string
   type: UnifiedContentType
   decision: 'APPROVE' | 'REJECT'
   notes?: string
 }): Promise<{ success?: boolean; error?: string }> {
-  const session = getSession()
-  if (!session || session.user.role !== 'admin') {
-    return { error: '403 Forbidden: Administrative clearance required.' }
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
   }
 
+  const supabase = requireSupabaseClient()
   const nowIso = new Date().toISOString()
   const isApproved = params.decision === 'APPROVE'
   const notes =
@@ -1150,84 +922,78 @@ export async function adminModerateSubmission(params: {
       ? 'Approved and verified by Admin Governance Console.'
       : 'Rejected during administrative compliance review.')
 
+  let dbError: { message: string } | null = null
+
   if (params.type === 'PROJECT') {
-    const raw = window.localStorage.getItem(PROJECTS_KEY)
-    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((p) => p.id === params.id)
-    if (idx === -1) return { error: 'Project submission not found.' }
-    list[idx] = {
-      ...list[idx],
-      status: isApproved ? 'VERIFIED' : 'REJECTED',
-      approved: isApproved,
-      moderation_notes: notes,
-      reviewed_by: session.user.id,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+    const projectTable = await resolveProjectTable()
+    const { error } = await supabase
+      .from(projectTable)
+      .update({
+        status: isApproved ? 'VERIFIED' : 'REJECTED',
+        approved: isApproved,
+        moderation_notes: notes,
+        reviewed_by: adminCheck.userId,
+        reviewed_at: nowIso,
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'DOCUMENT') {
-    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
-    const list: UserDocument[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((d) => d.id === params.id)
-    if (idx === -1) return { error: 'Document record not found.' }
-    list[idx] = {
-      ...list[idx],
-      status: isApproved ? 'active' : 'rejected',
-      approved: isApproved,
-      moderation_notes: notes,
-      reviewed_by: session.user.id,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('user_documents')
+      .update({
+        status: isApproved ? 'active' : 'rejected',
+        approved: isApproved,
+        moderation_notes: notes,
+        reviewed_by: adminCheck.userId,
+        reviewed_at: nowIso,
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'QUOTE') {
-    const raw = window.localStorage.getItem(QUOTES_KEY)
-    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((q) => q.id === params.id)
-    if (idx === -1) return { error: 'Quote request not found.' }
-    list[idx] = {
-      ...list[idx],
-      status: isApproved ? 'QUOTED' : 'REJECTED',
-      approved: isApproved,
-      moderation_notes: notes,
-      reviewed_by: session.user.id,
-      reviewed_at: nowIso,
-    }
-    window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+    const quoteTable = await resolveQuoteTable()
+    const { error } = await supabase
+      .from(quoteTable)
+      .update({
+        status: isApproved ? 'QUOTED' : 'REJECTED',
+        approved: isApproved,
+        moderation_notes: notes,
+        reviewed_by: adminCheck.userId,
+        reviewed_at: nowIso,
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'OPPORTUNITY') {
-    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
-    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((o) => o.id === params.id)
-    if (idx === -1) return { error: 'Opportunity submission not found.' }
-    list[idx] = {
-      ...list[idx],
-      status: isApproved ? 'active' : 'rejected',
-      approved: isApproved,
-      moderation_notes: notes,
-      reviewed_by: session.user.id,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('opportunities')
+      .update({
+        status: isApproved ? 'active' : 'rejected',
+        approved: isApproved,
+        moderation_notes: notes,
+        reviewed_by: adminCheck.userId,
+        reviewed_at: nowIso,
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'SERVICE') {
-    const raw = window.localStorage.getItem(SERVICES_KEY)
-    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((s) => s.id === params.id)
-    if (idx === -1) return { error: 'Service submission not found.' }
-    list[idx] = {
-      ...list[idx],
-      status: isApproved ? 'active' : 'rejected',
-      approved: isApproved,
-      moderation_notes: notes,
-      reviewed_by: session.user.id,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('services')
+      .update({
+        status: isApproved ? 'active' : 'rejected',
+        approved: isApproved,
+        moderation_notes: notes,
+        reviewed_by: adminCheck.userId,
+        reviewed_at: nowIso,
+      })
+      .eq('id', params.id)
+    dbError = error
+  }
+
+  if (dbError) {
+    return { error: dbError.message }
   }
 
   recordAuditActivity({
-    userId: session.user.id,
+    userId: adminCheck.userId,
     action: isApproved ? 'ADMIN_APPROVE_SUBMISSION' : 'ADMIN_REJECT_SUBMISSION',
     metadata: {
       recordId: params.id,
@@ -1240,9 +1006,6 @@ export async function adminModerateSubmission(params: {
   return { success: true }
 }
 
-/**
- * Direct Content Explorer Edit Action (`/admin/content`)
- */
 export async function adminUpdateContentItem(params: {
   id: string
   type: UnifiedContentType
@@ -1251,19 +1014,17 @@ export async function adminUpdateContentItem(params: {
   status: ContentStatus
   moderationNotes?: string
 }): Promise<{ success?: boolean; error?: string }> {
-  const session = getSession()
-  if (!session || session.user.role !== 'admin') {
-    return { error: '403 Forbidden: Administrative clearance required.' }
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
   }
 
-  const nowIso = new Date().toISOString()
+  const supabase = requireSupabaseClient()
   const isApproved = params.status === 'active'
+  let dbError: { message: string } | null = null
 
   if (params.type === 'PROJECT') {
-    const raw = window.localStorage.getItem(PROJECTS_KEY)
-    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((p) => p.id === params.id)
-    if (idx === -1) return { error: 'Project not found.' }
+    const projectTable = await resolveProjectTable()
     const mappedStatus: UserListedProject['status'] =
       params.status === 'active'
         ? 'VERIFIED'
@@ -1274,36 +1035,36 @@ export async function adminUpdateContentItem(params: {
             : params.status === 'rejected'
               ? 'REJECTED'
               : 'PENDING_VERIFICATION'
-    list[idx] = {
-      ...list[idx],
-      title: params.title.trim(),
-      summary: params.details.trim(),
-      status: mappedStatus,
-      approved: isApproved,
-      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+
+    const { error } = await supabase
+      .from(projectTable)
+      .update({
+        title: params.title.trim(),
+        summary: params.details.trim(),
+        status: mappedStatus,
+        approved: isApproved,
+        ...(params.moderationNotes !== undefined
+          ? { moderation_notes: params.moderationNotes }
+          : {}),
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'DOCUMENT') {
-    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
-    const list: UserDocument[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((d) => d.id === params.id)
-    if (idx === -1) return { error: 'Document not found.' }
-    list[idx] = {
-      ...list[idx],
-      title: params.title.trim(),
-      content: params.details.trim(),
-      status: params.status,
-      approved: isApproved,
-      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('user_documents')
+      .update({
+        title: params.title.trim(),
+        content: params.details.trim(),
+        status: params.status,
+        approved: isApproved,
+        ...(params.moderationNotes !== undefined
+          ? { moderation_notes: params.moderationNotes }
+          : {}),
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'QUOTE') {
-    const raw = window.localStorage.getItem(QUOTES_KEY)
-    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((q) => q.id === params.id)
-    if (idx === -1) return { error: 'Quote request not found.' }
+    const quoteTable = await resolveQuoteTable()
     const mappedStatus: QuoteRequestRecord['status'] =
       params.status === 'active'
         ? 'QUOTED'
@@ -1314,49 +1075,56 @@ export async function adminUpdateContentItem(params: {
             : params.status === 'rejected'
               ? 'REJECTED'
               : 'SUBMITTED'
-    list[idx] = {
-      ...list[idx],
-      service_requested: params.title.trim(),
-      scope_notes: params.details.trim(),
-      status: mappedStatus,
-      approved: isApproved,
-      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
-    }
-    window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+
+    const { error } = await supabase
+      .from(quoteTable)
+      .update({
+        service_requested: params.title.trim(),
+        scope_notes: params.details.trim(),
+        status: mappedStatus,
+        approved: isApproved,
+        ...(params.moderationNotes !== undefined
+          ? { moderation_notes: params.moderationNotes }
+          : {}),
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'OPPORTUNITY') {
-    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
-    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((o) => o.id === params.id)
-    if (idx === -1) return { error: 'Opportunity record not found.' }
-    list[idx] = {
-      ...list[idx],
-      title: params.title.trim(),
-      description: params.details.trim(),
-      status: params.status,
-      approved: isApproved,
-      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('opportunities')
+      .update({
+        title: params.title.trim(),
+        description: params.details.trim(),
+        status: params.status,
+        approved: isApproved,
+        ...(params.moderationNotes !== undefined
+          ? { moderation_notes: params.moderationNotes }
+          : {}),
+      })
+      .eq('id', params.id)
+    dbError = error
   } else if (params.type === 'SERVICE') {
-    const raw = window.localStorage.getItem(SERVICES_KEY)
-    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((s) => s.id === params.id)
-    if (idx === -1) return { error: 'Service record not found.' }
-    list[idx] = {
-      ...list[idx],
-      service_name: params.title.trim(),
-      scope_description: params.details.trim(),
-      status: params.status,
-      approved: isApproved,
-      moderation_notes: params.moderationNotes ?? list[idx].moderation_notes ?? null,
-      updated_at: nowIso,
-    }
-    window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
+    const { error } = await supabase
+      .from('services')
+      .update({
+        service_name: params.title.trim(),
+        scope_description: params.details.trim(),
+        status: params.status,
+        approved: isApproved,
+        ...(params.moderationNotes !== undefined
+          ? { moderation_notes: params.moderationNotes }
+          : {}),
+      })
+      .eq('id', params.id)
+    dbError = error
+  }
+
+  if (dbError) {
+    return { error: dbError.message }
   }
 
   recordAuditActivity({
-    userId: session.user.id,
+    userId: adminCheck.userId,
     action: 'ADMIN_EDIT_CONTENT',
     metadata: {
       recordId: params.id,
@@ -1369,58 +1137,40 @@ export async function adminUpdateContentItem(params: {
   return { success: true }
 }
 
-/**
- * Direct Content Explorer Purge Action (`/admin/content`)
- */
 export async function adminPurgeContentItem(params: {
   id: string
   type: UnifiedContentType
   title: string
 }): Promise<{ success?: boolean; error?: string }> {
-  const session = getSession()
-  if (!session || session.user.role !== 'admin') {
-    return { error: '403 Forbidden: Administrative clearance required.' }
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
   }
 
-  if (params.type === 'PROJECT') {
-    const raw = window.localStorage.getItem(PROJECTS_KEY)
-    const list: UserListedProject[] = raw ? JSON.parse(raw) : []
-    window.localStorage.setItem(
-      PROJECTS_KEY,
-      JSON.stringify(list.filter((p) => p.id !== params.id))
-    )
-  } else if (params.type === 'DOCUMENT') {
-    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
-    const list: UserDocument[] = raw ? JSON.parse(raw) : []
-    window.localStorage.setItem(
-      DOCUMENTS_KEY,
-      JSON.stringify(list.filter((d) => d.id !== params.id))
-    )
-  } else if (params.type === 'QUOTE') {
-    const raw = window.localStorage.getItem(QUOTES_KEY)
-    const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
-    window.localStorage.setItem(
-      QUOTES_KEY,
-      JSON.stringify(list.filter((q) => q.id !== params.id))
-    )
-  } else if (params.type === 'OPPORTUNITY') {
-    const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
-    const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
-    window.localStorage.setItem(
-      OPPORTUNITIES_KEY,
-      JSON.stringify(list.filter((o) => o.id !== params.id))
-    )
-  } else if (params.type === 'SERVICE') {
-    const raw = window.localStorage.getItem(SERVICES_KEY)
-    const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
-    window.localStorage.setItem(
-      SERVICES_KEY,
-      JSON.stringify(list.filter((s) => s.id !== params.id))
-    )
+  const supabase = requireSupabaseClient()
+  const [projectTable, quoteTable] = await Promise.all([
+    resolveProjectTable(),
+    resolveQuoteTable(),
+  ])
+  const tableMap = {
+    PROJECT: projectTable,
+    DOCUMENT: 'user_documents',
+    QUOTE: quoteTable,
+    OPPORTUNITY: 'opportunities',
+    SERVICE: 'services',
+  } as const
+
+  const { error } = await supabase
+    .from(tableMap[params.type])
+    .delete()
+    .eq('id', params.id)
+
+  if (error) {
+    return { error: error.message }
   }
 
   recordAuditActivity({
-    userId: session.user.id,
+    userId: adminCheck.userId,
     action: 'ADMIN_PURGE_CONTENT',
     metadata: {
       recordId: params.id,
@@ -1437,34 +1187,42 @@ export async function adminUpdateUserProfile(params: {
   role?: UserRole
   status?: UserStatus
 }): Promise<{ user?: UserProfile; error?: string }> {
-  const session = getSession()
-  if (!session || session.user.role !== 'admin') {
-    return { error: '403 Forbidden: Administrative clearance required.' }
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
   }
 
   if (
-    params.targetUserId === session.user.id &&
+    params.targetUserId === adminCheck.userId &&
     (params.role === 'user' || params.status === 'suspended')
   ) {
     return { error: 'Cannot demote or suspend your own active admin account.' }
   }
 
-  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  const idx = profiles.findIndex((p) => p.id === params.targetUserId)
+  const supabase = requireSupabaseClient()
+  const profileTable = await resolveProfileTable()
+  const patch: { role?: UserRole; status?: UserStatus } = {}
+  if (params.role !== undefined) patch.role = params.role
+  if (params.status !== undefined) patch.status = params.status
 
-  if (idx === -1) {
-    return { error: 'Target user profile not found.' }
+  const { data: updated, error } = await supabase
+    .from(profileTable)
+    .update(patch)
+    .eq('id', params.targetUserId)
+    .select('*')
+    .single()
+
+  if (error || !updated) {
+    return { error: error?.message || 'Target user profile not found.' }
   }
 
-  const updated: UserProfile = {
-    ...profiles[idx],
-    role: params.role ?? profiles[idx].role,
-    status: params.status ?? profiles[idx].status,
-    updated_at: new Date().toISOString(),
+  // Keep secondary profile tables in sync if present
+  if (profileTable !== 'user_profiles') {
+    await supabase.from('user_profiles').update(patch).eq('id', params.targetUserId)
   }
-  profiles[idx] = updated
-  window.localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
+  if (profileTable !== 'users') {
+    await supabase.from('users').update(patch).eq('id', params.targetUserId)
+  }
 
   const actionType: AuditAction =
     params.status === 'suspended'
@@ -1474,7 +1232,7 @@ export async function adminUpdateUserProfile(params: {
         : 'ADMIN_UPDATE_ROLE'
 
   recordAuditActivity({
-    userId: session.user.id,
+    userId: adminCheck.userId,
     action: actionType,
     metadata: {
       targetUserId: updated.id,
@@ -1490,24 +1248,41 @@ export async function adminUpdateUserProfile(params: {
 export async function adminDeleteUserProfile(
   targetUserId: string
 ): Promise<{ success?: boolean; error?: string }> {
-  const session = getSession()
-  if (!session || session.user.role !== 'admin') {
-    return { error: '403 Forbidden: Administrative clearance required.' }
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
   }
 
-  if (targetUserId === session.user.id) {
+  if (targetUserId === adminCheck.userId) {
     return { error: 'Cannot delete your own active admin account.' }
   }
 
-  const rawProfiles = window.localStorage.getItem(PROFILES_KEY)
-  const profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : []
-  const target = profiles.find((p) => p.id === targetUserId)
+  const supabase = requireSupabaseClient()
+  const profileTable = await resolveProfileTable()
+  const { data: target } = await supabase
+    .from(profileTable)
+    .select('email')
+    .eq('id', targetUserId)
+    .maybeSingle()
 
-  const remaining = profiles.filter((p) => p.id !== targetUserId)
-  window.localStorage.setItem(PROFILES_KEY, JSON.stringify(remaining))
+  const { error } = await supabase
+    .from(profileTable)
+    .delete()
+    .eq('id', targetUserId)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (profileTable !== 'user_profiles') {
+    await supabase.from('user_profiles').delete().eq('id', targetUserId)
+  }
+  if (profileTable !== 'users') {
+    await supabase.from('users').delete().eq('id', targetUserId)
+  }
 
   recordAuditActivity({
-    userId: session.user.id,
+    userId: adminCheck.userId,
     action: 'ADMIN_DELETE_USER',
     metadata: {
       targetUserId,
@@ -1523,9 +1298,9 @@ export async function createGroundedDocument(input: {
   content: string
   classification: DocumentClassification
 }): Promise<{ document?: UserDocument; error?: string }> {
-  const session = getSession()
+  const session = await waitForAuthReady()
   if (!session) {
-    return { error: 'Unauthorized: Valid session required.' }
+    return { error: 'Unauthorized: Valid Supabase session required.' }
   }
 
   const title = input.title.trim()
@@ -1537,31 +1312,35 @@ export async function createGroundedDocument(input: {
     return { error: 'Content is required and must be under 10,000 characters.' }
   }
 
-  const now = new Date().toISOString()
-  const newDoc: UserDocument = {
-    id: generateUuid(),
-    user_id: session.user.id,
-    title,
-    content,
-    classification: input.classification,
-    status: 'pending',
-    approved: false,
-    created_at: now,
-    updated_at: now,
-  }
+  const supabase = requireSupabaseClient()
+  const { data, error } = await supabase
+    .from('user_documents')
+    .insert({
+      user_id: session.user.id,
+      title,
+      content,
+      classification: input.classification,
+      status: 'pending',
+      approved: false,
+    })
+    .select('*')
+    .single()
 
-  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-  const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  allDocs.unshift(newDoc)
-  window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(allDocs))
+  if (error || !data) {
+    return { error: error?.message || 'Failed to save document.' }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'CREATE_DOCUMENT',
-    metadata: { documentId: newDoc.id, title, classification: input.classification },
+    metadata: {
+      documentId: data.id,
+      title,
+      classification: input.classification,
+    },
   })
 
-  return { document: newDoc }
+  return { document: data }
 }
 
 export async function createGroundedProject(input: {
@@ -1574,46 +1353,50 @@ export async function createGroundedProject(input: {
   submittedCurrency: SupportedCurrency
   summary: string
 }): Promise<{ project?: UserListedProject; error?: string }> {
-  const session = getSession()
+  const session = await waitForAuthReady()
   if (!session) {
-    return { error: 'Authentication required: Only registered members can list a project.' }
+    return {
+      error:
+        'Authentication required: Only registered members can list a project.',
+    }
   }
 
-  const now = new Date().toISOString()
-  const record: UserListedProject = {
-    id: generateUuid(),
-    user_id: session.user.id,
-    title: input.title,
-    mineral: input.mineral,
-    region: input.region,
-    licence_type: input.licenceType,
-    licence_reference: input.licenceReference,
-    investment_usd: input.investmentUsd,
-    submitted_currency: input.submittedCurrency,
-    summary: input.summary,
-    status: 'PENDING_VERIFICATION',
-    approved: false,
-    created_at: now,
-    updated_at: now,
-  }
+  const supabase = requireSupabaseClient()
+  const projectTable = await resolveProjectTable()
+  const { data, error } = await supabase
+    .from(projectTable)
+    .insert({
+      user_id: session.user.id,
+      title: input.title.trim(),
+      mineral: input.mineral.trim(),
+      region: input.region.trim(),
+      licence_type: input.licenceType.trim(),
+      licence_reference: input.licenceReference.trim(),
+      investment_usd: Math.max(0, Number(input.investmentUsd) || 0),
+      submitted_currency: input.submittedCurrency,
+      summary: input.summary.trim(),
+      status: 'PENDING_VERIFICATION',
+      approved: false,
+    })
+    .select('*')
+    .single()
 
-  const raw = window.localStorage.getItem(PROJECTS_KEY)
-  const list: UserListedProject[] = raw ? JSON.parse(raw) : []
-  list.unshift(record)
-  window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(list))
+  if (error || !data) {
+    return { error: error?.message || 'Failed to submit project.' }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'LIST_PROJECT',
     metadata: {
-      projectId: record.id,
-      title: record.title,
-      mineral: record.mineral,
-      investmentUsd: record.investment_usd,
+      projectId: data.id,
+      title: data.title,
+      mineral: data.mineral,
+      investmentUsd: data.investment_usd,
     },
   })
 
-  return { project: record }
+  return { project: data }
 }
 
 export async function createGroundedQuoteRequest(input: {
@@ -1624,56 +1407,67 @@ export async function createGroundedQuoteRequest(input: {
   currencyCode: SupportedCurrency
   scopeNotes: string
 }): Promise<{ quote?: QuoteRequestRecord; error?: string }> {
-  const session = getSession()
+  const session = await waitForAuthReady()
   if (!session) {
-    return { error: 'Authentication required: Only registered members can request a service quote.' }
+    return {
+      error:
+        'Authentication required: Only registered members can request a service quote.',
+    }
   }
 
-  const now = new Date().toISOString()
-  const record: QuoteRequestRecord = {
-    id: generateUuid(),
-    user_id: session.user.id,
-    provider_id: input.providerId,
-    provider_name: input.providerName,
-    service_requested: input.serviceRequested,
-    estimated_budget_usd: input.estimatedBudgetUsd,
-    currency_code: input.currencyCode,
-    scope_notes: input.scopeNotes,
-    status: 'SUBMITTED',
-    approved: false,
-    created_at: now,
-  }
+  const supabase = requireSupabaseClient()
+  const quoteTable = await resolveQuoteTable()
+  const { data, error } = await supabase
+    .from(quoteTable)
+    .insert({
+      user_id: session.user.id,
+      provider_id: input.providerId,
+      provider_name: input.providerName,
+      service_requested: input.serviceRequested.trim(),
+      estimated_budget_usd: Math.max(0, Number(input.estimatedBudgetUsd) || 0),
+      currency_code: input.currencyCode,
+      scope_notes: input.scopeNotes.trim(),
+      status: 'SUBMITTED',
+      approved: false,
+    })
+    .select('*')
+    .single()
 
-  const raw = window.localStorage.getItem(QUOTES_KEY)
-  const list: QuoteRequestRecord[] = raw ? JSON.parse(raw) : []
-  list.unshift(record)
-  window.localStorage.setItem(QUOTES_KEY, JSON.stringify(list))
+  if (error || !data) {
+    return { error: error?.message || 'Failed to submit quote request.' }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'REQUEST_QUOTE',
     metadata: {
-      quoteId: record.id,
-      providerName: record.provider_name,
-      estimatedBudgetUsd: record.estimated_budget_usd,
+      quoteId: data.id,
+      providerName: data.provider_name,
+      estimatedBudgetUsd: data.estimated_budget_usd,
     },
   })
 
-  return { quote: record }
+  return { quote: data }
 }
 
-export async function deleteGroundedDocument(documentId: string): Promise<{ error?: string }> {
-  const session = getSession()
+export async function deleteGroundedDocument(
+  documentId: string
+): Promise<{ error?: string }> {
+  const session = await waitForAuthReady()
   if (!session) {
     return { error: 'Unauthorized' }
   }
 
-  const rawDocs = window.localStorage.getItem(DOCUMENTS_KEY)
-  const allDocs: UserDocument[] = rawDocs ? JSON.parse(rawDocs) : []
-  const filtered = allDocs.filter(
-    (d) => !(d.id === documentId && d.user_id === session.user.id)
-  )
-  window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(filtered))
+  const supabase = requireSupabaseClient()
+  const { error } = await supabase
+    .from('user_documents')
+    .delete()
+    .eq('id', documentId)
+    .eq('user_id', session.user.id)
+
+  if (error) {
+    return { error: error.message }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
@@ -1684,11 +1478,6 @@ export async function deleteGroundedDocument(documentId: string): Promise<{ erro
   return {}
 }
 
-/**
- * Guided Opportunity Publishing Action (`public.opportunities`)
- * Validates step-by-step payload, binds `auth.uid() = user_id`, sets `status = 'pending'`,
- * and records `CREATE_OPPORTUNITY` in `public.audit_logs`.
- */
 export async function createGuidedOpportunitySubmission(input: {
   title: string
   organization: string
@@ -1699,10 +1488,11 @@ export async function createGuidedOpportunitySubmission(input: {
   description: string
   requirements: string[]
 }): Promise<{ opportunity?: UserOpportunityRecord; error?: string }> {
-  const session = getSession()
+  const session = await waitForAuthReady()
   if (!session) {
     return {
-      error: 'Authentication required: Please sign in to publish an opportunity.',
+      error:
+        'Authentication required: Please sign in to publish an opportunity.',
     }
   }
 
@@ -1723,55 +1513,49 @@ export async function createGuidedOpportunitySubmission(input: {
     requirements,
   } = parsed.data
 
-  const now = new Date().toISOString()
   const catPrefix = input.category.slice(0, 3).toUpperCase()
   const refCode = `OPP-${catPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
 
-  const record: UserOpportunityRecord = {
-    id: generateUuid(),
-    user_id: session.user.id,
-    title,
-    organization,
-    category: input.category,
-    location,
-    deadline,
-    compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
-    description,
-    requirements,
-    reference_code: refCode,
-    status: 'pending',
-    approved: false,
-    moderation_notes: null,
-    created_at: now,
-    updated_at: now,
-  }
+  const supabase = requireSupabaseClient()
+  const { data, error } = await supabase
+    .from('opportunities')
+    .insert({
+      user_id: session.user.id,
+      title,
+      organization,
+      category: input.category,
+      location,
+      deadline,
+      compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
+      description,
+      requirements,
+      reference_code: refCode,
+      status: 'pending',
+      approved: false,
+    })
+    .select('*')
+    .single()
 
-  const raw = window.localStorage.getItem(OPPORTUNITIES_KEY)
-  const list: UserOpportunityRecord[] = raw ? JSON.parse(raw) : []
-  list.unshift(record)
-  window.localStorage.setItem(OPPORTUNITIES_KEY, JSON.stringify(list))
+  if (error || !data) {
+    return { error: error?.message || 'Failed to publish opportunity.' }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'CREATE_OPPORTUNITY',
     metadata: {
-      opportunityId: record.id,
-      referenceCode: record.reference_code,
-      title: record.title,
-      category: record.category,
-      location: record.location,
+      opportunityId: data.id,
+      referenceCode: data.reference_code,
+      title: data.title,
+      category: data.category,
+      location: data.location,
       status: 'pending',
     },
   })
 
-  return { opportunity: record }
+  return { opportunity: data }
 }
 
-/**
- * Guided Professional Service Publishing Action (`public.services`)
- * Validates step-by-step payload, binds `auth.uid() = user_id`, sets `status = 'pending'`,
- * and records `CREATE_SERVICE` in `public.audit_logs`.
- */
 export async function createGuidedServiceSubmission(input: {
   serviceName: string
   providerOrganization: string
@@ -1783,10 +1567,11 @@ export async function createGuidedServiceSubmission(input: {
   portfolioLinks: string
   certifications: string
 }): Promise<{ service?: UserServiceRecord; error?: string }> {
-  const session = getSession()
+  const session = await waitForAuthReady()
   if (!session) {
     return {
-      error: 'Authentication required: Please sign in to publish a professional service.',
+      error:
+        'Authentication required: Please sign in to publish a professional service.',
     }
   }
 
@@ -1809,46 +1594,45 @@ export async function createGuidedServiceSubmission(input: {
     certifications,
   } = parsed.data
 
-  const now = new Date().toISOString()
   const expPrefix = input.expertiseArea.slice(0, 3).toUpperCase()
   const refCode = `SRV-${expPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
 
-  const record: UserServiceRecord = {
-    id: generateUuid(),
-    user_id: session.user.id,
-    service_name: serviceName,
-    provider_organization: providerOrganization,
-    expertise_area: input.expertiseArea,
-    regional_coverage: regionalCoverage,
-    rate_or_pricing_model: rateOrPricingModel,
-    estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
-    scope_description: scopeDescription,
-    portfolio_links: sanitizeString(portfolioLinks, 500),
-    certifications: sanitizeString(certifications, 500),
-    reference_code: refCode,
-    status: 'pending',
-    approved: false,
-    moderation_notes: null,
-    created_at: now,
-    updated_at: now,
-  }
+  const supabase = requireSupabaseClient()
+  const { data, error } = await supabase
+    .from('services')
+    .insert({
+      user_id: session.user.id,
+      service_name: serviceName,
+      provider_organization: providerOrganization,
+      expertise_area: input.expertiseArea,
+      regional_coverage: regionalCoverage,
+      rate_or_pricing_model: rateOrPricingModel,
+      estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
+      scope_description: scopeDescription,
+      portfolio_links: sanitizeString(portfolioLinks, 500),
+      certifications: sanitizeString(certifications, 500),
+      reference_code: refCode,
+      status: 'pending',
+      approved: false,
+    })
+    .select('*')
+    .single()
 
-  const raw = window.localStorage.getItem(SERVICES_KEY)
-  const list: UserServiceRecord[] = raw ? JSON.parse(raw) : []
-  list.unshift(record)
-  window.localStorage.setItem(SERVICES_KEY, JSON.stringify(list))
+  if (error || !data) {
+    return { error: error?.message || 'Failed to publish service.' }
+  }
 
   recordAuditActivity({
     userId: session.user.id,
     action: 'CREATE_SERVICE',
     metadata: {
-      serviceId: record.id,
-      referenceCode: record.reference_code,
-      serviceName: record.service_name,
-      expertiseArea: record.expertise_area,
+      serviceId: data.id,
+      referenceCode: data.reference_code,
+      serviceName: data.service_name,
+      expertiseArea: data.expertise_area,
       status: 'pending',
     },
   })
 
-  return { service: record }
+  return { service: data }
 }

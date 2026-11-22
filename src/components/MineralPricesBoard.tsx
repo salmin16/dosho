@@ -97,7 +97,6 @@ export default function MineralPricesBoard({
   const {
     currency,
     currencyMeta,
-    rateForSelected,
     formatPrice,
     formatStatutoryPrice,
     language,

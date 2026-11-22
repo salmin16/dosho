@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Coins, Lock, Mail, ShieldCheck, User } from 'lucide-react'
-import { getSession, signUpWithEmail } from '../lib/supabaseAuth'
+import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
 import { CURRENCY_LIST, useCurrency } from '../lib/currency'
 import type { SupportedCurrency } from '../types/database'
 
@@ -15,6 +15,7 @@ export const Route = createFileRoute('/signup')({
 
 function SignUpRouteComponent() {
   const navigate = useNavigate()
+  const { session, loading: authLoading, configured } = useAuthState()
   const { next, reason } = Route.useSearch()
   const { currency, setCurrency } = useCurrency()
 
@@ -23,19 +24,21 @@ function SignUpRouteComponent() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
   useEffect(() => {
-    if (getSession()) {
+    if (!authLoading && session) {
       navigate({ to: targetDestination as '/dashboard' })
     }
-  }, [navigate, targetDestination])
+  }, [authLoading, session, navigate, targetDestination])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setNotice(null)
     setSubmitting(true)
     try {
       const res = await signUpWithEmail({
@@ -45,11 +48,20 @@ function SignUpRouteComponent() {
         confirmPassword,
         preferredCurrency: currency,
       })
-      if (res.error) {
+      if (res.confirmationRequired) {
+        setNotice(
+          res.error ||
+            'Account created! Please check your email inbox to confirm your address, then sign in.'
+        )
+      } else if (res.error) {
         setError(res.error)
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Unexpected sign-up error. Please try again.'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -84,6 +96,24 @@ function SignUpRouteComponent() {
             <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-ochre/30 bg-ochre/10 p-3.5 text-xs font-medium text-ink">
               <AlertTriangle size={16} className="mt-0.5 shrink-0 text-ochre" />
               <span>{reasonBanner}</span>
+            </div>
+          )}
+
+          {!configured && (
+            <div
+              role="alert"
+              className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
+            >
+              Supabase environment variables (`VITE_SUPABASE_URL` &amp; `VITE_SUPABASE_ANON_KEY`) are not configured. Account creation requires an active Supabase connection.
+            </div>
+          )}
+
+          {notice && (
+            <div
+              role="status"
+              className="mt-5 rounded-md border border-moss/40 bg-moss-light px-4 py-3 text-xs font-medium text-moss"
+            >
+              {notice}
             </div>
           )}
 

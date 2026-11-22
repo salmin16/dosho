@@ -41,9 +41,11 @@ ALTER TABLE public.mineral_prices
   ADD COLUMN IF NOT EXISTS inspection_fee_pct NUMERIC(5, 2) NOT NULL DEFAULT 1.00,
   ADD COLUMN IF NOT EXISTS producing_regions TEXT NOT NULL DEFAULT 'Geita, Mwanza, Shinyanga';
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mineral_prices_symbol_unique
+  ON public.mineral_prices(symbol);
+
 -- 3. Upsert Official Mining Commission of Tanzania (Tume ya Madini) Benchmark Commodities
 INSERT INTO public.mineral_prices (
-  id,
   mineral_name,
   symbol,
   category,
@@ -61,7 +63,6 @@ INSERT INTO public.mineral_prices (
 )
 VALUES
   (
-    'min-xau-001',
     'Gold Bullion (Dhahabu)',
     'XAU',
     'Precious Metals',
@@ -78,7 +79,6 @@ VALUES
     NOW()
   ),
   (
-    'min-xag-002',
     'Silver Bullion (Fedha)',
     'XAG',
     'Precious Metals',
@@ -95,7 +95,6 @@ VALUES
     NOW()
   ),
   (
-    'min-hg-003',
     'Copper Cathode (Shaba)',
     'HG',
     'Base & Industrial Metals',
@@ -112,7 +111,6 @@ VALUES
     NOW()
   ),
   (
-    'min-tzn-008',
     'Tanzanite (AAA Blue-Violet Zoisite)',
     'TZN',
     'Gemstones',
@@ -129,7 +127,6 @@ VALUES
     NOW()
   ),
   (
-    'min-rby-009',
     'Ruby & Red Spinel (Yakuti)',
     'RBY',
     'Gemstones',
@@ -146,7 +143,6 @@ VALUES
     NOW()
   ),
   (
-    'min-grf-006',
     'Flake Graphite (Kinywe 97% TGC)',
     'GRF',
     'Critical & Battery Minerals',
@@ -163,7 +159,6 @@ VALUES
     NOW()
   ),
   (
-    'min-ni-007',
     'Nickel Class 1 (Nikeli)',
     'NI',
     'Critical & Battery Minerals',
@@ -180,7 +175,6 @@ VALUES
     NOW()
   ),
   (
-    'min-li-010',
     'Lithium Spodumene (SC6 6% Li2O)',
     'LI',
     'Critical & Battery Minerals',
@@ -197,7 +191,6 @@ VALUES
     NOW()
   ),
   (
-    'min-co-005',
     'Cobalt Metal (Kobalti)',
     'CO',
     'Critical & Battery Minerals',
@@ -214,7 +207,6 @@ VALUES
     NOW()
   ),
   (
-    'min-sn-004',
     'Tin Ingot (Bati / Cassiterite)',
     'SN',
     'Base & Industrial Metals',
@@ -230,7 +222,7 @@ VALUES
     -0.64,
     NOW()
   )
-ON CONFLICT (id) DO UPDATE SET
+ON CONFLICT (symbol) DO UPDATE SET
   mineral_name = EXCLUDED.mineral_name,
   local_statutory_unit = EXCLUDED.local_statutory_unit,
   purity_note = EXCLUDED.purity_note,
