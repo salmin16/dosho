@@ -1,5 +1,4 @@
-
- name: Supabase CI/CD & Schema Sync
+    name: Supabase CI/CD & Schema Sync
 
     on:
       push:
@@ -38,47 +37,52 @@
               version: latest
 
           - name: Start isolated local Supabase stack
-            run: |
-              supabase start \
-                --exclude studio,inbucket,imgproxy,edge-runtime,logflare,vector,supavisor
+            run: >
+              supabase start --exclude
+              studio,inbucket,imgproxy,edge-runtime,logflare,vector,supavisor
 
           - name: Replay all migrations from scratch
             run: supabase db reset --no-seed
 
           - name: Enforce 100% RLS coverage across public schema
             run: |
-              UNPROTECTED=$(psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -tAc \
-                "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname = 'public' AND rowsecurity =
-                false;")
-
+              DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+              SQL="SELECT string_agg(tablename, ', ') FROM pg_tables
+                   WHERE schemaname = 'public' AND rowsecurity = false;"
+              UNPROTECTED=$(psql "$DB" -tAc "$SQL")
               if [ -n "$UNPROTECTED" ]; then
-                echo "::error::Row Level Security (RLS) is DISABLED on public table(s): $UNPROTECTED"
+                echo "::error::RLS DISABLED on: $UNPROTECTED"
                 exit 1
               fi
-              echo "✅ Verified: 100% of public tables have Row Level Security enabled."
+              echo "Verified: 100% of public tables have RLS enabled."
 
-          - name: Verify privileged RPCs are revoked from PUBLIC/anon/authenticated
+          - name: Verify privileged RPCs are revoked from client roles
             run: |
-              LEAKED=$(psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -tAc \
-                "SELECT string_agg(routine_name, ', ') FROM information_schema.role_routine_grants WHERE
-                routine_schema = 'public' AND routine_name IN ('reconcile_clickpesa_payment',
-                'upsert_live_mineral_spot') AND grantee IN ('PUBLIC', 'anon', 'authenticated');")
-
+              DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+              SQL="SELECT string_agg(routine_name, ', ')
+                   FROM information_schema.role_routine_grants
+                   WHERE routine_schema = 'public'
+                     AND routine_name IN (
+                       'reconcile_clickpesa_payment',
+                       'upsert_live_mineral_spot'
+                     )
+                     AND grantee IN ('PUBLIC', 'anon', 'authenticated');"
+              LEAKED=$(psql "$DB" -tAc "$SQL")
               if [ -n "$LEAKED" ]; then
-                echo "::error::Privileged SECURITY DEFINER RPC(s) exposed to client roles: $LEAKED"
+                echo "::error::Privileged RPC exposed: $LEAKED"
                 exit 1
               fi
-              echo "✅ Verified: Privileged RPCs are strictly restricted to service_role."
+              echo "Verified: Privileged RPCs restricted to service_role."
 
           - name: Check for uncommitted migration drift
             run: |
               DIFF_OUTPUT=$(supabase db diff --local)
               if [ -n "$DIFF_OUTPUT" ]; then
-                echo "::error::Schema drift detected! Generate a migration before merging."
+                echo "::error::Schema drift detected!"
                 echo "$DIFF_OUTPUT"
                 exit 1
               fi
-              echo "✅ Verified: Zero schema drift."
+              echo "Verified: Zero schema drift."
 
           - name: Stop local Supabase stack
             if: always()
@@ -87,8 +91,9 @@
       deploy-production:
         name: Deploy Migrations & Sync TypeScript Types
         needs: validate-migrations-and-rls
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name ==
-        'workflow_dispatch')
+        if: >-
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         runs-on: ubuntu-latest
         environment: production
         env:
@@ -117,11 +122,12 @@
 
           - name: Deploy Supabase Edge Functions (if present)
             run: |
-              if [ -d "supabase/functions" ] && [ -n "$(find supabase/functions -mindepth 1 -maxdepth 1 -type d !
-              -name '_shared')" ]; then
-                supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
-              else
-                echo "No Edge Functions found in supabase/functions — skipping."
+              if [ -d "supabase/functions" ]; then
+                FUNCS=$(find supabase/functions -mindepth 1 -maxdepth 1 \
+                  -type d ! -name '_shared')
+                if [ -n "$FUNCS" ]; then
+                  supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
+                fi
               fi
 
           - name: Regenerate TypeScript types from live schema
@@ -132,12 +138,12 @@
           - name: Commit updated types/supabase.ts if changed
             run: |
               if git diff --quiet types/supabase.ts; then
-                echo "types/supabase.ts is already in lockstep with live database."
+                echo "types/supabase.ts is already up to date."
                 exit 0
               fi
-
               git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git config user.email \
+                "41898282+github-actions[bot]@users.noreply.github.com"
               git add types/supabase.ts
-              git commit -m "chore(types): sync Supabase TypeScript schema definitions [skip ci]"
+              git commit -m "chore(types): sync Supabase types [skip ci]"
               git push origin HEAD:main
