@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure optional columns exist even if public.profiles was created earlier
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS full_name TEXT,
+  ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user',
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS preferred_currency TEXT NOT NULL DEFAULT 'USD',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE TABLE IF NOT EXISTS public.projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -198,12 +207,28 @@ CREATE TRIGGER trg_profiles_prevent_escalation
   EXECUTE FUNCTION public.prevent_profile_role_escalation();
 
 -- ----------------------------------------------------------------------------
--- 3. ROW LEVEL SECURITY (RLS) POLICIES
+-- 3. ROW LEVEL SECURITY (RLS) POLICIES — NON-RECURSIVE SECURITY DEFINER
 -- ----------------------------------------------------------------------------
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quotes   ENABLE ROW LEVEL SECURITY;
+
+-- Drop any legacy / potentially recursive (42P17) policies before recreating cleanly
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN ('profiles', 'projects', 'quotes')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I;', pol.policyname, pol.schemaname, pol.tablename);
+  END LOOP;
+END;
+$$;
 
 -- 3.1 public.profiles
 DROP POLICY IF EXISTS "profiles_select_own_or_admin" ON public.profiles;

@@ -130,24 +130,34 @@ export async function updateSession(request: NextRequest) {
       return applySecurityHeaders(NextResponse.redirect(loginUrl));
     }
 
-    // Explicitly query `public.user_profiles` (and fallback `public.users`) for `role === 'admin'`
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('role, status')
+    // Explicitly query `public.profiles` (fallback `public.user_profiles` / `public.users`) for `role === 'admin'`
+    const { data: primaryProfile } = await supabase
+      .from('profiles')
+      .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
-    let resolvedRole = profile?.role;
-    let resolvedStatus = profile?.status ?? 'active';
+    let resolvedRole = String(primaryProfile?.role ?? '').trim().toLowerCase();
+    let resolvedStatus = String(primaryProfile?.status ?? 'active').trim().toLowerCase();
+
+    if (!resolvedRole) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      resolvedRole = String(profile?.role ?? '').trim().toLowerCase();
+      resolvedStatus = String(profile?.status ?? resolvedStatus).trim().toLowerCase();
+    }
 
     if (!resolvedRole) {
       const { data: legacyUser } = await supabase
         .from('users')
-        .select('role, status')
+        .select('*')
         .eq('id', user.id)
-        .single();
-      resolvedRole = legacyUser?.role;
-      resolvedStatus = legacyUser?.status ?? resolvedStatus;
+        .maybeSingle();
+      resolvedRole = String(legacyUser?.role ?? '').trim().toLowerCase();
+      resolvedStatus = String(legacyUser?.status ?? resolvedStatus).trim().toLowerCase();
     }
 
     const isSuspended = resolvedStatus === 'suspended';

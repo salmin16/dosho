@@ -30,7 +30,7 @@ export const Route = createFileRoute('/dashboard_/opportunities')({
 
 function DashboardOpportunitiesRouteComponent() {
   const navigate = useNavigate()
-  const { session, loading: authLoading } = useAuthState()
+  const { session, isAdmin, loading: authLoading } = useAuthState()
   const {
     currency,
     language,
@@ -145,7 +145,7 @@ function DashboardOpportunitiesRouteComponent() {
                 'Publicar Servicio (/dashboard/services)',
               )}
             </Link>
-            {session.user.role === 'admin' && (
+            {isAdmin && (
               <Link
                 to="/admin/approvals"
                 className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-moss/30 px-3.5 py-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"

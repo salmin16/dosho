@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Lock, Menu, ShieldCheck, User, X } from 'lucide-react'
 import { type TranslationKey } from '../i18n'
 import { useLocalization } from '../context/LocalizationContext'
-import { useAuthSession } from '../lib/supabaseAuth'
+import { useAuthState } from '../lib/supabaseAuth'
 import { useSubscription } from '../lib/subscriptions'
 import LanguageSwitcher from './LanguageSwitcher'
 import CurrencySwitcher from './CurrencySwitcher'
@@ -41,7 +41,7 @@ export function Logo({ light = false }: { light?: boolean }) {
 export default function Header({ overlay = false }: { overlay?: boolean }) {
   const { t, ui } = useLocalization()
   const navigate = useNavigate()
-  const session = useAuthSession()
+  const { session, isAdmin } = useAuthState()
   const { tierName } = useSubscription()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -121,13 +121,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 <ShieldCheck size={14} />
                 {ui('Vault', 'Hifadhi', 'Bóveda')} ({session.user.fullName.split(' ')[0]} · {tierName})
               </Link>
-              {session.user.role === 'admin' && (
+              {isAdmin && (
                 <Link
                   to="/admin"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-moss/60 bg-moss/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/30"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-moss/60 bg-moss/25 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-moss/35"
                 >
                   <ShieldCheck size={14} />
-                  {ui('Admin', 'Utawala', 'Admin')}
+                  {ui('Admin Dashboard', 'Dashibodi ya Utawala', 'Panel Admin')}
                 </Link>
               )}
             </>
@@ -203,13 +203,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           >
             {session ? `Grounded Vault (${session.user.email})` : 'Sign In / Create Account'}
           </Link>
-          {session?.user.role === 'admin' && (
+          {isAdmin && (
             <Link
               to="/admin"
               onClick={() => setOpen(false)}
               className="block border-b border-ink/5 py-3.5 text-sm font-semibold text-moss"
             >
-              Admin Governance Console (/admin)
+              {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}
             </Link>
           )}
           <Link

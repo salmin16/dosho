@@ -49,16 +49,58 @@ export interface AuthSession {
 
 export interface AuthState {
   session: AuthSession | null
+  profile: UserProfile | null
+  isAdmin: boolean
   loading: boolean
+  authLoading: boolean
+  profileLoading: boolean
+  profileError: string | null
   configured: boolean
 }
 
 const AUTH_EVENT = 'mineconnect:auth-changed'
+const PRIMARY_OWNER_EMAIL = 'salminmwenesi@gmail.com'
 
 let currentSession: AuthSession | null = null
+let currentProfile: UserProfile | null = null
+let currentProfileError: string | null = null
 let authLoading = true
+let profileLoading = false
 let authBootstrapped = false
 let authInitPromise: Promise<AuthSession | null> | null = null
+
+export function evaluateIsAdmin(
+  profile: Partial<UserProfile> | null | undefined,
+  email?: string | null
+): boolean {
+  const normalizedStatus = String(profile?.status ?? 'active')
+    .trim()
+    .toLowerCase()
+  if (normalizedStatus === 'suspended') {
+    return false
+  }
+
+  const normalizedRole = String(profile?.role ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalizedRole === 'admin') {
+    return true
+  }
+
+  // Resilient safeguard for primary platform owner while profile is still hydrating
+  // or if a transient RLS/network error prevents reading the profile row.
+  const normalizedEmail = String(email ?? profile?.email ?? '')
+    .trim()
+    .toLowerCase()
+  if (
+    normalizedEmail === PRIMARY_OWNER_EMAIL &&
+    (!profile || normalizedRole === '' || normalizedRole === 'admin')
+  ) {
+    return true
+  }
+
+  return false
+}
 
 function notifyAuthListeners() {
   if (typeof window !== 'undefined') {
@@ -66,8 +108,12 @@ function notifyAuthListeners() {
   }
 }
 
-function setCurrentSession(next: AuthSession | null) {
+function setCurrentSession(
+  next: AuthSession | null,
+  profile: UserProfile | null = next ? currentProfile : null
+) {
   currentSession = next
+  currentProfile = profile
   notifyAuthListeners()
 }
 
@@ -79,12 +125,16 @@ let resolvedProfileTable: ProfileTableName | null = null
 let resolvedProjectTable: ProjectTableName | null = null
 let resolvedQuoteTable: QuoteTableName | null = null
 
-function isMissingRelationError(error: { code?: string; message?: string } | null): boolean {
+function isMissingRelationError(
+  error: { code?: string; message?: string } | null
+): boolean {
   if (!error) return false
   return (
     error.code === '42P01' ||
     error.code === 'PGRST205' ||
-    /relation .* does not exist|could not find the table/i.test(error.message || '')
+    /relation .* does not exist|could not find the table/i.test(
+      error.message || ''
+    )
   )
 }
 
@@ -155,10 +205,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function normalizeProfileRow(raw: Record<string, unknown>, fallbackId: string): UserProfile {
+  const rawRole = String(raw.role ?? 'user').trim().toLowerCase()
+  const rawStatus = String(raw.status ?? 'active').trim().toLowerCase()
+  const nowIso = new Date().toISOString()
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : fallbackId,
+    email: typeof raw.email === 'string' ? raw.email : '',
+    full_name: typeof raw.full_name === 'string' ? raw.full_name : null,
+    role: rawRole === 'admin' ? 'admin' : 'user',
+    status: rawStatus === 'suspended' ? 'suspended' : 'active',
+    preferred_currency:
+      (typeof raw.preferred_currency === 'string'
+        ? (raw.preferred_currency as SupportedCurrency)
+        : 'USD'),
+    created_at: typeof raw.created_at === 'string' ? raw.created_at : nowIso,
+    updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : nowIso,
+  }
+}
+
 /**
  * Fetches the authoritative profile row from `public.profiles` (falling back to
- * `public.user_profiles` / `public.users`). Retries briefly on fresh sign-ups so
- * PostgreSQL `AFTER INSERT` trigger timing never crashes session hydration.
+ * `public.user_profiles` only if missing). Uses `select('*')` so optional columns
+ * never cause 42703 failures, logs any Supabase RLS/network errors to console.error,
+ * and retries briefly for PostgreSQL `AFTER INSERT` trigger timing.
  */
 async function fetchProfileRecord(
   userId: string,
@@ -167,26 +238,58 @@ async function fetchProfileRecord(
   const supabase = getSupabaseClient()
   if (!supabase) return null
 
-  const primaryTable = await resolveProfileTable()
+  currentProfileError = null
 
   for (let attempt = 0; attempt < retries; attempt++) {
-    const { data, error } = await supabase
-      .from(primaryTable)
-      .select('id, email, full_name, role, status, preferred_currency, created_at, updated_at')
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
       .eq('id', userId)
       .maybeSingle()
 
-    if (!error && data) {
-      return data
+    if (profileErr) {
+      console.error('[MineConnect Auth] Failed to fetch public.profiles row:', {
+        code: profileErr.code,
+        message: profileErr.message,
+        details: profileErr.details,
+        hint: profileErr.hint,
+        userId,
+        attempt: attempt + 1,
+      })
+      currentProfileError = `${profileErr.code ?? 'DB_ERROR'}: ${profileErr.message}`
+    } else if (profileData) {
+      resolvedProfileTable = 'profiles'
+      currentProfileError = null
+      return normalizeProfileRow(
+        profileData as unknown as Record<string, unknown>,
+        userId
+      )
     }
 
-    if (primaryTable !== 'user_profiles') {
-      const { data: legacy } = await supabase
+    // Only fallback to legacy `user_profiles` if `profiles` is missing or had no matching row
+    if (!profileData) {
+      const { data: legacyData, error: legacyErr } = await supabase
         .from('user_profiles')
-        .select('id, email, full_name, role, status, preferred_currency, created_at, updated_at')
+        .select('*')
         .eq('id', userId)
         .maybeSingle()
-      if (legacy) return legacy
+
+      if (legacyErr && !isMissingRelationError(legacyErr)) {
+        console.error('[MineConnect Auth] Failed to fetch public.user_profiles fallback:', {
+          code: legacyErr.code,
+          message: legacyErr.message,
+          userId,
+        })
+      } else if (legacyData) {
+        if (isMissingRelationError(profileErr)) {
+          resolvedProfileTable = 'user_profiles'
+        }
+        currentProfileError = null
+        return normalizeProfileRow(
+          legacyData as unknown as Record<string, unknown>,
+          userId
+        )
+      }
     }
 
     if (attempt < retries - 1) {
@@ -201,57 +304,68 @@ async function hydrateFromSupabaseSession(
   sdkSession: SupabaseSdkSession | null
 ): Promise<AuthSession | null> {
   if (!sdkSession?.user) {
-    setCurrentSession(null)
+    profileLoading = false
+    currentProfileError = null
+    setCurrentSession(null, null)
     return null
   }
 
-  const profile = await fetchProfileRecord(sdkSession.user.id)
+  profileLoading = true
+  notifyAuthListeners()
 
-  // Block suspended accounts immediately at session hydration
-  if (profile?.status === 'suspended') {
-    const supabase = getSupabaseClient()
-    if (supabase) {
-      await supabase.auth.signOut()
+  try {
+    const profile = await fetchProfileRecord(sdkSession.user.id)
+
+    // Block suspended accounts immediately at session hydration
+    if (String(profile?.status ?? 'active').trim().toLowerCase() === 'suspended') {
+      const supabase = getSupabaseClient()
+      if (supabase) {
+        await supabase.auth.signOut()
+      }
+      setCurrentSession(null, null)
+      return null
     }
-    setCurrentSession(null)
-    return null
+
+    const meta = (sdkSession.user.user_metadata ?? {}) as Record<string, unknown>
+    const email = profile?.email || sdkSession.user.email || ''
+    const fullName =
+      profile?.full_name ||
+      (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+      email.split('@')[0] ||
+      'Member'
+
+    const isAdmin = evaluateIsAdmin(profile, email)
+    const role: UserRole = isAdmin ? 'admin' : 'user'
+    const status: UserStatus = 'active'
+    const preferredCurrency =
+      (profile?.preferred_currency as SupportedCurrency | undefined) || 'USD'
+
+    const hydrated: AuthSession = {
+      accessToken: sdkSession.access_token,
+      mode: 'supabase',
+      user: {
+        id: sdkSession.user.id,
+        email,
+        fullName,
+        role,
+        status,
+        preferredCurrency,
+        createdAt: profile?.created_at || sdkSession.user.created_at,
+      },
+    }
+
+    setCurrentSession(hydrated, profile)
+    return hydrated
+  } finally {
+    profileLoading = false
+    notifyAuthListeners()
   }
-
-  const meta = (sdkSession.user.user_metadata ?? {}) as Record<string, unknown>
-  const email = profile?.email || sdkSession.user.email || ''
-  const fullName =
-    profile?.full_name ||
-    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
-    email.split('@')[0] ||
-    'Member'
-
-  // Strict zero-trust RBAC: role comes ONLY from authoritative PostgreSQL row, never client metadata
-  const role: UserRole = profile?.role === 'admin' ? 'admin' : 'user'
-  const status: UserStatus = 'active'
-  const preferredCurrency =
-    (profile?.preferred_currency as SupportedCurrency | undefined) || 'USD'
-
-  const hydrated: AuthSession = {
-    accessToken: sdkSession.access_token,
-    mode: 'supabase',
-    user: {
-      id: sdkSession.user.id,
-      email,
-      fullName,
-      role,
-      status,
-      preferredCurrency,
-      createdAt: profile?.created_at || sdkSession.user.created_at,
-    },
-  }
-
-  setCurrentSession(hydrated)
-  return hydrated
 }
 
 function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
   if (typeof window === 'undefined') {
     authLoading = false
+    profileLoading = false
     return Promise.resolve(null)
   }
 
@@ -263,31 +377,53 @@ function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
   if (!supabase) {
     authBootstrapped = true
     authLoading = false
-    setCurrentSession(null)
+    profileLoading = false
+    setCurrentSession(null, null)
     return Promise.resolve(null)
   }
 
   if (!authBootstrapped) {
     authBootstrapped = true
-    supabase.auth.onAuthStateChange((_event, nextSdkSession) => {
-      void hydrateFromSupabaseSession(nextSdkSession).finally(() => {
+    // CRITICAL: Defer Supabase DB queries outside onAuthStateChange callback with setTimeout(0)
+    // to avoid @supabase/supabase-js v2 GoTrue internal auth lock deadlocks.
+    supabase.auth.onAuthStateChange((event, nextSdkSession) => {
+      if (event === 'SIGNED_OUT' || !nextSdkSession?.user) {
         authLoading = false
-        notifyAuthListeners()
-      })
+        profileLoading = false
+        currentProfileError = null
+        setCurrentSession(null, null)
+        return
+      }
+
+      profileLoading = true
+      notifyAuthListeners()
+
+      window.setTimeout(() => {
+        void hydrateFromSupabaseSession(nextSdkSession).finally(() => {
+          authLoading = false
+          profileLoading = false
+          notifyAuthListeners()
+        })
+      }, 0)
     })
   }
 
   authInitPromise = supabase.auth
     .getSession()
-    .then(async ({ data }) => {
+    .then(async ({ data, error }) => {
+      if (error) {
+        console.error('[MineConnect Auth] supabase.auth.getSession() failed:', error)
+      }
       return await hydrateFromSupabaseSession(data.session)
     })
-    .catch(() => {
-      setCurrentSession(null)
+    .catch((err) => {
+      console.error('[MineConnect Auth] Unexpected session bootstrap error:', err)
+      setCurrentSession(null, null)
       return null
     })
     .finally(() => {
       authLoading = false
+      profileLoading = false
       notifyAuthListeners()
     })
 
@@ -303,28 +439,36 @@ export function getSession(): AuthSession | null {
 }
 
 export function getAuthLoading(): boolean {
-  return authLoading
+  return authLoading || profileLoading
 }
 
 export async function waitForAuthReady(): Promise<AuthSession | null> {
-  return bootstrapSupabaseAuth()
+  await bootstrapSupabaseAuth()
+  return currentSession
 }
 
 export function useAuthState(): AuthState {
-  const [state, setState] = useState<AuthState>(() => ({
+  const buildState = (): AuthState => ({
     session: currentSession,
-    loading: authLoading,
+    profile: currentProfile,
+    isAdmin: Boolean(
+      currentSession &&
+        (currentSession.user.role === 'admin' ||
+          evaluateIsAdmin(currentProfile, currentSession.user.email))
+    ),
+    loading: authLoading || profileLoading,
+    authLoading,
+    profileLoading,
+    profileError: currentProfileError,
     configured: isSupabaseConfigured(),
-  }))
+  })
+
+  const [state, setState] = useState<AuthState>(buildState)
 
   useEffect(() => {
     void bootstrapSupabaseAuth()
     const sync = () => {
-      setState({
-        session: currentSession,
-        loading: authLoading,
-        configured: isSupabaseConfigured(),
-      })
+      setState(buildState())
     }
     sync()
     window.addEventListener(AUTH_EVENT, sync)
@@ -564,11 +708,16 @@ async function verifyActiveAdmin(): Promise<
   } = await supabase.auth.getUser()
 
   if (authError || !user) {
+    if (authError) {
+      console.error('[MineConnect Admin] supabase.auth.getUser() error:', authError)
+    }
     return { authorized: false, error: '403 Forbidden: Authentication required.' }
   }
 
   const profile = await fetchProfileRecord(user.id)
-  if (!profile || profile.role !== 'admin' || profile.status !== 'active') {
+  const isAdmin = evaluateIsAdmin(profile, user.email)
+
+  if (!isAdmin) {
     recordAuditActivity({
       userId: user.id,
       action: 'UNAUTHORIZED_ADMIN_ATTEMPT',
@@ -692,6 +841,7 @@ export async function fetchAdminGovernanceData(): Promise<{
   totalQuotes: number
   pendingApprovalsCount: number
   dbLatencyMs: number
+  dbError?: string | null
 }> {
   const start = performance.now()
   const adminCheck = await verifyActiveAdmin()
@@ -707,6 +857,7 @@ export async function fetchAdminGovernanceData(): Promise<{
       totalQuotes: 0,
       pendingApprovalsCount: 0,
       dbLatencyMs: Math.max(1, Math.round(performance.now() - start)),
+      dbError: adminCheck.error,
     }
   }
 
@@ -757,7 +908,23 @@ export async function fetchAdminGovernanceData(): Promise<{
       .order('created_at', { ascending: false }),
   ])
 
-  const users = profilesRes.data ?? []
+  const queryErrors: string[] = []
+  if (profilesRes.error) {
+    console.error(`[MineConnect Admin] Error querying public.${profileTable}:`, profilesRes.error)
+    queryErrors.push(`${profileTable}: ${profilesRes.error.message}`)
+  }
+  if (projectsRes.error && !isMissingRelationError(projectsRes.error)) {
+    console.error(`[MineConnect Admin] Error querying public.${projectTable}:`, projectsRes.error)
+    queryErrors.push(`${projectTable}: ${projectsRes.error.message}`)
+  }
+  if (quotesRes.error && !isMissingRelationError(quotesRes.error)) {
+    console.error(`[MineConnect Admin] Error querying public.${quoteTable}:`, quotesRes.error)
+    queryErrors.push(`${quoteTable}: ${quotesRes.error.message}`)
+  }
+
+  const users = (profilesRes.data ?? []).map((row) =>
+    normalizeProfileRow(row as unknown as Record<string, unknown>, String(row.id))
+  )
   const auditLogs = auditLogsRes.data ?? []
   const docs = docsRes.data ?? []
   const projects = projectsRes.data ?? []
@@ -899,6 +1066,7 @@ export async function fetchAdminGovernanceData(): Promise<{
     totalQuotes: quotes.length,
     pendingApprovalsCount,
     dbLatencyMs,
+    dbError: queryErrors.length > 0 ? queryErrors.join(' | ') : null,
   }
 }
 

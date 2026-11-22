@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowRight, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import IndicativeMineralPrices from '../components/IndicativeMineralPrices'
 import { useLocalization } from '../context/LocalizationContext'
+import { useAuthState } from '../lib/supabaseAuth'
 
 export const Route = createFileRoute('/markets')({
   component: MarketsPageComponent,
@@ -9,6 +10,7 @@ export const Route = createFileRoute('/markets')({
 
 function MarketsPageComponent() {
   const { ui, currency, language } = useLocalization()
+  const { isAdmin } = useAuthState()
 
   return (
     <div
@@ -129,10 +131,12 @@ function MarketsPageComponent() {
             </div>
 
             <div className="relative flex shrink-0 flex-wrap items-center gap-3">
-              <Link to="/admin" className="btn-primary !py-2.5 !px-4 text-xs">
-                <SlidersHorizontal size={14} />
-                {ui('Manage Prices in Admin Console', 'Simamia Bei kwenye Utawala', 'Gestionar Precios en Admin')}
-              </Link>
+              {isAdmin && (
+                <Link to="/admin" className="btn-primary !py-2.5 !px-4 text-xs">
+                  <SlidersHorizontal size={14} />
+                  {ui('Manage Prices in Admin Dashboard', 'Simamia Bei kwenye Utawala', 'Gestionar Precios en Admin')}
+                </Link>
+              )}
               <Link
                 to="/opportunities"
                 className="inline-flex items-center gap-1.5 rounded-md border border-paper/25 bg-paper/10 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/20"

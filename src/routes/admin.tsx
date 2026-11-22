@@ -106,7 +106,13 @@ export function MasterAdminDashboard({
   initialSection?: MasterAdminSection
 }) {
   const navigate = useNavigate()
-  const { session, loading: authLoading } = useAuthState()
+  const {
+    session,
+    isAdmin,
+    loading: authLoading,
+    profileLoading,
+    profileError,
+  } = useAuthState()
   const {
     currency,
     language,
@@ -184,6 +190,12 @@ export function MasterAdminDashboard({
       setTotalProjects(data.totalProjects)
       setTotalQuotes(data.totalQuotes)
       setDbLatencyMs(data.dbLatencyMs)
+      if (data.dbError) {
+        setFeedback({
+          type: 'error',
+          message: `Supabase query warning: ${data.dbError}`,
+        })
+      }
     } catch (err) {
       setFeedback({
         type: 'error',
@@ -198,20 +210,21 @@ export function MasterAdminDashboard({
   }, [])
 
   useEffect(() => {
-    if (authLoading) return
+    // Wait until BOTH Supabase Auth session AND public.profiles role finish hydrating
+    if (authLoading || profileLoading) return
     if (!session) {
       setAuthorized(false)
       setLoadingGovernance(false)
       return
     }
-    if (session.user.role !== 'admin') {
+    if (!isAdmin) {
       setAuthorized(false)
       setLoadingGovernance(false)
       navigate({ to: '/dashboard' })
       return
     }
     void loadGovernanceTelemetry()
-  }, [authLoading, session, navigate, loadGovernanceTelemetry])
+  }, [authLoading, profileLoading, session, isAdmin, navigate, loadGovernanceTelemetry])
 
   useEffect(() => {
     setMineralBenchmarks(getStoredMineralPrices())
@@ -325,7 +338,7 @@ export function MasterAdminDashboard({
     return unifiedContent.filter((c) => c.user_id === inspectingUser.id)
   }, [unifiedContent, inspectingUser])
 
-  if (authLoading || loadingGovernance) {
+  if (authLoading || profileLoading || loadingGovernance) {
     return (
       <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
         <div className="mx-auto max-w-xl rounded-xl border border-ink/15 bg-paper-2 p-8 text-center">
@@ -334,7 +347,7 @@ export function MasterAdminDashboard({
             Verifying Administrative Clearance
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Validating your Supabase session and PostgreSQL RBAC role (`public.user_profiles`)...
+            Validating your Supabase session and PostgreSQL RBAC role (`public.profiles`)...
           </p>
         </div>
       </div>
@@ -364,7 +377,7 @@ export function MasterAdminDashboard({
     )
   }
 
-  if (!authorized || session.user.role !== 'admin') {
+  if (!authorized || !isAdmin) {
     return (
       <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
         <div className="mx-auto max-w-xl rounded-xl border border-danger/30 bg-paper-2 p-8 text-center">
@@ -373,8 +386,13 @@ export function MasterAdminDashboard({
             403 Forbidden — Administrative Clearance Required
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Your Supabase session (`role = {session.user.role}`) does not hold administrative privileges required by PostgreSQL RLS (`public.is_active_admin()`).
+            Your Supabase session (`role = {session.user.role}`) does not hold administrative privileges required by PostgreSQL RLS (`public.is_admin()`).
           </p>
+          {profileError && (
+            <p className="mt-3 rounded border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
+              Profile Query Error: {profileError}
+            </p>
+          )}
           <Link to="/dashboard" className="btn-primary mt-6 inline-flex">
             Return to Member Vault
           </Link>

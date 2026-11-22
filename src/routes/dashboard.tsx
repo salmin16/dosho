@@ -44,7 +44,7 @@ export const Route = createFileRoute('/dashboard')({
 
 export function DashboardRouteComponent() {
   const navigate = useNavigate()
-  const { session, loading: authLoading } = useAuthState()
+  const { session, isAdmin, loading: authLoading } = useAuthState()
   const { saved: savedProjectIds } = useSavedProjects()
   const {
     currency,
@@ -170,13 +170,13 @@ export function DashboardRouteComponent() {
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <CurrencySwitcher dark />
             <LanguageSwitcher dark />
-            {session.user.role === 'admin' && (
+            {isAdmin && (
               <Link
                 to="/admin"
                 className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"
               >
                 <ShieldCheck size={15} />
-                {ui('Admin Console', 'Dashibodi ya Utawala', 'Consola Admin')}
+                {ui('Admin Dashboard', 'Dashibodi ya Utawala', 'Panel Admin')}
               </Link>
             )}
             <Link to="/list-a-project" className="btn-primary !py-2.5 !px-4 text-xs">

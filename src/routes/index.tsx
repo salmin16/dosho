@@ -30,7 +30,7 @@ import {
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
-import { useAuthSession } from '../lib/supabaseAuth'
+import { useAuthState } from '../lib/supabaseAuth'
 import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
@@ -169,7 +169,7 @@ function Hero() {
 }
 
 function GroundedAuthHeroBanner() {
-  const session = useAuthSession()
+  const { session, isAdmin } = useAuthState()
 
   return (
     <div className="mt-8 flex flex-col items-start justify-between gap-4 rounded-xl border border-gold/30 bg-ink-2/90 p-5 shadow-xl backdrop-blur-md sm:flex-row sm:items-center">
@@ -190,8 +190,8 @@ function GroundedAuthHeroBanner() {
           </div>
           <p className="mt-1 text-xs text-paper/70">
             {session
-              ? `Your session is grounded to UUID ${session.user.id} (Role: ${session.user.role.toUpperCase()}). Access your private dossiers or open the Admin Security Console.`
-              : 'Sign in or provision an account to access private geological dossiers, real-time multi-currency conversion, and the built-in Admin Security & Audit Console.'}
+              ? `Your session is grounded to UUID ${session.user.id} (Role: ${session.user.role.toUpperCase()}). Access your private dossiers${isAdmin ? ' or open the Admin Dashboard' : ''}.`
+              : 'Sign in or provision an account to access private geological dossiers, real-time multi-currency conversion, and verified marketplace listings.'}
           </p>
         </div>
       </div>
@@ -202,12 +202,14 @@ function GroundedAuthHeroBanner() {
             <Link to="/dashboard" className="btn-primary !py-2.5 !px-4 text-xs">
               Open Grounded Dashboard <ArrowRight size={14} />
             </Link>
-            <Link
-              to="/admin"
-              className="rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
-            >
-              Admin Console
-            </Link>
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
+              >
+                Admin Dashboard
+              </Link>
+            )}
           </>
         ) : (
           <>
@@ -219,12 +221,6 @@ function GroundedAuthHeroBanner() {
             </Link>
             <Link to="/signup" className="btn-primary !py-2.5 !px-4 text-xs">
               Create Vault Account <ArrowRight size={14} />
-            </Link>
-            <Link
-              to="/admin"
-              className="rounded-md border border-gold/50 bg-moss/30 px-3.5 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
-            >
-              Admin Console
             </Link>
           </>
         )}
