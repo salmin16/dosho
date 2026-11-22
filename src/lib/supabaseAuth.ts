@@ -11,6 +11,7 @@ import {
   sanitizeString,
 } from './securityValidators'
 import type {
+  AdminAuditLogRecord,
   AuditAction,
   AuditLog,
   ContentStatus,
@@ -29,6 +30,7 @@ import type {
   UserRole,
   UserServiceRecord,
   UserStatus,
+  UserVerificationStatus,
 } from '../types/database'
 
 export interface AuthUser {
@@ -208,14 +210,26 @@ function sleep(ms: number): Promise<void> {
 function normalizeProfileRow(raw: Record<string, unknown>, fallbackId: string): UserProfile {
   const rawRole = String(raw.role ?? 'user').trim().toLowerCase()
   const rawStatus = String(raw.status ?? 'active').trim().toLowerCase()
+  const rawVerif = String(raw.verification_status ?? 'unverified').trim().toLowerCase()
+  const verificationStatus: UserVerificationStatus =
+    rawVerif === 'verified' || rawVerif === 'pending' || rawVerif === 'rejected'
+      ? rawVerif
+      : 'unverified'
   const nowIso = new Date().toISOString()
 
   return {
     id: typeof raw.id === 'string' ? raw.id : fallbackId,
     email: typeof raw.email === 'string' ? raw.email : '',
     full_name: typeof raw.full_name === 'string' ? raw.full_name : null,
+    company_name: typeof raw.company_name === 'string' ? raw.company_name : null,
+    phone: typeof raw.phone === 'string' ? raw.phone : null,
     role: rawRole === 'admin' ? 'admin' : 'user',
     status: rawStatus === 'suspended' ? 'suspended' : 'active',
+    verification_status: verificationStatus,
+    verification_notes:
+      typeof raw.verification_notes === 'string' ? raw.verification_notes : null,
+    verified_at: typeof raw.verified_at === 'string' ? raw.verified_at : null,
+    verified_by: typeof raw.verified_by === 'string' ? raw.verified_by : null,
     preferred_currency:
       (typeof raw.preferred_currency === 'string'
         ? (raw.preferred_currency as SupportedCurrency)
@@ -831,10 +845,74 @@ function normalizeQuoteStatus(
  * Loads all rows across `user_profiles`, `user_projects`, `quote_requests`,
  * `user_documents`, `opportunities`, `services`, and `audit_logs` directly from Supabase.
  */
+/**
+ * Records an immutable governance/activity event into `public.admin_audit_logs`
+ * (and mirrors into `public.audit_logs` for legacy consumers).
+ */
+export function recordAdminAuditEvent(params: {
+  actorId?: string | null
+  actorEmail?: string | null
+  actionType: string
+  targetTable: string
+  targetId?: string | null
+  targetSummary?: string | null
+  metadata?: Record<string, unknown>
+}): void {
+  void (async () => {
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase) return
+
+      const actorId =
+        params.actorId !== undefined
+          ? params.actorId
+          : currentSession?.user.id ?? null
+      const actorEmail =
+        params.actorEmail !== undefined
+          ? params.actorEmail
+          : currentSession?.user.email ?? null
+
+      if (!actorId) return
+
+      const { error } = await supabase.from('admin_audit_logs').insert({
+        actor_id: actorId,
+        actor_email: actorEmail,
+        action_type: params.actionType,
+        target_table: params.targetTable,
+        target_id: params.targetId ?? null,
+        target_summary: params.targetSummary ?? null,
+        metadata: (params.metadata ?? {}) as Json,
+      })
+
+      if (error && !isMissingRelationError(error)) {
+        console.error('[MineConnect Audit] Failed to insert admin_audit_logs:', error)
+      }
+    } catch {
+      // Never break user flows on audit telemetry failure
+    }
+  })()
+
+  recordAuditActivity({
+    userId: params.actorId,
+    action: params.actionType as AuditAction,
+    metadata: {
+      targetTable: params.targetTable,
+      targetId: params.targetId,
+      targetSummary: params.targetSummary,
+      ...(params.metadata ?? {}),
+    },
+  })
+}
+
 export async function fetchAdminGovernanceData(): Promise<{
   authorized: boolean
   users: UserProfile[]
   auditLogs: AuditLog[]
+  adminAuditLogs: AdminAuditLogRecord[]
+  servicesList: UserServiceRecord[]
+  opportunitiesList: UserOpportunityRecord[]
+  projectsList: UserListedProject[]
+  quotesList: QuoteRequestRecord[]
   unifiedContent: UnifiedContentRecord[]
   totalDocuments: number
   totalProjects: number
@@ -851,6 +929,11 @@ export async function fetchAdminGovernanceData(): Promise<{
       authorized: false,
       users: [],
       auditLogs: [],
+      adminAuditLogs: [],
+      servicesList: [],
+      opportunitiesList: [],
+      projectsList: [],
+      quotesList: [],
       unifiedContent: [],
       totalDocuments: 0,
       totalProjects: 0,
@@ -871,6 +954,7 @@ export async function fetchAdminGovernanceData(): Promise<{
   const [
     profilesRes,
     auditLogsRes,
+    adminAuditLogsRes,
     docsRes,
     projectsRes,
     quotesRes,
@@ -886,6 +970,11 @@ export async function fetchAdminGovernanceData(): Promise<{
       .select('*')
       .order('created_at', { ascending: false })
       .limit(250),
+    supabase
+      .from('admin_audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(300),
     supabase
       .from('user_documents')
       .select('*')
@@ -921,11 +1010,36 @@ export async function fetchAdminGovernanceData(): Promise<{
     console.error(`[MineConnect Admin] Error querying public.${quoteTable}:`, quotesRes.error)
     queryErrors.push(`${quoteTable}: ${quotesRes.error.message}`)
   }
+  if (servicesRes.error && !isMissingRelationError(servicesRes.error)) {
+    console.error('[MineConnect Admin] Error querying public.services:', servicesRes.error)
+    queryErrors.push(`services: ${servicesRes.error.message}`)
+  }
+  if (oppsRes.error && !isMissingRelationError(oppsRes.error)) {
+    console.error('[MineConnect Admin] Error querying public.opportunities:', oppsRes.error)
+    queryErrors.push(`opportunities: ${oppsRes.error.message}`)
+  }
+  if (adminAuditLogsRes.error && !isMissingRelationError(adminAuditLogsRes.error)) {
+    console.error('[MineConnect Admin] Error querying public.admin_audit_logs:', adminAuditLogsRes.error)
+  }
 
   const users = (profilesRes.data ?? []).map((row) =>
     normalizeProfileRow(row as unknown as Record<string, unknown>, String(row.id))
   )
   const auditLogs = auditLogsRes.data ?? []
+  const adminAuditLogs: AdminAuditLogRecord[] =
+    (adminAuditLogsRes.data && adminAuditLogsRes.data.length > 0)
+      ? adminAuditLogsRes.data
+      : auditLogs.map((l) => ({
+          id: l.id,
+          actor_id: l.user_id,
+          actor_email: users.find((u) => u.id === l.user_id)?.email ?? null,
+          action_type: l.action,
+          target_table: 'public.audit_logs',
+          target_id: l.id,
+          target_summary: l.action,
+          metadata: l.metadata,
+          created_at: l.created_at,
+        }))
   const docs = docsRes.data ?? []
   const projects = projectsRes.data ?? []
   const quotes = quotesRes.data ?? []
@@ -1060,6 +1174,11 @@ export async function fetchAdminGovernanceData(): Promise<{
     authorized: true,
     users,
     auditLogs,
+    adminAuditLogs,
+    servicesList: services,
+    opportunitiesList: opportunities,
+    projectsList: projects,
+    quotesList: quotes,
     unifiedContent,
     totalDocuments: docs.length,
     totalProjects: projects.length,
@@ -1553,9 +1672,13 @@ export async function createGroundedProject(input: {
     return { error: error?.message || 'Failed to submit project.' }
   }
 
-  recordAuditActivity({
-    userId: session.user.id,
-    action: 'LIST_PROJECT',
+  recordAdminAuditEvent({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    actionType: 'LIST_PROJECT',
+    targetTable: `public.${projectTable}`,
+    targetId: data.id,
+    targetSummary: data.title,
     metadata: {
       projectId: data.id,
       title: data.title,
@@ -1605,9 +1728,13 @@ export async function createGroundedQuoteRequest(input: {
     return { error: error?.message || 'Failed to submit quote request.' }
   }
 
-  recordAuditActivity({
-    userId: session.user.id,
-    action: 'REQUEST_QUOTE',
+  recordAdminAuditEvent({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    actionType: 'REQUEST_QUOTE',
+    targetTable: `public.${quoteTable}`,
+    targetId: data.id,
+    targetSummary: `${data.service_requested} (${data.provider_name})`,
     metadata: {
       quoteId: data.id,
       providerName: data.provider_name,
@@ -1708,9 +1835,13 @@ export async function createGuidedOpportunitySubmission(input: {
     return { error: error?.message || 'Failed to publish opportunity.' }
   }
 
-  recordAuditActivity({
-    userId: session.user.id,
-    action: 'CREATE_OPPORTUNITY',
+  recordAdminAuditEvent({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    actionType: 'CREATE_OPPORTUNITY',
+    targetTable: 'public.opportunities',
+    targetId: data.id,
+    targetSummary: data.title,
     metadata: {
       opportunityId: data.id,
       referenceCode: data.reference_code,
@@ -1790,9 +1921,13 @@ export async function createGuidedServiceSubmission(input: {
     return { error: error?.message || 'Failed to publish service.' }
   }
 
-  recordAuditActivity({
-    userId: session.user.id,
-    action: 'CREATE_SERVICE',
+  recordAdminAuditEvent({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    actionType: 'CREATE_SERVICE',
+    targetTable: 'public.services',
+    targetId: data.id,
+    targetSummary: data.service_name,
     metadata: {
       serviceId: data.id,
       referenceCode: data.reference_code,
@@ -1803,4 +1938,312 @@ export async function createGuidedServiceSubmission(input: {
   })
 
   return { service: data }
+}
+
+/**
+ * Allows an authenticated member to submit company/contact details and request
+ * official Identity Verification (`verification_status = 'pending'`) in `public.profiles`.
+ */
+export async function submitUserVerificationRequest(input: {
+  companyName: string
+  phone: string
+  notes?: string
+}): Promise<{ profile?: UserProfile; error?: string }> {
+  const session = await waitForAuthReady()
+  if (!session) {
+    return { error: 'Please sign in before submitting a verification request.' }
+  }
+
+  const companyName = input.companyName.trim()
+  const phone = input.phone.trim()
+  if (!companyName || companyName.length < 2) {
+    return { error: 'Company or organization name is required.' }
+  }
+
+  const supabase = requireSupabaseClient()
+  const profileTable = await resolveProfileTable()
+  const { data, error } = await supabase
+    .from(profileTable)
+    .update({
+      company_name: companyName,
+      phone: phone || null,
+      verification_status: 'pending',
+      verification_notes: input.notes?.trim() || null,
+    })
+    .eq('id', session.user.id)
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('[MineConnect Verification] Request failed:', error)
+    return { error: error?.message || 'Unable to submit verification request.' }
+  }
+
+  const normalized = normalizeProfileRow(
+    data as unknown as Record<string, unknown>,
+    session.user.id
+  )
+  setCurrentSession(session, normalized)
+
+  recordAdminAuditEvent({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    actionType: 'USER_VERIFICATION_REQUESTED',
+    targetTable: `public.${profileTable}`,
+    targetId: session.user.id,
+    targetSummary: `${normalized.full_name || normalized.email} (${companyName})`,
+    metadata: { companyName, phone },
+  })
+
+  return { profile: normalized }
+}
+
+/**
+ * Admin Action: Verify, Reject, or Revoke a user's identity verification status in `public.profiles`.
+ */
+export async function adminVerifyUserProfile(params: {
+  targetUserId: string
+  decision: 'VERIFY' | 'REJECT' | 'REVOKE'
+  notes?: string
+}): Promise<{ user?: UserProfile; error?: string }> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
+  }
+
+  const supabase = requireSupabaseClient()
+  const profileTable = await resolveProfileTable()
+  const nextStatus: UserVerificationStatus =
+    params.decision === 'VERIFY'
+      ? 'verified'
+      : params.decision === 'REJECT'
+        ? 'rejected'
+        : 'unverified'
+
+  const nowIso = new Date().toISOString()
+  const { data, error } = await supabase
+    .from(profileTable)
+    .update({
+      verification_status: nextStatus,
+      verification_notes: params.notes?.trim() || null,
+      verified_at: params.decision === 'VERIFY' ? nowIso : null,
+      verified_by: params.decision === 'VERIFY' ? adminCheck.userId : null,
+    })
+    .eq('id', params.targetUserId)
+    .select('*')
+    .single()
+
+  if (error || !data) {
+    console.error('[MineConnect Admin] Verification update failed:', error)
+    return { error: error?.message || 'Failed to update verification status.' }
+  }
+
+  const normalized = normalizeProfileRow(
+    data as unknown as Record<string, unknown>,
+    params.targetUserId
+  )
+
+  const actionType =
+    params.decision === 'VERIFY'
+      ? 'ADMIN_VERIFY_USER'
+      : params.decision === 'REJECT'
+        ? 'ADMIN_REJECT_VERIFICATION'
+        : 'ADMIN_REVOKE_VERIFICATION'
+
+  recordAdminAuditEvent({
+    actorId: adminCheck.userId,
+    actorEmail: currentSession?.user.email ?? null,
+    actionType,
+    targetTable: `public.${profileTable}`,
+    targetId: normalized.id,
+    targetSummary: `${normalized.full_name || normalized.email} → ${nextStatus}`,
+    metadata: {
+      targetEmail: normalized.email,
+      verificationStatus: nextStatus,
+      notes: params.notes?.trim() || null,
+    },
+  })
+
+  return { user: normalized }
+}
+
+/**
+ * Unified Admin Moderation Action supporting Approve, Reject (with reason),
+ * Hide/Unpublish, and Feature toggle across Services, Opportunities, Projects, Quotes.
+ */
+export async function adminModerateEntity(params: {
+  id: string
+  type: 'SERVICE' | 'OPPORTUNITY' | 'PROJECT' | 'QUOTE'
+  action: 'APPROVE' | 'REJECT' | 'HIDE' | 'TOGGLE_FEATURED'
+  reason?: string
+  title?: string
+  currentFeatured?: boolean
+}): Promise<{ success?: boolean; error?: string }> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
+  }
+
+  const supabase = requireSupabaseClient()
+  const nowIso = new Date().toISOString()
+  const [projectTable, quoteTable] = await Promise.all([
+    resolveProjectTable(),
+    resolveQuoteTable(),
+  ])
+
+  const targetTable =
+    params.type === 'SERVICE'
+      ? 'services'
+      : params.type === 'OPPORTUNITY'
+        ? 'opportunities'
+        : params.type === 'PROJECT'
+          ? projectTable
+          : quoteTable
+
+  let patch: Record<string, unknown> = {}
+  let actionType = `ADMIN_${params.action}_${params.type}`
+
+  if (params.action === 'TOGGLE_FEATURED') {
+    patch = { is_featured: !params.currentFeatured }
+    actionType = !params.currentFeatured
+      ? `ADMIN_FEATURE_${params.type}`
+      : `ADMIN_UNFEATURE_${params.type}`
+  } else if (params.action === 'APPROVE') {
+    patch = {
+      status:
+        params.type === 'PROJECT'
+          ? 'VERIFIED'
+          : params.type === 'QUOTE'
+            ? 'QUOTED'
+            : 'approved',
+      approved: true,
+      rejection_reason: null,
+      moderation_notes:
+        params.reason?.trim() || 'Approved & published by Admin Governance.',
+      reviewed_by: adminCheck.userId,
+      reviewed_at: nowIso,
+    }
+  } else if (params.action === 'REJECT') {
+    const reasonText =
+      params.reason?.trim() || 'Rejected during administrative compliance review.'
+    patch = {
+      status:
+        params.type === 'PROJECT' || params.type === 'QUOTE'
+          ? 'REJECTED'
+          : 'rejected',
+      approved: false,
+      rejection_reason: reasonText,
+      moderation_notes: reasonText,
+      reviewed_by: adminCheck.userId,
+      reviewed_at: nowIso,
+    }
+  } else if (params.action === 'HIDE') {
+    patch = {
+      status:
+        params.type === 'PROJECT'
+          ? 'ARCHIVED'
+          : params.type === 'QUOTE'
+            ? 'CLOSED'
+            : 'hidden',
+      approved: false,
+      moderation_notes:
+        params.reason?.trim() || 'Hidden from public directory by administrator.',
+      reviewed_by: adminCheck.userId,
+      reviewed_at: nowIso,
+    }
+  }
+
+  const { error } = await supabase
+    .from(targetTable)
+    .update(patch as never)
+    .eq('id', params.id)
+
+  if (error) {
+    console.error(`[MineConnect Admin] Failed moderating ${targetTable}/${params.id}:`, error)
+    return { error: error.message }
+  }
+
+  recordAdminAuditEvent({
+    actorId: adminCheck.userId,
+    actorEmail: currentSession?.user.email ?? null,
+    actionType,
+    targetTable: `public.${targetTable}`,
+    targetId: params.id,
+    targetSummary: params.title || params.id,
+    metadata: {
+      action: params.action,
+      reason: params.reason?.trim() || null,
+      featured: params.action === 'TOGGLE_FEATURED' ? !params.currentFeatured : undefined,
+    },
+  })
+
+  return { success: true }
+}
+
+/**
+ * Public Marketplace Feed: Loads live admin-approved Services directly from `public.services`.
+ * RLS guarantees only `approved = true` rows are visible to public visitors.
+ */
+export async function fetchApprovedPublicServices(): Promise<UserServiceRecord[]> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('services')
+    .select('*')
+    .eq('approved', true)
+    .in('status', ['approved', 'active'])
+    .order('is_featured', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    if (!isMissingRelationError(error)) {
+      console.error('[MineConnect Public] Failed fetching approved services:', error)
+    }
+    return []
+  }
+
+  return data ?? []
+}
+
+/**
+ * Public Marketplace Feed: Loads live admin-approved Opportunities & Projects from Supabase.
+ * RLS guarantees only `approved = true` rows are visible to public visitors.
+ */
+export async function fetchApprovedPublicOpportunities(): Promise<{
+  opportunities: UserOpportunityRecord[]
+  projects: UserListedProject[]
+}> {
+  const supabase = getSupabaseClient()
+  if (!supabase) return { opportunities: [], projects: [] }
+
+  const projectTable = await resolveProjectTable()
+  const [oppsRes, projectsRes] = await Promise.all([
+    supabase
+      .from('opportunities')
+      .select('*')
+      .eq('approved', true)
+      .in('status', ['approved', 'active'])
+      .order('is_featured', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase
+      .from(projectTable)
+      .select('*')
+      .eq('approved', true)
+      .in('status', ['approved', 'VERIFIED'])
+      .order('is_featured', { ascending: false })
+      .order('created_at', { ascending: false }),
+  ])
+
+  if (oppsRes.error && !isMissingRelationError(oppsRes.error)) {
+    console.error('[MineConnect Public] Failed fetching approved opportunities:', oppsRes.error)
+  }
+  if (projectsRes.error && !isMissingRelationError(projectsRes.error)) {
+    console.error('[MineConnect Public] Failed fetching approved projects:', projectsRes.error)
+  }
+
+  return {
+    opportunities: oppsRes.data ?? [],
+    projects: projectsRes.data ?? [],
+  }
 }

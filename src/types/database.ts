@@ -20,6 +20,11 @@ export type SupportedCurrency =
 
 export type UserRole = 'user' | 'admin';
 export type UserStatus = 'active' | 'suspended';
+export type UserVerificationStatus =
+  | 'unverified'
+  | 'pending'
+  | 'verified'
+  | 'rejected';
 
 export type DocumentClassification =
   | 'PUBLIC'
@@ -29,7 +34,9 @@ export type DocumentClassification =
 
 export type ContentStatus =
   | 'pending'
+  | 'approved'
   | 'active'
+  | 'hidden'
   | 'archived'
   | 'flagged'
   | 'rejected';
@@ -110,11 +117,29 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string | null;
+  company_name?: string | null;
+  phone?: string | null;
   role: UserRole;
   status: UserStatus;
+  verification_status?: UserVerificationStatus;
+  verification_notes?: string | null;
+  verified_at?: string | null;
+  verified_by?: string | null;
   preferred_currency?: SupportedCurrency;
   created_at: string;
   updated_at: string;
+}
+
+export interface AdminAuditLogRecord {
+  id: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  action_type: string;
+  target_table: string;
+  target_id: string | null;
+  target_summary: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface AuditLog {
@@ -154,12 +179,18 @@ export interface UserListedProject {
   submitted_currency: SupportedCurrency;
   summary: string;
   status:
+    | 'pending'
+    | 'approved'
+    | 'rejected'
+    | 'hidden'
     | 'PENDING_VERIFICATION'
     | 'VERIFIED'
     | 'ARCHIVED'
     | 'FLAGGED'
     | 'REJECTED';
   approved?: boolean;
+  is_featured?: boolean;
+  rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -176,12 +207,24 @@ export interface QuoteRequestRecord {
   estimated_budget_usd: number;
   currency_code: SupportedCurrency;
   scope_notes: string;
-  status: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+  status:
+    | 'pending'
+    | 'approved'
+    | 'rejected'
+    | 'hidden'
+    | 'SUBMITTED'
+    | 'QUOTED'
+    | 'CLOSED'
+    | 'FLAGGED'
+    | 'REJECTED';
   approved?: boolean;
+  is_featured?: boolean;
+  rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export type OpportunitySubmissionCategory =
@@ -206,6 +249,8 @@ export interface UserOpportunityRecord {
   reference_code: string;
   status: ContentStatus;
   approved: boolean;
+  is_featured?: boolean;
+  rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -236,6 +281,8 @@ export interface UserServiceRecord {
   reference_code: string;
   status: ContentStatus;
   approved: boolean;
+  is_featured?: boolean;
+  rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -335,6 +382,7 @@ export interface UnifiedContentRecord {
   user_id: string;
   owner_email: string;
   owner_name: string;
+  owner_verified?: boolean;
   title: string;
   details: string;
   category_badge: string;
@@ -343,6 +391,8 @@ export interface UnifiedContentRecord {
   status: ContentStatus;
   raw_status: string;
   approved: boolean;
+  is_featured?: boolean;
+  rejection_reason?: string | null;
   moderation_notes: string | null;
   created_at: string;
   updated_at: string;
@@ -359,19 +409,47 @@ export type Database = {
           id: string;
           email: string;
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      admin_audit_logs: {
+        Row: TableRow<AdminAuditLogRecord>;
+        Insert: {
+          id?: string;
+          actor_id?: string | null;
+          actor_email?: string | null;
+          action_type: string;
+          target_table: string;
+          target_id?: string | null;
+          target_summary?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: never;
         Relationships: [];
       };
       mineral_prices: {
@@ -417,16 +495,28 @@ export type Database = {
           id: string;
           email: string;
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           updated_at?: string;
         };
@@ -526,8 +616,10 @@ export type Database = {
           estimated_budget_usd: number;
           currency_code?: SupportedCurrency;
           scope_notes: string;
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          status?: QuoteRequestRecord['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           created_at?: string;
         };
@@ -535,8 +627,10 @@ export type Database = {
           service_requested?: string;
           scope_notes?: string;
           estimated_budget_usd?: number;
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          status?: QuoteRequestRecord['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
@@ -554,8 +648,10 @@ export type Database = {
           estimated_budget_usd: number;
           currency_code?: SupportedCurrency;
           scope_notes: string;
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          status?: QuoteRequestRecord['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           created_at?: string;
         };
@@ -563,8 +659,10 @@ export type Database = {
           service_requested?: string;
           scope_notes?: string;
           estimated_budget_usd?: number;
-          status?: 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'FLAGGED' | 'REJECTED';
+          status?: QuoteRequestRecord['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
@@ -587,6 +685,8 @@ export type Database = {
           reference_code: string;
           status?: ContentStatus;
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -602,6 +702,8 @@ export type Database = {
           requirements?: string[];
           status?: ContentStatus;
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
@@ -626,6 +728,8 @@ export type Database = {
           reference_code: string;
           status?: ContentStatus;
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -642,6 +746,8 @@ export type Database = {
           certifications?: string;
           status?: ContentStatus;
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
@@ -655,16 +761,28 @@ export type Database = {
           id: string;
           email: string;
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           full_name?: string | null;
+          company_name?: string | null;
+          phone?: string | null;
           role?: UserRole;
           status?: UserStatus;
+          verification_status?: UserVerificationStatus;
+          verification_notes?: string | null;
+          verified_at?: string | null;
+          verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           updated_at?: string;
         };
@@ -683,13 +801,10 @@ export type Database = {
           investment_usd: number;
           submitted_currency?: SupportedCurrency;
           summary: string;
-          status?:
-            | 'PENDING_VERIFICATION'
-            | 'VERIFIED'
-            | 'ARCHIVED'
-            | 'FLAGGED'
-            | 'REJECTED';
+          status?: UserListedProject['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -698,13 +813,10 @@ export type Database = {
           title?: string;
           summary?: string;
           investment_usd?: number;
-          status?:
-            | 'PENDING_VERIFICATION'
-            | 'VERIFIED'
-            | 'ARCHIVED'
-            | 'FLAGGED'
-            | 'REJECTED';
+          status?: UserListedProject['status'];
           approved?: boolean;
+          is_featured?: boolean;
+          rejection_reason?: string | null;
           moderation_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;

@@ -1,14 +1,16 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BadgeCheck, Clock, Lock, MapPin, Star, CheckCircle2, X } from 'lucide-react'
 import { SERVICE_CATEGORIES, type ServiceProvider } from '../data/fixtures'
 import { useI18n } from '../i18n'
 import {
   createGroundedQuoteRequest,
+  fetchApprovedPublicServices,
   getSession,
   useAuthSession,
 } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
+import type { UserServiceRecord } from '../types/database'
 
 export const Route = createFileRoute('/services')({
   validateSearch: (s: Record<string, unknown>): { category?: string } => ({
@@ -25,6 +27,12 @@ function Services() {
   const session = useAuthSession()
   const [verifiedOnly, setVerifiedOnly] = useState(false)
   const [quoteFor, setQuoteFor] = useState<ServiceProvider | null>(null)
+  const [liveApprovedServices, setLiveApprovedServices] = useState<UserServiceRecord[]>([])
+
+  useEffect(() => {
+    void fetchApprovedPublicServices().then(setLiveApprovedServices)
+  }, [])
+
   const list = fixtures.serviceProviders.filter(
     (s) => (!category || s.category === category) && (!verifiedOnly || s.verified)
   )
@@ -78,6 +86,77 @@ function Services() {
       </section>
 
       <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+        {liveApprovedServices.length > 0 && (
+          <section className="mb-10">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-moss">
+                  Live Admin-Approved Directory (`public.services`)
+                </span>
+                <h2 className="font-display text-2xl font-semibold text-ink">
+                  Verified Member Service Listings ({liveApprovedServices.length})
+                </h2>
+              </div>
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              {liveApprovedServices.map((srv) => (
+                <article
+                  key={srv.id}
+                  className="flex flex-col rounded-2xl border border-moss/30 bg-white p-6 shadow-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-moss-light px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-moss">
+                      <BadgeCheck size={12} /> Admin Approved
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {srv.is_featured && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gold/25 px-2 py-0.5 font-mono text-[10px] font-semibold text-ochre">
+                          <Star size={11} className="fill-gold text-gold" /> Featured
+                        </span>
+                      )}
+                      <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
+                        {srv.reference_code}
+                      </span>
+                    </div>
+                  </div>
+                  <h3 className="mt-3 font-display text-2xl leading-tight">{srv.service_name}</h3>
+                  <p className="mt-1 text-sm text-ochre">
+                    {srv.provider_organization} · {srv.expertise_area}
+                  </p>
+                  <p className="mt-3 text-sm leading-relaxed text-stone">{srv.scope_description}</p>
+                  <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 pt-4 text-xs">
+                    <span className="font-mono text-stone">
+                      {srv.regional_coverage} · <strong className="text-ink">{srv.rate_or_pricing_model}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleRequestQuoteClick({
+                          id: srv.id,
+                          name: srv.provider_organization,
+                          initials: srv.provider_organization.slice(0, 2).toUpperCase(),
+                          category: SERVICE_CATEGORIES[0],
+                          location: srv.regional_coverage,
+                          verified: true,
+                          rating: 5.0,
+                          reviews: 1,
+                          responseTime: '24h',
+                          summary: srv.scope_description,
+                          services: [srv.service_name],
+                        })
+                      }
+                      className="btn-primary !py-2"
+                    >
+                      {!session && <Lock size={13} />}
+                      {t('services.requestQuote')}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         {list.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ink/20 px-6 py-20 text-center">
             <h2 className="font-display text-3xl">{t('services.emptyTitle')}</h2>

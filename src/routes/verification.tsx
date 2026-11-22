@@ -3,6 +3,7 @@ import { ArrowRight, Check, CircleSlash, Clock, UserCheck, CalendarCheck } from 
 import { PROJECTS } from '../data/fixtures'
 import { levelTone } from '../components/VerificationBadge'
 import { useI18n } from '../i18n'
+import { useAuthState } from '../lib/supabaseAuth'
 
 export const Route = createFileRoute('/verification')({
   head: () => ({ meta: [{ title: 'Verification framework — MineConnect' }] }),
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/verification')({
 
 function Verification() {
   const { t, fixtures } = useI18n()
+  const { session, profile } = useAuthState()
   const levels = fixtures.verificationLevels
   const counts = levels.map((v) => PROJECTS.filter((p) => p.verification.level === v.level).length)
   const max = Math.max(...counts)
@@ -26,6 +28,19 @@ function Verification() {
             <em className="italic text-gold">{t('verif.titleEm')}</em>
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-paper/70">{t('verif.subtitle')}</p>
+          {session && (
+            <div className="mt-6 inline-flex flex-wrap items-center gap-3 rounded-xl border border-gold/35 bg-paper/10 px-4 py-3 text-xs">
+              <span className="font-mono uppercase tracking-wider text-gold">
+                Your Account Verification Status:{' '}
+                <strong>{profile?.verification_status || 'unverified'}</strong>
+              </span>
+              <Link to="/dashboard" className="font-semibold text-paper underline hover:text-gold">
+                {profile?.verification_status === 'verified'
+                  ? 'View Verified Badge in Vault →'
+                  : 'Submit / Manage Verification Request →'}
+              </Link>
+            </div>
+          )}
           <div className="mt-12 grid max-w-3xl gap-6 sm:grid-cols-3">
             {[
               [UserCheck, t('verif.whoTitle'), t('verif.whoBody')],

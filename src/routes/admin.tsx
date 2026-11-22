@@ -2,29 +2,33 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
-  AlertTriangle,
+  BadgeCheck,
+  Briefcase,
   CheckCircle2,
-  ClipboardCheck,
+  Clock,
   Coins,
-  Database,
-  Edit3,
-  Eye,
-  FolderSearch,
+  Compass,
+  EyeOff,
+  FileText,
+  LayoutDashboard,
   RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
+  ShieldOff,
+  Star,
   Trash2,
   UserCheck,
   Users,
+  Wrench,
   XCircle,
 } from 'lucide-react'
 import {
   adminDeleteUserProfile,
-  adminModerateSubmission,
+  adminModerateEntity,
   adminPurgeContentItem,
-  adminUpdateContentItem,
   adminUpdateUserProfile,
+  adminVerifyUserProfile,
   fetchAdminGovernanceData,
   useAuthState,
 } from '../lib/supabaseAuth'
@@ -39,69 +43,109 @@ import {
   subscribeMineralPrices,
 } from '../data/mineralPrices'
 import type {
-  AuditLog,
-  ContentStatus,
+  AdminAuditLogRecord,
   MineralPriceRecord,
-  UnifiedContentRecord,
-  UnifiedContentType,
+  QuoteRequestRecord,
+  UserListedProject,
+  UserOpportunityRecord,
   UserProfile,
   UserRole,
+  UserServiceRecord,
   UserStatus,
 } from '../types/database'
 
 export type MasterAdminSection =
+  | 'overview'
   | 'approvals'
   | 'content'
   | 'users'
+  | 'services'
+  | 'opportunities'
+  | 'quotes_audit'
   | 'minerals'
-  | 'audit'
-  | 'health'
 
 export const Route = createFileRoute('/admin')({
-  component: () => <MasterAdminDashboard initialSection="approvals" />,
+  component: () => <MasterAdminDashboard initialSection="overview" />,
 })
 
-const LOGS_PER_PAGE = 8
-const CONTENT_PER_PAGE = 8
+function mapInitialTab(
+  section: MasterAdminSection
+): 'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'minerals' {
+  if (section === 'approvals') return 'opportunities'
+  if (section === 'content') return 'services'
+  if (
+    section === 'overview' ||
+    section === 'users' ||
+    section === 'services' ||
+    section === 'opportunities' ||
+    section === 'quotes_audit' ||
+    section === 'minerals'
+  ) {
+    return section
+  }
+  return 'overview'
+}
 
-function getActionBadgeClasses(action: string): string {
+function normalizeDisplayStatus(status: string, approved?: boolean): 'pending' | 'approved' | 'rejected' | 'hidden' {
+  const s = String(status || '').toLowerCase()
+  if (s === 'rejected') return 'rejected'
+  if (s === 'hidden' || s === 'archived' || s === 'closed') return 'hidden'
+  if (s === 'approved' || s === 'active' || s === 'verified' || s === 'quoted' || approved) {
+    return 'approved'
+  }
+  return 'pending'
+}
+
+function statusPillClasses(state: 'pending' | 'approved' | 'rejected' | 'hidden'): string {
+  switch (state) {
+    case 'approved':
+      return 'border-moss/40 bg-moss-light text-moss'
+    case 'pending':
+      return 'border-gold/50 bg-gold/20 text-ochre'
+    case 'rejected':
+      return 'border-danger/40 bg-danger/15 text-danger'
+    case 'hidden':
+      return 'border-ink/20 bg-ink/10 text-stone'
+  }
+}
+
+function verificationBadgeClasses(status?: string): string {
+  switch (status) {
+    case 'verified':
+      return 'border-moss/40 bg-moss-light text-moss'
+    case 'pending':
+      return 'border-gold/50 bg-gold/20 text-ochre'
+    case 'rejected':
+      return 'border-danger/40 bg-danger/15 text-danger'
+    default:
+      return 'border-ink/15 bg-paper text-stone'
+  }
+}
+
+function auditBadgeClasses(action: string): string {
   if (
     action.includes('DELETE') ||
     action.includes('PURGE') ||
     action.includes('REJECT') ||
     action.includes('SUSPEND') ||
-    action.includes('UNAUTHORIZED') ||
-    action.includes('FAILED')
+    action.includes('REVOKE') ||
+    action.includes('UNAUTHORIZED')
   ) {
     return 'border-danger/40 bg-danger/15 text-danger'
   }
   if (
     action.includes('APPROVE') ||
-    action.includes('LOGIN') ||
+    action.includes('VERIFY') ||
     action.includes('SIGNUP') ||
-    action.includes('ACTIVATE')
+    action.includes('FEATURE')
   ) {
     return 'border-moss/40 bg-moss-light text-moss'
   }
   return 'border-gold/50 bg-gold/20 text-ochre'
 }
 
-function getContentStatusClasses(status: ContentStatus): string {
-  switch (status) {
-    case 'active':
-      return 'border-moss/40 bg-moss-light text-moss'
-    case 'pending':
-      return 'border-gold/50 bg-gold/20 text-ochre'
-    case 'flagged':
-    case 'rejected':
-      return 'border-danger/40 bg-danger/15 text-danger'
-    default:
-      return 'border-ink/20 bg-ink/10 text-stone'
-  }
-}
-
 export function MasterAdminDashboard({
-  initialSection = 'approvals',
+  initialSection = 'overview',
 }: {
   initialSection?: MasterAdminSection
 }) {
@@ -113,48 +157,41 @@ export function MasterAdminDashboard({
     profileLoading,
     profileError,
   } = useAuthState()
-  const {
-    currency,
-    language,
-    currencyMeta,
-    rateForSelected,
-    formatExactUsd,
-    formatStatutoryPrice,
-    convertText,
-    ui,
-  } = useLocalization()
+  const { currency, language, currencyMeta, rateForSelected, ui } = useLocalization()
 
-  const [authorized, setAuthorized] = useState<boolean>(false)
-  const [loadingGovernance, setLoadingGovernance] = useState<boolean>(true)
+  const [authorized, setAuthorized] = useState(false)
+  const [loadingGovernance, setLoadingGovernance] = useState(true)
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'minerals'
+  >(() => mapInitialTab(initialSection))
+
   const [users, setUsers] = useState<UserProfile[]>([])
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
-  const [unifiedContent, setUnifiedContent] = useState<UnifiedContentRecord[]>([])
-  const [totalDocuments, setTotalDocuments] = useState(0)
-  const [totalProjects, setTotalProjects] = useState(0)
-  const [totalQuotes, setTotalQuotes] = useState(0)
-  const [dbLatencyMs, setDbLatencyMs] = useState(2)
-  const [activeTab, setActiveTab] = useState<MasterAdminSection>(initialSection)
+  const [services, setServices] = useState<UserServiceRecord[]>([])
+  const [opportunities, setOpportunities] = useState<UserOpportunityRecord[]>([])
+  const [projects, setProjects] = useState<UserListedProject[]>([])
+  const [quotes, setQuotes] = useState<QuoteRequestRecord[]>([])
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLogRecord[]>([])
+  const [dbLatencyMs, setDbLatencyMs] = useState(0)
 
-  // Content Explorer Filters & Modals
-  const [contentSearch, setContentSearch] = useState('')
-  const [contentTypeFilter, setContentTypeFilter] = useState<'ALL' | UnifiedContentType>('ALL')
-  const [contentStatusFilter, setContentStatusFilter] = useState<'ALL' | ContentStatus>('ALL')
-  const [contentDateFilter, setContentDateFilter] = useState('')
-  const [contentPage, setContentPage] = useState(1)
-  const [viewingContent, setViewingContent] = useState<UnifiedContentRecord | null>(null)
-  const [editingContent, setEditingContent] = useState<UnifiedContentRecord | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDetails, setEditDetails] = useState('')
-  const [editStatus, setEditStatus] = useState<ContentStatus>('active')
-
-  // Approvals Queue State
-  const [moderationNotes, setModerationNotes] = useState<Record<string, string>>({})
-
-  // User Directory & Activity Inspector State
+  // Filters & inline action inputs
   const [userSearch, setUserSearch] = useState('')
-  const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null)
+  const [userVerifFilter, setUserVerifFilter] = useState<'ALL' | 'pending' | 'verified' | 'unverified' | 'rejected' | 'suspended'>('ALL')
+  const [verifNotesMap, setVerifNotesMap] = useState<Record<string, string>>({})
 
-  // Mineral Prices (`mineral_prices`) Benchmark State
+  const [serviceSearch, setServiceSearch] = useState('')
+  const [serviceStatusFilter, setServiceStatusFilter] = useState<'ALL' | 'pending' | 'approved' | 'rejected' | 'hidden'>('ALL')
+
+  const [oppSearch, setOppSearch] = useState('')
+  const [oppKindFilter, setOppKindFilter] = useState<'ALL' | 'OPPORTUNITY' | 'PROJECT'>('ALL')
+  const [oppStatusFilter, setOppStatusFilter] = useState<'ALL' | 'pending' | 'approved' | 'rejected' | 'hidden'>('ALL')
+
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState<'ALL' | 'pending' | 'approved' | 'rejected' | 'hidden'>('ALL')
+  const [reasonMap, setReasonMap] = useState<Record<string, string>>({})
+
+  const [auditSearch, setAuditSearch] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('ALL')
+
+  // Mineral benchmarks panel state
   const [mineralBenchmarks, setMineralBenchmarks] = useState<MineralPriceRecord[]>(
     () => getStoredMineralPrices()
   )
@@ -164,18 +201,14 @@ export function MasterAdminDashboard({
   const [editBuyingPrice, setEditBuyingPrice] = useState('')
   const [editTrendPct, setEditTrendPct] = useState('')
 
-  // Audit Log Filters
-  const [logSearch, setLogSearch] = useState('')
-  const [actionFilter, setActionFilter] = useState('ALL')
-  const [currentPage, setCurrentPage] = useState(1)
-
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error'
     message: string
   } | null>(null)
 
   useEffect(() => {
-    setActiveTab(initialSection)
+    setActiveTab(mapInitialTab(initialSection))
   }, [initialSection])
 
   const loadGovernanceTelemetry = useCallback(async () => {
@@ -184,11 +217,11 @@ export function MasterAdminDashboard({
       const data = await fetchAdminGovernanceData()
       setAuthorized(data.authorized)
       setUsers(data.users)
-      setAuditLogs(data.auditLogs)
-      setUnifiedContent(data.unifiedContent)
-      setTotalDocuments(data.totalDocuments)
-      setTotalProjects(data.totalProjects)
-      setTotalQuotes(data.totalQuotes)
+      setServices(data.servicesList)
+      setOpportunities(data.opportunitiesList)
+      setProjects(data.projectsList)
+      setQuotes(data.quotesList)
+      setAuditLogs(data.adminAuditLogs)
       setDbLatencyMs(data.dbLatencyMs)
       if (data.dbError) {
         setFeedback({
@@ -201,8 +234,8 @@ export function MasterAdminDashboard({
         type: 'error',
         message:
           err instanceof Error
-            ? `Failed to load Supabase admin telemetry: ${err.message}`
-            : 'Failed to load Supabase admin telemetry.',
+            ? `Failed to load Supabase governance data: ${err.message}`
+            : 'Failed to load Supabase governance data.',
       })
     } finally {
       setLoadingGovernance(false)
@@ -210,7 +243,6 @@ export function MasterAdminDashboard({
   }, [])
 
   useEffect(() => {
-    // Wait until BOTH Supabase Auth session AND public.profiles role finish hydrating
     if (authLoading || profileLoading) return
     if (!session) {
       setAuthorized(false)
@@ -233,122 +265,300 @@ export function MasterAdminDashboard({
     })
   }, [])
 
-  const userEmailMap = useMemo(() => {
-    const map = new Map<string, string>()
-    users.forEach((u) => map.set(u.id, u.email))
+  const profileMap = useMemo(() => {
+    const map = new Map<string, UserProfile>()
+    users.forEach((u) => map.set(u.id, u))
     return map
   }, [users])
 
-  const pendingApprovals = useMemo(() => {
-    return unifiedContent.filter(
-      (item) =>
-        item.status === 'pending' ||
-        item.status === 'flagged' ||
-        !item.approved
-    )
-  }, [unifiedContent])
+  // KPI metrics
+  const kpis = useMemo(() => {
+    const verifiedUsers = users.filter((u) => u.verification_status === 'verified').length
+    const pendingVerifications = users.filter((u) => u.verification_status === 'pending').length
+    const pendingServices = services.filter((s) => normalizeDisplayStatus(s.status, s.approved) === 'pending').length
+    const pendingOpportunities = opportunities.filter((o) => normalizeDisplayStatus(o.status, o.approved) === 'pending').length
+    const pendingProjects = projects.filter((p) => normalizeDisplayStatus(p.status, p.approved) === 'pending').length
+    const pendingQuotes = quotes.filter((q) => normalizeDisplayStatus(q.status, q.approved) === 'pending').length
+    return {
+      totalUsers: users.length,
+      verifiedUsers,
+      pendingVerifications,
+      pendingServices,
+      pendingOpportunities,
+      pendingProjects,
+      pendingQuotes,
+    }
+  }, [users, services, opportunities, projects, quotes])
 
-  const filteredContent = useMemo(() => {
-    const q = contentSearch.trim().toLowerCase()
-    return unifiedContent.filter((item) => {
-      if (contentTypeFilter !== 'ALL' && item.type !== contentTypeFilter) {
-        return false
-      }
-      if (contentStatusFilter !== 'ALL' && item.status !== contentStatusFilter) {
-        return false
-      }
-      if (contentDateFilter && !item.created_at.startsWith(contentDateFilter)) {
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase()
+    return users.filter((u) => {
+      if (userVerifFilter === 'suspended' && u.status !== 'suspended') return false
+      if (
+        userVerifFilter !== 'ALL' &&
+        userVerifFilter !== 'suspended' &&
+        (u.verification_status || 'unverified') !== userVerifFilter
+      ) {
         return false
       }
       if (!q) return true
       return (
-        item.title.toLowerCase().includes(q) ||
-        item.details.toLowerCase().includes(q) ||
-        item.owner_email.toLowerCase().includes(q) ||
-        item.owner_name.toLowerCase().includes(q) ||
-        item.user_id.toLowerCase().includes(q) ||
-        item.reference_code.toLowerCase().includes(q) ||
-        item.category_badge.toLowerCase().includes(q)
+        u.email.toLowerCase().includes(q) ||
+        (u.full_name || '').toLowerCase().includes(q) ||
+        (u.company_name || '').toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q)
       )
     })
-  }, [
-    unifiedContent,
-    contentSearch,
-    contentTypeFilter,
-    contentStatusFilter,
-    contentDateFilter,
-  ])
+  }, [users, userSearch, userVerifFilter])
 
-  const totalContentPages = Math.max(
-    1,
-    Math.ceil(filteredContent.length / CONTENT_PER_PAGE)
-  )
-  const paginatedContent = useMemo(() => {
-    const start = (contentPage - 1) * CONTENT_PER_PAGE
-    return filteredContent.slice(start, start + CONTENT_PER_PAGE)
-  }, [filteredContent, contentPage])
+  const filteredServices = useMemo(() => {
+    const q = serviceSearch.trim().toLowerCase()
+    return services.filter((s) => {
+      const norm = normalizeDisplayStatus(s.status, s.approved)
+      if (serviceStatusFilter !== 'ALL' && norm !== serviceStatusFilter) return false
+      if (!q) return true
+      const owner = profileMap.get(s.user_id)
+      return (
+        s.service_name.toLowerCase().includes(q) ||
+        s.provider_organization.toLowerCase().includes(q) ||
+        s.expertise_area.toLowerCase().includes(q) ||
+        (owner?.email || '').toLowerCase().includes(q)
+      )
+    })
+  }, [services, serviceSearch, serviceStatusFilter, profileMap])
 
-  const distinctActions = useMemo(() => {
+  const combinedOppAndProjects = useMemo(() => {
+    const q = oppSearch.trim().toLowerCase()
+    const rows = [
+      ...opportunities.map((o) => ({
+        kind: 'OPPORTUNITY' as const,
+        id: o.id,
+        user_id: o.user_id,
+        title: o.title,
+        subtitle: `${o.organization} · ${o.category} · ${o.location}`,
+        description: o.description,
+        valueUsd: o.compensation_usd,
+        status: normalizeDisplayStatus(o.status, o.approved),
+        approved: Boolean(o.approved),
+        isFeatured: Boolean(o.is_featured),
+        rejectionReason: o.rejection_reason || o.moderation_notes || null,
+        referenceCode: o.reference_code,
+        createdAt: o.created_at,
+      })),
+      ...projects.map((p) => ({
+        kind: 'PROJECT' as const,
+        id: p.id,
+        user_id: p.user_id,
+        title: p.title,
+        subtitle: `${p.mineral} · ${p.region} · ${p.licence_type} (${p.licence_reference})`,
+        description: p.summary,
+        valueUsd: p.investment_usd,
+        status: normalizeDisplayStatus(p.status, p.approved),
+        approved: Boolean(p.approved),
+        isFeatured: Boolean(p.is_featured),
+        rejectionReason: p.rejection_reason || p.moderation_notes || null,
+        referenceCode: p.licence_reference,
+        createdAt: p.created_at,
+      })),
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+    return rows.filter((row) => {
+      if (oppKindFilter !== 'ALL' && row.kind !== oppKindFilter) return false
+      if (oppStatusFilter !== 'ALL' && row.status !== oppStatusFilter) return false
+      if (!q) return true
+      const owner = profileMap.get(row.user_id)
+      return (
+        row.title.toLowerCase().includes(q) ||
+        row.subtitle.toLowerCase().includes(q) ||
+        row.description.toLowerCase().includes(q) ||
+        (owner?.email || '').toLowerCase().includes(q)
+      )
+    })
+  }, [opportunities, projects, oppSearch, oppKindFilter, oppStatusFilter, profileMap])
+
+  const filteredQuotes = useMemo(() => {
+    return quotes.filter((q) => {
+      if (quoteStatusFilter === 'ALL') return true
+      return normalizeDisplayStatus(q.status, q.approved) === quoteStatusFilter
+    })
+  }, [quotes, quoteStatusFilter])
+
+  const distinctAuditActions = useMemo(() => {
     const s = new Set<string>()
-    auditLogs.forEach((l) => s.add(l.action))
+    auditLogs.forEach((l) => s.add(l.action_type))
     return Array.from(s).sort()
   }, [auditLogs])
 
-  const filteredLogs = useMemo(() => {
-    const q = logSearch.trim().toLowerCase()
-    return auditLogs.filter((log) => {
-      const matchesAction = actionFilter === 'ALL' || log.action === actionFilter
-      const email = log.user_id ? userEmailMap.get(log.user_id) ?? '' : ''
-      const matchesQuery =
-        !q ||
-        log.action.toLowerCase().includes(q) ||
-        email.toLowerCase().includes(q) ||
-        (log.user_id && log.user_id.toLowerCase().includes(q)) ||
-        (log.ip_address && log.ip_address.toLowerCase().includes(q)) ||
-        JSON.stringify(log.metadata).toLowerCase().includes(q)
-      return matchesAction && matchesQuery
+  const filteredAuditLogs = useMemo(() => {
+    const q = auditSearch.trim().toLowerCase()
+    return auditLogs.filter((l) => {
+      if (auditActionFilter !== 'ALL' && l.action_type !== auditActionFilter) return false
+      if (!q) return true
+      return (
+        l.action_type.toLowerCase().includes(q) ||
+        (l.actor_email || '').toLowerCase().includes(q) ||
+        (l.target_summary || '').toLowerCase().includes(q) ||
+        l.target_table.toLowerCase().includes(q)
+      )
     })
-  }, [auditLogs, actionFilter, logSearch, userEmailMap])
+  }, [auditLogs, auditSearch, auditActionFilter])
 
-  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PER_PAGE))
-  const paginatedLogs = useMemo(() => {
-    const start = (currentPage - 1) * LOGS_PER_PAGE
-    return filteredLogs.slice(start, start + LOGS_PER_PAGE)
-  }, [filteredLogs, currentPage])
+  // Action handlers
+  const handleVerifyUser = async (
+    u: UserProfile,
+    decision: 'VERIFY' | 'REJECT' | 'REVOKE'
+  ) => {
+    setBusyId(u.id)
+    try {
+      const res = await adminVerifyUserProfile({
+        targetUserId: u.id,
+        decision,
+        notes: verifNotesMap[u.id],
+      })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({
+        type: 'success',
+        message: `${u.email} verification updated (${decision}). Immutable audit event recorded.`,
+      })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
 
-  const filteredUsers = useMemo(() => {
-    const q = userSearch.trim().toLowerCase()
-    if (!q) return users
-    return users.filter(
-      (u) =>
-        u.email.toLowerCase().includes(q) ||
-        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
-        u.id.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q)
-    )
-  }, [users, userSearch])
+  const handleUpdateUser = async (
+    targetUserId: string,
+    updates: { role?: UserRole; status?: UserStatus }
+  ) => {
+    setBusyId(targetUserId)
+    try {
+      const res = await adminUpdateUserProfile({ targetUserId, ...updates })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({
+        type: 'success',
+        message: `Updated ${res.user?.email} (${
+          updates.role ? `role → ${updates.role}` : `status → ${updates.status}`
+        }).`,
+      })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
 
-  const inspectedUserLogs = useMemo(() => {
-    if (!inspectingUser) return []
-    return auditLogs.filter((l) => l.user_id === inspectingUser.id)
-  }, [auditLogs, inspectingUser])
+  const handleDeleteUser = async (u: UserProfile) => {
+    if (!window.confirm(`Permanently remove profile ${u.email}?`)) return
+    setBusyId(u.id)
+    try {
+      const res = await adminDeleteUserProfile(u.id)
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({ type: 'success', message: `Deleted user profile ${u.email}.` })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
 
-  const inspectedUserContent = useMemo(() => {
-    if (!inspectingUser) return []
-    return unifiedContent.filter((c) => c.user_id === inspectingUser.id)
-  }, [unifiedContent, inspectingUser])
+  const handleModerate = async (params: {
+    id: string
+    type: 'SERVICE' | 'OPPORTUNITY' | 'PROJECT' | 'QUOTE'
+    action: 'APPROVE' | 'REJECT' | 'HIDE' | 'TOGGLE_FEATURED'
+    title: string
+    currentFeatured?: boolean
+  }) => {
+    setBusyId(params.id)
+    try {
+      const res = await adminModerateEntity({
+        id: params.id,
+        type: params.type,
+        action: params.action,
+        reason: reasonMap[params.id],
+        title: params.title,
+        currentFeatured: params.currentFeatured,
+      })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({
+        type: 'success',
+        message: `${params.action} applied to ${params.type} "${params.title}". Audit log recorded.`,
+      })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handlePurge = async (
+    id: string,
+    type: 'SERVICE' | 'OPPORTUNITY' | 'PROJECT' | 'QUOTE',
+    title: string
+  ) => {
+    if (!window.confirm(`Permanently delete ${type} "${title}"?`)) return
+    setBusyId(id)
+    try {
+      const res = await adminPurgeContentItem({ id, type, title })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({ type: 'success', message: `Deleted ${type} "${title}".` })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleSaveMineralEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingMineral) return
+    const res = await adminUpdateMineralPrice({
+      id: editingMineral.id,
+      world_market_price_usd: Number(editWorldPrice),
+      local_market_price_usd: Number(editLocalPrice),
+      buying_centre_price_usd: Number(editBuyingPrice),
+      trend_percentage: Number(editTrendPct) || 0,
+    })
+    if (res.error) {
+      setFeedback({ type: 'error', message: res.error })
+      return
+    }
+    setMineralBenchmarks(getStoredMineralPrices())
+    setEditingMineral(null)
+    setFeedback({ type: 'success', message: `Updated ${editingMineral.mineral_name} benchmarks.` })
+  }
+
+  const handleSyncMinerals = async () => {
+    const res = await adminSyncLiveMarketBenchmarks()
+    if (res.error) {
+      setFeedback({ type: 'error', message: res.error })
+      return
+    }
+    setMineralBenchmarks(res.records)
+    setFeedback({ type: 'success', message: `Synchronized ${res.records.length} mineral benchmarks.` })
+  }
 
   if (authLoading || profileLoading || loadingGovernance) {
     return (
-      <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
-        <div className="mx-auto max-w-xl rounded-xl border border-ink/15 bg-paper-2 p-8 text-center">
-          <ShieldCheck size={36} className="mx-auto animate-pulse text-ochre" />
-          <h1 className="mt-4 font-display text-2xl font-semibold">
-            Verifying Administrative Clearance
-          </h1>
-          <p className="mt-2 text-sm text-stone">
-            Validating your Supabase session and PostgreSQL RBAC role (`public.profiles`)...
-          </p>
+      <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
+        <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
+          <div className="h-36 animate-pulse rounded-2xl bg-ink/10" />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-ink/10" />
+            ))}
+          </div>
+          <div className="h-72 animate-pulse rounded-2xl bg-ink/10" />
         </div>
       </div>
     )
@@ -363,7 +573,7 @@ export function MasterAdminDashboard({
             401 Unauthorized — Admin Sign-In Required
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Sign in with an authenticated Supabase administrator account to access MineConnect Governance.
+            Sign in with a verified MineConnect administrator account to open the Governance Command Center.
           </p>
           <Link
             to="/login"
@@ -386,11 +596,11 @@ export function MasterAdminDashboard({
             403 Forbidden — Administrative Clearance Required
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Your Supabase session (`role = {session.user.role}`) does not hold administrative privileges required by PostgreSQL RLS (`public.is_admin()`).
+            Your Supabase account (`role = {session.user.role}`) does not hold `public.is_admin()` clearance.
           </p>
           {profileError && (
             <p className="mt-3 rounded border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
-              Profile Query Error: {profileError}
+              Profile Error: {profileError}
             </p>
           )}
           <Link to="/dashboard" className="btn-primary mt-6 inline-flex">
@@ -401,198 +611,19 @@ export function MasterAdminDashboard({
     )
   }
 
-  const now = Date.now()
-  const dayMs = 24 * 60 * 60 * 1000
-  const recentLogs24h = auditLogs.filter(
-    (l) => now - new Date(l.created_at).getTime() <= dayMs
-  )
-  const activeActorIds = new Set(recentLogs24h.map((l) => l.user_id).filter(Boolean))
-  activeActorIds.add(session.user.id)
-
-  const newSignups7d = users.filter(
-    (u) => now - new Date(u.created_at).getTime() <= 7 * dayMs
-  ).length
-  const newSignups24h = users.filter(
-    (u) => now - new Date(u.created_at).getTime() <= dayMs
-  ).length
-
-  const activeUsersCount = users.filter((u) => u.status !== 'suspended').length
-  const adminUsersCount = users.filter((u) => u.role === 'admin').length
-
-  const handleModerate = async (
-    item: UnifiedContentRecord,
-    decision: 'APPROVE' | 'REJECT'
-  ) => {
-    const res = await adminModerateSubmission({
-      id: item.id,
-      type: item.type,
-      decision,
-      notes: moderationNotes[item.id],
-    })
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setFeedback({
-      type: 'success',
-      message: `${decision === 'APPROVE' ? 'Approved & Published' : 'Rejected'} ${
-        item.type
-      } "${item.title}". Immutable audit log recorded.`,
-    })
-    await loadGovernanceTelemetry()
-  }
-
-  const handleSaveContentEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingContent) return
-    const res = await adminUpdateContentItem({
-      id: editingContent.id,
-      type: editingContent.type,
-      title: editTitle,
-      details: editDetails,
-      status: editStatus,
-    })
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setFeedback({
-      type: 'success',
-      message: `Updated ${editingContent.type} "${editTitle}" (status → ${editStatus}). Audit event recorded.`,
-    })
-    setEditingContent(null)
-    await loadGovernanceTelemetry()
-  }
-
-  const handlePurgeContent = async (item: UnifiedContentRecord) => {
-    if (
-      !window.confirm(
-        `Permanently purge ${item.type} "${item.title}" from PostgreSQL? This action will be recorded in public.audit_logs.`
-      )
-    ) {
-      return
-    }
-    const res = await adminPurgeContentItem({
-      id: item.id,
-      type: item.type,
-      title: item.title,
-    })
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setFeedback({
-      type: 'success',
-      message: `Purged ${item.type} "${item.title}". Audit event ADMIN_PURGE_CONTENT recorded.`,
-    })
-    await loadGovernanceTelemetry()
-  }
-
-  const handleUpdateUser = async (
-    targetUserId: string,
-    updates: { role?: UserRole; status?: UserStatus }
-  ) => {
-    const res = await adminUpdateUserProfile({ targetUserId, ...updates })
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setFeedback({
-      type: 'success',
-      message: `Updated ${res.user?.email} (${
-        updates.role ? `role → ${updates.role}` : `status → ${updates.status}`
-      }). Immutable audit log recorded.`,
-    })
-    await loadGovernanceTelemetry()
-  }
-
-  const handleDeleteUser = async (u: UserProfile) => {
-    if (
-      !window.confirm(
-        `Permanently remove user profile ${u.email}? This action will be recorded in public.audit_logs.`
-      )
-    ) {
-      return
-    }
-    const res = await adminDeleteUserProfile(u.id)
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setFeedback({
-      type: 'success',
-      message: `Deleted user ${u.email}. Audit event ADMIN_DELETE_USER recorded.`,
-    })
-    await loadGovernanceTelemetry()
-  }
-
-  const handleOpenEditMineral = (mineral: MineralPriceRecord) => {
-    setEditingMineral(mineral)
-    setEditWorldPrice(String(mineral.world_market_price_usd))
-    setEditLocalPrice(String(mineral.local_market_price_usd))
-    setEditBuyingPrice(String(mineral.buying_centre_price_usd))
-    setEditTrendPct(String(mineral.trend_percentage))
-  }
-
-  const handleSaveMineralEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingMineral) return
-    const worldPrice = Number(editWorldPrice)
-    const localPrice = Number(editLocalPrice)
-    const buyingPrice = Number(editBuyingPrice)
-    const trendPct = Number(editTrendPct)
-
-    if (
-      !Number.isFinite(worldPrice) ||
-      !Number.isFinite(localPrice) ||
-      !Number.isFinite(buyingPrice) ||
-      worldPrice <= 0
-    ) {
-      setFeedback({
-        type: 'error',
-        message: 'Invalid benchmark numeric values.',
-      })
-      return
-    }
-
-    const res = await adminUpdateMineralPrice({
-      id: editingMineral.id,
-      world_market_price_usd: worldPrice,
-      local_market_price_usd: localPrice,
-      buying_centre_price_usd: buyingPrice,
-      trend_percentage: Number.isFinite(trendPct) ? trendPct : 0,
-    })
-
-    if (res.error || !res.record) {
-      setFeedback({
-        type: 'error',
-        message: res.error || 'Could not locate mineral benchmark row.',
-      })
-      return
-    }
-
-    setMineralBenchmarks(getStoredMineralPrices())
-    setEditingMineral(null)
-    setFeedback({
-      type: 'success',
-      message: `Updated ${res.record.mineral_name} (${res.record.symbol}) indicative benchmark rates in public.mineral_prices. Audit event ADMIN_UPDATE_MINERAL_PRICE recorded.`,
-    })
-    await loadGovernanceTelemetry()
-  }
-
-  const handleSyncMineralBenchmarks = async () => {
-    const res = await adminSyncLiveMarketBenchmarks()
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setMineralBenchmarks(res.records)
-    setFeedback({
-      type: 'success',
-      message: `Synchronized ${res.records.length} commodities in public.mineral_prices with global LME/LBMA ticks and TMC local market floors.`,
-    })
-    await loadGovernanceTelemetry()
-  }
+  const tabs = [
+    { id: 'overview' as const, label: 'Overview & Telemetry', icon: LayoutDashboard, badge: 0 },
+    { id: 'users' as const, label: 'Users & Verification', icon: Users, badge: kpis.pendingVerifications },
+    { id: 'services' as const, label: 'Services Moderation', icon: Wrench, badge: kpis.pendingServices },
+    {
+      id: 'opportunities' as const,
+      label: 'Opportunities & Projects',
+      icon: Compass,
+      badge: kpis.pendingOpportunities + kpis.pendingProjects,
+    },
+    { id: 'quotes_audit' as const, label: 'Quotes & Audit Trail', icon: Activity, badge: kpis.pendingQuotes },
+    { id: 'minerals' as const, label: 'Mineral Prices', icon: Coins, badge: 0 },
+  ]
 
   return (
     <div
@@ -600,1412 +631,952 @@ export function MasterAdminDashboard({
       data-language={language}
       className="min-h-screen bg-paper pb-24 pt-28 text-ink"
     >
-      <div className="mx-auto max-w-7xl space-y-8 px-5 lg:px-8">
-        {/* Top Security & Master Control Banner */}
-        <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
-                <ShieldCheck size={14} />
+      <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
+        {/* Executive Command Header */}
+        <header className="rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-xl lg:p-8">
+          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
+                  <ShieldCheck size={14} />
+                  Zero-Trust Admin Command Center · public.is_admin() = true
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
+                  DB Latency: {dbLatencyMs}ms · {currencyMeta.flag} {currency} ({rateForSelected.toFixed(2)})
+                </span>
+              </div>
+              <h1 className="mt-3 font-display text-3xl font-semibold">
                 {ui(
-                  'Master Control & Oversight (`public.is_admin() = true`)',
-                  'Udhibiti Mkuu na Usimamizi (`public.is_admin() = true`)',
-                  'Control Maestro y Supervisión (`public.is_admin() = true`)',
+                  'MineConnect Platform Governance & Moderation',
+                  'Kituo cha Udhibiti na Uhakiki cha MineConnect',
+                  'Centro de Gobernanza y Moderación MineConnect'
                 )}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
-                <Coins size={13} className="text-gold" />
-                {currencyMeta.flag} {currency} (1 USD ={' '}
-                {rateForSelected.toLocaleString('en-US', {
-                  maximumFractionDigits: 2,
-                })}{' '}
-                {currency})
-              </span>
+              </h1>
+              <p className="mt-1 text-sm text-paper/75">
+                Signed in as <span className="font-mono text-gold">{session.user.email}</span> · Full real-time oversight over user verification, marketplace approvals, quotes, and immutable audit logs.
+              </p>
             </div>
-            <h1 className="mt-3 font-display text-3xl font-semibold">
-              {ui(
-                'Master Control, Content Explorer & Moderation Console',
-                'Dashibodi ya Utawala, Maudhui na Uhakiki',
-                'Consola Maestra de Control, Contenido y Moderación',
-              )}
-            </h1>
-            <p className="mt-1 text-sm text-paper/75">
-              {ui(
-                'Full visibility over all platform content (`/admin/content`), pending moderation queues (`/admin/approvals`), user directory (`/admin/users`), and immutable audit trails.',
-                'Ufuatiliaji kamili wa maudhui yote (`/admin/content`), foleni za uhakiki (`/admin/approvals`), orodha ya watumiaji (`/admin/users`), na kumbukumbu za ukaguzi.',
-                'Visibilidad completa sobre todo el contenido (`/admin/content`), colas de aprobación (`/admin/approvals`), directorio de usuarios (`/admin/users`) y auditoría.',
-              )}
-            </p>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <CurrencySwitcher dark />
+              <LanguageSwitcher dark />
+              <button
+                type="button"
+                onClick={() => void loadGovernanceTelemetry()}
+                className="inline-flex items-center gap-2 rounded-md border border-gold/40 bg-ochre/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-ochre/30"
+              >
+                <RefreshCw size={14} />
+                Refresh Live DB
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-            <CurrencySwitcher dark />
-            <LanguageSwitcher dark />
-            <button
-              type="button"
-              onClick={() => void loadGovernanceTelemetry()}
-              className="inline-flex items-center gap-2 rounded-md border border-gold/40 bg-ochre/20 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-ochre/30"
-            >
-              <RefreshCw size={14} />
-              {ui('Refresh DB', 'Sasisha DB', 'Actualizar BD')}
-            </button>
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
-            >
-              {ui('Member Vault', 'Hifadhi ya Mwanachama', 'Bóveda')}
-            </Link>
-          </div>
-        </div>
+          {/* 5 Primary Governance Tabs + Mineral Utility */}
+          <nav className="mt-6 flex flex-wrap gap-2 border-t border-paper/10 pt-5" aria-label="Admin sections">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                    active
+                      ? 'border-gold bg-gold text-ink shadow-sm'
+                      : 'border-paper/15 bg-paper/5 text-paper/80 hover:bg-paper/15 hover:text-paper'
+                  }`}
+                >
+                  <Icon size={14} />
+                  {tab.label}
+                  {tab.badge > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                        active ? 'bg-ink text-gold' : 'bg-ochre text-paper'
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </nav>
+        </header>
 
+        {/* Feedback / Toast Banner */}
         {feedback && (
           <div
-            className={`flex items-center justify-between rounded-lg border px-4 py-3 text-xs font-semibold ${
+            role="status"
+            className={`flex items-center justify-between gap-4 rounded-xl border px-4 py-3 text-xs font-medium ${
               feedback.type === 'success'
                 ? 'border-moss/40 bg-moss-light text-moss'
                 : 'border-danger/40 bg-danger/10 text-danger'
             }`}
           >
-            <span>{convertText(feedback.message)}</span>
-            <button type="button" onClick={() => setFeedback(null)}>
-              ✕
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="font-mono text-[11px] underline"
+            >
+              Dismiss
             </button>
           </div>
         )}
 
-        {/* Top-Level Master Control Analytics Cards */}
-        <section
-          aria-label="Master Control Overview Cards"
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                {ui('Pending Approvals Queue', 'Foleni ya Uhakiki', 'Cola de Aprobaciones')}
-              </span>
-              <ClipboardCheck size={16} className="text-ochre" />
+        {/* TAB 1: OVERVIEW & LIVE TELEMETRY */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+              {[
+                { label: 'Total Users', value: kpis.totalUsers, tab: 'users' as const, accent: 'text-ink' },
+                { label: 'Verified Users', value: kpis.verifiedUsers, tab: 'users' as const, accent: 'text-moss' },
+                { label: 'Pending Verifications', value: kpis.pendingVerifications, tab: 'users' as const, accent: 'text-ochre' },
+                { label: 'Pending Services', value: kpis.pendingServices, tab: 'services' as const, accent: 'text-ochre' },
+                {
+                  label: 'Pending Opps & Projects',
+                  value: kpis.pendingOpportunities + kpis.pendingProjects,
+                  tab: 'opportunities' as const,
+                  accent: 'text-ochre',
+                },
+                { label: 'Pending Quotes', value: kpis.pendingQuotes, tab: 'quotes_audit' as const, accent: 'text-ochre' },
+              ].map((card) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  onClick={() => setActiveTab(card.tab)}
+                  className="rounded-xl border border-ink/12 bg-white/80 p-4 text-left transition hover:border-ochre/50 hover:shadow-sm"
+                >
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
+                    {card.label}
+                  </div>
+                  <div className={`mt-2 font-display text-3xl font-semibold ${card.accent}`}>
+                    {card.value}
+                  </div>
+                </button>
+              ))}
             </div>
-            <p className="mt-3 font-display text-3xl font-semibold text-ink">
-              {pendingApprovals.length}
-            </p>
-            <p className="mt-1 font-mono text-[11px] text-ochre">
-              {ui('Awaiting Compliance Review', 'Inasubiri Uhakiki wa Utawala', 'Esperando Revisión')}
-            </p>
-          </div>
 
-          <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                {ui('Total Platform Records', 'Jumla ya Rekodi za Mfumo', 'Total de Registros')}
-              </span>
-              <FolderSearch size={16} className="text-moss" />
-            </div>
-            <p className="mt-3 font-display text-3xl font-semibold text-ink">
-              {unifiedContent.length}
-            </p>
-            <p className="mt-1 font-mono text-[11px] text-stone">
-              {totalProjects} {ui('Projects', 'Miradi', 'Proyectos')} · {totalDocuments}{' '}
-              {ui('Docs', 'Hati', 'Docs')} · {totalQuotes} {ui('Quotes', 'Nukuu', 'Cotizaciones')}
-            </p>
-          </div>
+            {/* Live Recent Platform Activity Feed */}
+            <section className="rounded-2xl border border-ink/12 bg-white/80 p-6">
+              <div className="flex items-center justify-between border-b border-ink/10 pb-4">
+                <div>
+                  <h2 className="font-display text-xl font-semibold">
+                    Live Platform Activity Feed (`public.admin_audit_logs`)
+                  </h2>
+                  <p className="text-xs text-stone">
+                    Real-time immutable stream of sign-ups, uploads, user verifications, and admin decisions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('quotes_audit')}
+                  className="font-mono text-xs font-semibold text-ochre hover:underline"
+                >
+                  Open Full Audit Ledger →
+                </button>
+              </div>
 
-          <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                {ui('Registered Users & Signups', 'Watumiaji Waliosajiliwa', 'Usuarios Registrados')}
-              </span>
-              <Users size={16} className="text-ochre" />
-            </div>
-            <p className="mt-3 font-display text-3xl font-semibold text-ink">
-              {users.length}
-            </p>
-            <p className="mt-1 font-mono text-[11px] text-moss">
-              +{newSignups7d} {ui('this week', 'wiki hii', 'esta semana')} (+{newSignups24h}{' '}
-              {ui('today', 'leo', 'hoy')})
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-stone">
-                {ui('Active 24h Sessions', 'Watumiaji Hai (Saa 24)', 'Sesiones Activas 24h')}
-              </span>
-              <Activity size={16} className="text-moss" />
-            </div>
-            <p className="mt-3 font-display text-3xl font-semibold text-ink">
-              {activeActorIds.size}
-            </p>
-            <p className="mt-1 font-mono text-[11px] text-stone">
-              {adminUsersCount} {ui('Admins', 'Wasimamizi', 'Admins')} · {activeUsersCount}{' '}
-              {ui('Active Profiles', 'Wasifu Hai', 'Perfiles Activos')}
-            </p>
-          </div>
-        </section>
-
-        {/* Master Control Navigation Bar (Supports both SPA tabs & dedicated URL routes) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 pb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('approvals')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'approvals'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <ClipboardCheck size={14} />
-              {ui('Pending Approvals', 'Foleni ya Uhakiki', 'Aprobaciones Pendientes')} ({pendingApprovals.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('content')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'content'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <FolderSearch size={14} />
-              {ui('Content Explorer', 'Kichunguzi cha Maudhui', 'Explorador de Contenido')} ({unifiedContent.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('users')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'users'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <Users size={14} />
-              {ui('User Directory & Analytics', 'Orodha ya Watumiaji', 'Directorio de Usuarios')} ({users.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('minerals')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'minerals'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <Coins size={14} />
-              {ui('Mineral Prices', 'Bei za Madini', 'Precios de Minerales')} ({mineralBenchmarks.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('audit')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'audit'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <ShieldCheck size={14} />
-              {ui('Live Audit Trail', 'Ukaguzi wa Usalama', 'Auditoría en Vivo')} ({auditLogs.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('health')}
-              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-wider transition ${
-                activeTab === 'health'
-                  ? 'bg-ink text-paper'
-                  : 'bg-paper-2 text-ink hover:bg-ink/10'
-              }`}
-            >
-              <Database size={14} />
-              {ui('System Health', 'Afya ya Mfumo', 'Estado del Sistema')}
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-stone">
-            <span>Direct Routes:</span>
-            <Link to="/admin/approvals" className="text-ochre hover:underline">
-              /admin/approvals
-            </Link>
-            <span>·</span>
-            <Link to="/admin/content" className="text-ochre hover:underline">
-              /admin/content
-            </Link>
-            <span>·</span>
-            <Link to="/admin/users" className="text-ochre hover:underline">
-              /admin/users
-            </Link>
-            <span>·</span>
-            <Link to="/markets" className="text-ochre hover:underline">
-              /markets
-            </Link>
-          </div>
-        </div>
-
-        {/* ===================================================================
-            MODULE 1: MODERATION & PENDING APPROVAL WORKFLOW (/admin/approvals)
-           =================================================================== */}
-        {activeTab === 'approvals' && (
-          <section
-            aria-label="Moderation and Pending Approval Queue"
-            className="space-y-4 rounded-xl border border-ink/10 bg-paper-2/50 p-6"
-          >
-            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="font-display text-xl font-semibold text-ink">
-                  Moderation &amp; Pending Approval Queue (`/admin/approvals`)
-                </h2>
-                <p className="text-xs text-stone">
-                  Queries all platform submissions where `status = &apos;pending&apos;` / `&apos;flagged&apos;` or `approved = false`. Approving publishes the record and logs `ADMIN_APPROVE_SUBMISSION`.
+              {auditLogs.length === 0 ? (
+                <p className="py-10 text-center text-sm text-stone">
+                  No activity recorded yet. New sign-ups, submissions, and admin actions appear here immediately.
                 </p>
-              </div>
-              <span className="rounded bg-gold/20 px-3 py-1 font-mono text-xs font-semibold text-ochre">
-                {pendingApprovals.length} Item{pendingApprovals.length === 1 ? '' : 's'} Pending Review
-              </span>
-            </div>
-
-            {pendingApprovals.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-ink/15 p-12 text-center text-sm text-stone">
-                All pending submissions have been reviewed and cleared!
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {pendingApprovals.map((item) => (
-                  <article
-                    key={`${item.type}-${item.id}`}
-                    className="rounded-xl border border-ink/10 bg-paper p-5 shadow-2xs"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded bg-ink px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                          {item.type}
+              ) : (
+                <div className="mt-4 divide-y divide-ink/8">
+                  {auditLogs.slice(0, 12).map((log) => (
+                    <div key={log.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold ${auditBadgeClasses(log.action_type)}`}>
+                          {log.action_type}
                         </span>
-                        <span
-                          className={`rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${getContentStatusClasses(
-                            item.status
-                          )}`}
-                        >
-                          {item.status} (`approved = false`)
-                        </span>
-                        <span className="font-mono text-xs text-stone">
-                          {item.reference_code}
+                        <span className="font-semibold text-ink">{log.target_summary || log.target_table}</span>
+                        <span className="font-mono text-[11px] text-stone">
+                          by {log.actor_email || log.actor_id?.slice(0, 8) || 'system'}
                         </span>
                       </div>
-
-                      {item.value_usd !== null && (
-                        <div className="font-mono text-sm font-semibold text-ochre">
-                          {ui('Valuation', 'Thamani', 'Valoración')} ({currency}):{' '}
-                          <PriceDisplay amountInUSD={item.value_usd} />
-                        </div>
-                      )}
-                    </div>
-
-                    <h3 className="mt-2 font-display text-xl font-semibold text-ink">
-                      {convertText(item.title)}
-                    </h3>
-                    <p className="mt-0.5 font-mono text-xs text-ochre">
-                      {convertText(item.category_badge)}
-                    </p>
-
-                    <p className="mt-3 whitespace-pre-wrap rounded-lg border border-ink/10 bg-paper-2/60 p-4 text-xs leading-relaxed text-ink-3">
-                      {convertText(item.details)}
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-stone">
-                      <span>
-                        Submitted by: <strong className="text-ink">{item.owner_name}</strong> ({item.owner_email})
+                      <span className="font-mono text-[11px] text-stone">
+                        {new Date(log.created_at).toLocaleString()}
                       </span>
-                      <span>Owner UUID: {item.user_id}</span>
-                      <span>Submitted: {new Date(item.created_at).toLocaleString()}</span>
                     </div>
-
-                    <div className="mt-4 flex flex-col gap-3 border-t border-ink/10 pt-4 sm:flex-row sm:items-center">
-                      <input
-                        type="text"
-                        value={moderationNotes[item.id] ?? ''}
-                        onChange={(e) =>
-                          setModerationNotes((prev) => ({
-                            ...prev,
-                            [item.id]: e.target.value,
-                          }))
-                        }
-                        placeholder="Enter compliance verification notes or rejection reason..."
-                        className="field flex-1 !py-2 !text-xs"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleModerate(item, 'APPROVE')}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-moss px-4 py-2 text-xs font-semibold uppercase tracking-wider text-paper transition hover:opacity-90"
-                        >
-                          <CheckCircle2 size={14} />
-                          Approve &amp; Publish
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleModerate(item, 'REJECT')}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-danger transition hover:bg-danger/20"
-                        >
-                          <XCircle size={14} />
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* ===================================================================
-            MODULE 2: COMPLETE CONTENT & UPLOADED DETAILS EXPLORER (/admin/content)
-           =================================================================== */}
-        {activeTab === 'content' && (
-          <section
-            aria-label="Complete Content and Uploaded Details Explorer"
-            className="space-y-5 rounded-xl border border-ink/10 bg-paper-2/50 p-6"
-          >
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="font-display text-xl font-semibold text-ink">
-                  Complete Content &amp; Uploaded Details Explorer (`/admin/content`)
-                </h2>
-                <p className="text-xs text-stone">
-                  Aggregates all user-uploaded documents (`user_documents`), listed mineral projects (`user_projects`), and service quote requests (`quote_requests`).
-                </p>
-              </div>
-              <span className="font-mono text-xs text-stone">
-                Showing {filteredContent.length} of {unifiedContent.length} total records
-              </span>
-            </div>
-
-            {/* Real-Time Filtering & Search Controls */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="relative">
-                <Search
-                  size={14}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone"
-                />
-                <input
-                  type="search"
-                  value={contentSearch}
-                  onChange={(e) => {
-                    setContentSearch(e.target.value)
-                    setContentPage(1)
-                  }}
-                  placeholder="Search title, owner, UUID, licence..."
-                  className="field !py-2 !pl-8 !text-xs"
-                />
-              </div>
-
-              <select
-                value={contentTypeFilter}
-                onChange={(e) => {
-                  setContentTypeFilter(e.target.value as 'ALL' | UnifiedContentType)
-                  setContentPage(1)
-                }}
-                aria-label="Filter by Content Type"
-                className="field !py-2 !text-xs"
-              >
-                <option value="ALL">All Content Types ({unifiedContent.length})</option>
-                <option value="PROJECT">Listed Mining Projects ({totalProjects})</option>
-                <option value="OPPORTUNITY">
-                  Guided Opportunities ({unifiedContent.filter((c) => c.type === 'OPPORTUNITY').length})
-                </option>
-                <option value="SERVICE">
-                  Technical Services ({unifiedContent.filter((c) => c.type === 'SERVICE').length})
-                </option>
-                <option value="DOCUMENT">Uploaded Vault Documents ({totalDocuments})</option>
-                <option value="QUOTE">Service Quote Requests ({totalQuotes})</option>
-              </select>
-
-              <select
-                value={contentStatusFilter}
-                onChange={(e) => {
-                  setContentStatusFilter(e.target.value as 'ALL' | ContentStatus)
-                  setContentPage(1)
-                }}
-                aria-label="Filter by Status"
-                className="field !py-2 !text-xs"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="active">Active / Verified</option>
-                <option value="pending">Pending Review</option>
-                <option value="flagged">Flagged</option>
-                <option value="archived">Archived</option>
-                <option value="rejected">Rejected</option>
-              </select>
-
-              <input
-                type="date"
-                value={contentDateFilter}
-                onChange={(e) => {
-                  setContentDateFilter(e.target.value)
-                  setContentPage(1)
-                }}
-                aria-label="Filter by Creation Date"
-                className="field !py-2 !text-xs"
-              />
-            </div>
-
-            {/* Global Content Data Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-ink/10 font-mono text-[11px] uppercase text-stone">
-                  <tr>
-                    <th className="px-3 py-3">Type &amp; Ref</th>
-                    <th className="px-3 py-3">Title &amp; Category</th>
-                    <th className="px-3 py-3">Owner / User ID</th>
-                    <th className="px-3 py-3">Value ({currency})</th>
-                    <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Created</th>
-                    <th className="px-3 py-3 text-right">Direct Management Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {paginatedContent.map((item) => (
-                    <tr key={`${item.type}-${item.id}`} className="hover:bg-paper/60">
-                      <td className="whitespace-nowrap px-3 py-3">
-                        <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-semibold text-gold">
-                          {item.type}
-                        </span>
-                        <div className="mt-1 font-mono text-[10px] text-stone">
-                          {item.reference_code}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="font-semibold text-ink">{convertText(item.title)}</div>
-                        <div className="font-mono text-[10px] text-ochre">
-                          {convertText(item.category_badge)}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="font-medium text-ink">{item.owner_email}</div>
-                        <div className="font-mono text-[10px] text-stone">
-                          {item.user_id}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
-                        {item.value_usd !== null ? (
-                          <PriceDisplay amountInUSD={item.value_usd} />
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3">
-                        <span
-                          className={`inline-flex rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${getContentStatusClasses(
-                            item.status
-                          )}`}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px] text-stone">
-                        {new Date(item.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-right">
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setViewingContent(item)}
-                            className="inline-flex items-center gap-1 rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:border-ochre"
-                          >
-                            <Eye size={12} />
-                            View
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingContent(item)
-                              setEditTitle(item.title)
-                              setEditDetails(item.details)
-                              setEditStatus(item.status)
-                            }}
-                            className="inline-flex items-center gap-1 rounded border border-gold/50 bg-gold/15 px-2.5 py-1 text-[11px] font-semibold text-ochre hover:bg-gold/25"
-                          >
-                            <Edit3 size={12} />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handlePurgeContent(item)}
-                            className="inline-flex items-center gap-1 rounded border border-danger/30 bg-danger/10 px-2.5 py-1 text-[11px] font-semibold text-danger hover:bg-danger/20"
-                          >
-                            <Trash2 size={12} />
-                            Purge
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            <div className="flex items-center justify-between border-t border-ink/10 pt-3 text-xs text-stone">
-              <span>
-                Page {contentPage} of {totalContentPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={contentPage <= 1}
-                  onClick={() => setContentPage((p) => Math.max(1, p - 1))}
-                  className="rounded border border-ink/20 px-3 py-1 font-semibold text-ink disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={contentPage >= totalContentPages}
-                  onClick={() =>
-                    setContentPage((p) => Math.min(totalContentPages, p + 1))
-                  }
-                  className="rounded border border-ink/20 px-3 py-1 font-semibold text-ink disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </section>
+                </div>
+              )}
+            </section>
+          </div>
         )}
 
-        {/* ===================================================================
-            MODULE 3: COMPREHENSIVE USER DIRECTORY & ANALYTICS (/admin/users)
-           =================================================================== */}
+        {/* TAB 2: USER MANAGEMENT & IDENTITY VERIFICATION */}
         {activeTab === 'users' && (
-          <section
-            aria-label="Comprehensive User Directory and Database Analytics"
-            className="space-y-6 rounded-xl border border-ink/10 bg-paper-2/50 p-6"
-          >
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
               <div>
-                <h2 className="font-display text-xl font-semibold text-ink">
-                  Comprehensive User Directory &amp; Database Analytics (`/admin/users`)
+                <h2 className="font-display text-2xl font-semibold">
+                  User Directory &amp; Identity Verification ({filteredUsers.length} / {users.length})
                 </h2>
                 <p className="text-xs text-stone">
-                  Displays sanitized `public.user_profiles` records. Raw password hashes and private auth tokens are strictly excluded by security policy.
-                </p>
-              </div>
-
-              <input
-                type="search"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Search users by email, name, role, or UUID..."
-                className="field !w-72 !py-2 !text-xs"
-              />
-            </div>
-
-            {/* User Analytics Sub-Cards */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="rounded-lg border border-ink/10 bg-paper p-4">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                  Total Registered Users
-                </span>
-                <p className="mt-1 font-display text-2xl font-semibold text-ink">
-                  {users.length}
-                </p>
-                <p className="font-mono text-[11px] text-stone">
-                  {adminUsersCount} Admin · {users.length - adminUsersCount} Standard
-                </p>
-              </div>
-              <div className="rounded-lg border border-ink/10 bg-paper p-4">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                  Active Users (24h Window)
-                </span>
-                <p className="mt-1 font-display text-2xl font-semibold text-moss">
-                  {activeActorIds.size}
-                </p>
-                <p className="font-mono text-[11px] text-stone">
-                  Authenticated JWT Sessions
-                </p>
-              </div>
-              <div className="rounded-lg border border-ink/10 bg-paper p-4">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                  New User Signups (Daily / Weekly)
-                </span>
-                <p className="mt-1 font-display text-2xl font-semibold text-ochre">
-                  +{newSignups24h} Today / +{newSignups7d} (7d)
-                </p>
-                <p className="font-mono text-[11px] text-stone">
-                  Automated Profile Trigger Active
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-ink/10 font-mono text-[11px] uppercase text-stone">
-                  <tr>
-                    <th className="px-3 py-3">User Profile &amp; UUID</th>
-                    <th className="px-3 py-3">Role</th>
-                    <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Security Metadata Flags</th>
-                    <th className="px-3 py-3">Created</th>
-                    <th className="px-3 py-3 text-right">Administrative Controls</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {filteredUsers.map((u) => {
-                    const isSelf = u.id === session.user.id
-                    return (
-                      <tr key={u.id} className="hover:bg-paper/60">
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2 font-semibold text-ink">
-                            <span>{u.full_name || u.email}</span>
-                            {isSelf && (
-                              <span className="rounded bg-ochre/20 px-1.5 py-0.5 font-mono text-[10px] text-ochre">
-                                YOU
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-stone">{u.email}</div>
-                          <div className="font-mono text-[10px] text-stone">
-                            {u.id}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`inline-flex rounded px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${
-                              u.role === 'admin'
-                                ? 'bg-ochre/20 text-ochre'
-                                : 'bg-ink/10 text-ink'
-                            }`}
-                          >
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`inline-flex rounded px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${
-                              u.status === 'suspended'
-                                ? 'bg-danger/15 text-danger'
-                                : 'bg-moss-light text-moss'
-                            }`}
-                          >
-                            {u.status || 'active'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            <span className="rounded bg-moss-light px-1.5 py-0.5 font-mono text-[10px] text-moss">
-                              RLS_SCOPED
-                            </span>
-                            <span className="rounded bg-ink/10 px-1.5 py-0.5 font-mono text-[10px] text-stone">
-                              HASH_REDACTED
-                            </span>
-                            <span className="rounded bg-gold/20 px-1.5 py-0.5 font-mono text-[10px] text-ochre">
-                              FX:{u.preferred_currency || 'USD'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px] text-stone">
-                          {new Date(u.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right">
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setInspectingUser(u)}
-                              className="inline-flex items-center gap-1 rounded border border-ink/25 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:border-ochre"
-                            >
-                              <UserCheck size={12} />
-                              Inspect Activity
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSelf}
-                              onClick={() =>
-                                void handleUpdateUser(u.id, {
-                                  role: u.role === 'admin' ? 'user' : 'admin',
-                                })
-                              }
-                              className="rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink transition hover:border-ochre disabled:opacity-40"
-                            >
-                              {u.role === 'admin' ? 'Demote' : 'Promote'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSelf}
-                              onClick={() =>
-                                void handleUpdateUser(u.id, {
-                                  status:
-                                    u.status === 'suspended'
-                                      ? 'active'
-                                      : 'suspended',
-                                })
-                              }
-                              className="rounded border border-gold/50 bg-gold/15 px-2.5 py-1 text-[11px] font-semibold text-ochre transition hover:bg-gold/25 disabled:opacity-40"
-                            >
-                              {u.status === 'suspended' ? 'Activate' : 'Suspend'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSelf}
-                              onClick={() => void handleDeleteUser(u)}
-                              className="inline-flex items-center gap-1 rounded border border-danger/30 bg-danger/10 px-2.5 py-1 text-[11px] font-semibold text-danger transition hover:bg-danger/20 disabled:opacity-40"
-                            >
-                              <Trash2 size={12} />
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* ===================================================================
-            MODULE 4: LIVE AUDIT TRAIL TABLE
-           =================================================================== */}
-        {activeTab === 'audit' && (
-          <section className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="font-display text-xl font-semibold text-ink">
-                  Live Security Audit Trail (`public.audit_logs`)
-                </h2>
-                <p className="text-xs text-stone">
-                  Asynchronous activity feed capturing authentication, content moderation, and administrative actions.
+                  Verify member identities (`public.profiles.verification_status`), manage roles, or suspend accounts.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search
-                    size={14}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone"
-                  />
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
                   <input
                     type="search"
-                    value={logSearch}
-                    onChange={(e) => {
-                      setLogSearch(e.target.value)
-                      setCurrentPage(1)
-                    }}
-                    placeholder="Filter by actor, IP, metadata..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Search email, name, company..."
                     className="field !py-1.5 !pl-8 !text-xs"
                   />
                 </div>
-
                 <select
-                  value={actionFilter}
-                  onChange={(e) => {
-                    setActionFilter(e.target.value)
-                    setCurrentPage(1)
-                  }}
-                  aria-label="Filter by audit action"
+                  value={userVerifFilter}
+                  onChange={(e) => setUserVerifFilter(e.target.value as typeof userVerifFilter)}
                   className="field !w-auto !py-1.5 !text-xs"
                 >
-                  <option value="ALL">All Actions ({auditLogs.length})</option>
-                  {distinctActions.map((act) => (
-                    <option key={act} value={act}>
-                      {act}
-                    </option>
-                  ))}
+                  <option value="ALL">All Users</option>
+                  <option value="pending">Pending Verification</option>
+                  <option value="verified">Verified</option>
+                  <option value="unverified">Unverified</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="suspended">Suspended</option>
                 </select>
               </div>
             </div>
 
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-ink/10 font-mono text-[11px] uppercase text-stone">
-                  <tr>
-                    <th className="px-3 py-3">Timestamp</th>
-                    <th className="px-3 py-3">Action Badge</th>
-                    <th className="px-3 py-3">User / Actor</th>
-                    <th className="px-3 py-3">IP &amp; User-Agent</th>
-                    <th className="px-3 py-3">Contextual Metadata (JSONB)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {paginatedLogs.map((log) => {
-                    const actorEmail = log.user_id
-                      ? userEmailMap.get(log.user_id)
-                      : null
-                    return (
-                      <tr key={log.id} className="hover:bg-paper/60">
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px] text-stone">
-                          {new Date(log.created_at).toLocaleString()}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3">
-                          <span
-                            className={`inline-flex rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${getActionBadgeClasses(
-                              log.action
-                            )}`}
-                          >
-                            {log.action}
+            <div className="space-y-3">
+              {filteredUsers.map((u) => {
+                const isSelf = u.id === session.user.id
+                const verifStatus = u.verification_status || 'unverified'
+                return (
+                  <div
+                    key={u.id}
+                    className="rounded-xl border border-ink/12 bg-paper/60 p-4 transition hover:border-ochre/40"
+                  >
+                    <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-display text-base font-semibold text-ink">
+                            {u.full_name || 'Unnamed Member'}
                           </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="font-semibold text-ink">
-                            {actorEmail || 'Unauthenticated / System'}
-                          </div>
-                          <div className="font-mono text-[10px] text-stone">
-                            {log.user_id || 'N/A'}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="font-mono text-[11px] text-ink">
-                            {log.ip_address || '0.0.0.0'}
-                          </div>
-                          <div
-                            title={log.user_agent || ''}
-                            className="max-w-[180px] truncate text-[10px] text-stone"
-                          >
-                            {log.user_agent || 'Unknown'}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-[11px]">
-                          <pre className="max-w-xs overflow-x-auto rounded bg-paper px-2 py-1 text-[10px] text-ink">
-                            {JSON.stringify(log.metadata ?? {})}
-                          </pre>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t border-ink/10 pt-3 text-xs text-stone">
-              <span>
-                Showing {paginatedLogs.length} of {filteredLogs.length} events (Page{' '}
-                {currentPage} of {totalLogPages})
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="rounded border border-ink/20 px-3 py-1 font-semibold text-ink disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={currentPage >= totalLogPages}
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalLogPages, p + 1))
-                  }
-                  className="rounded border border-ink/20 px-3 py-1 font-semibold text-ink disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ===================================================================
-            MODULE 4B: INDICATIVE MINERAL PRICES BENCHMARK CONSOLE (`mineral_prices`)
-           =================================================================== */}
-        {activeTab === 'minerals' && (
-          <section className="rounded-xl border border-ink/10 bg-paper-2/60 p-6">
-            <div className="flex flex-col justify-between gap-4 border-b border-ink/10 pb-5 lg:flex-row lg:items-center">
-              <div>
-                <h2 className="font-display text-xl font-semibold text-ink">
-                  Indicative Mineral Prices Benchmark Console (`public.mineral_prices`)
-                </h2>
-                <p className="text-xs text-stone">
-                  Update World Market (`world_market_price_usd`), Local Mineral Market (`local_market_price_usd`), and Buying Centre (`buying_centre_price_usd`) benchmarks. Changes propagate in real time to `/markets` and the Homepage board.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={handleSyncMineralBenchmarks}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/15 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-ochre transition hover:bg-ochre/25"
-                >
-                  <RefreshCw size={13} />
-                  Sync LME / LBMA Tickers
-                </button>
-                <Link
-                  to="/markets"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-ink px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-ink/90"
-                >
-                  <Eye size={13} />
-                  Open Public `/markets` Board
-                </Link>
-              </div>
-            </div>
-
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-ink/10 font-mono text-[11px] uppercase tracking-wider text-stone">
-                    <th className="px-3 py-3">
-                      {ui('Commodity & Symbol', 'Madini na Alama', 'Mineral y Símbolo')}
-                    </th>
-                    <th className="px-3 py-3">
-                      {ui(`World Spot (${currency})`, `Soko la Dunia (${currency})`, `Spot Mundial (${currency})`)}
-                    </th>
-                    <th className="px-3 py-3">
-                      {ui(`Local Metric (${currency})`, `Kipimo cha Ndani (${currency})`, `Métrico Local (${currency})`)}
-                    </th>
-                    <th className="px-3 py-3">
-                      {ui(`Mineral Market (${currency})`, `Soko la Madini (${currency})`, `Mercado Mineral (${currency})`)}
-                    </th>
-                    <th className="px-3 py-3">
-                      {ui(`Buying Centre (${currency})`, `Kituo cha Ununuzi (${currency})`, `Centro de Compra (${currency})`)}
-                    </th>
-                    <th className="px-3 py-3">{ui('24h Trend', 'Mwelekeo 24h', 'Tendencia 24h')}</th>
-                    <th className="px-3 py-3 text-right">
-                      {ui('Admin Action', 'Hatua ya Utawala', 'Acción Admin')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {mineralBenchmarks.map((m) => {
-                    const localMetric = formatStatutoryPrice(
-                      m.world_market_price_usd,
-                      m.unit,
-                      'metric_local',
-                    )
-                    return (
-                      <tr key={m.id} className="hover:bg-paper/60">
-                        <td className="px-3 py-3">
-                          <div className="font-semibold text-ink">
-                            {m.mineral_name}{' '}
-                            <span className="rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-gold">
-                              {m.symbol}
+                          {verifStatus === 'verified' && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-moss/40 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">
+                              <BadgeCheck size={11} /> Verified
                             </span>
-                          </div>
-                          <div className="font-mono text-[10px] text-stone">
-                            {m.category} · {m.unit} · {m.purity_note}
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ink">
-                          <PriceDisplay
-                            amountInUSD={m.world_market_price_usd}
-                            suffix={m.unit.replace('USD', '')}
-                          />
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-ochre">
-                          {localMetric.formatted}
-                          <span className="text-[10px] font-normal text-stone">
-                            {localMetric.unitSuffix}
+                          )}
+                          {verifStatus !== 'verified' && (
+                            <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${verificationBadgeClasses(verifStatus)}`}>
+                              {verifStatus}
+                            </span>
+                          )}
+                          <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${u.role === 'admin' ? 'border-gold/60 bg-ink text-gold' : 'border-ink/15 bg-white text-stone'}`}>
+                            {u.role}
                           </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-moss">
-                          <PriceDisplay amountInUSD={m.local_market_price_usd} />
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-ink">
-                          <PriceDisplay amountInUSD={m.buying_centre_price_usd} />
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
-                          <span
-                            className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold ${
-                              m.trend_percentage >= 0
-                                ? 'border-moss/40 bg-moss-light text-moss'
-                                : 'border-danger/40 bg-danger/15 text-danger'
-                            }`}
-                          >
-                            {m.trend_percentage >= 0 ? '+' : ''}
-                            {m.trend_percentage.toFixed(2)}%
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right">
+                          {u.status === 'suspended' && (
+                            <span className="rounded-full border border-danger/40 bg-danger/15 px-2 py-0.5 font-mono text-[10px] uppercase text-danger">
+                              Suspended
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-mono text-xs text-stone">
+                          {u.email}
+                          {u.company_name ? ` · ${u.company_name}` : ''}
+                          {u.phone ? ` · ${u.phone}` : ''}
+                          {` · Joined ${new Date(u.created_at).toLocaleDateString()}`}
+                        </p>
+                        {u.verification_notes && (
+                          <p className="text-xs text-ink/75">
+                            Verification Note: <span className="italic">{u.verification_notes}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={verifNotesMap[u.id] ?? ''}
+                          onChange={(e) =>
+                            setVerifNotesMap((prev) => ({ ...prev, [u.id]: e.target.value }))
+                          }
+                          placeholder="Verification note..."
+                          className="field !w-44 !py-1 !text-xs"
+                        />
+                        {verifStatus !== 'verified' ? (
                           <button
                             type="button"
-                            onClick={() => handleOpenEditMineral(m)}
-                            className="inline-flex items-center gap-1 rounded border border-ink/20 bg-paper px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-ink hover:text-paper"
+                            disabled={busyId === u.id}
+                            onClick={() => void handleVerifyUser(u, 'VERIFY')}
+                            className="inline-flex items-center gap-1 rounded-md bg-moss px-2.5 py-1.5 text-xs font-semibold text-paper hover:opacity-90 disabled:opacity-50"
                           >
-                            <Edit3 size={12} />
-                            {ui('Edit Benchmark', 'Hariri Bei', 'Editar Precio')}
+                            <UserCheck size={13} /> Verify
                           </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busyId === u.id}
+                            onClick={() => void handleVerifyUser(u, 'REVOKE')}
+                            className="inline-flex items-center gap-1 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone hover:text-ink disabled:opacity-50"
+                          >
+                            <ShieldOff size={13} /> Revoke
+                          </button>
+                        )}
+                        {verifStatus === 'pending' && (
+                          <button
+                            type="button"
+                            disabled={busyId === u.id}
+                            onClick={() => void handleVerifyUser(u, 'REJECT')}
+                            className="inline-flex items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/20 disabled:opacity-50"
+                          >
+                            <XCircle size={13} /> Reject
+                          </button>
+                        )}
+                        {!isSelf && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busyId === u.id}
+                              onClick={() =>
+                                void handleUpdateUser(u.id, {
+                                  role: u.role === 'admin' ? 'user' : 'admin',
+                                })
+                              }
+                              className="rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-ochre"
+                            >
+                              {u.role === 'admin' ? 'Demote' : 'Make Admin'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === u.id}
+                              onClick={() =>
+                                void handleUpdateUser(u.id, {
+                                  status: u.status === 'suspended' ? 'active' : 'suspended',
+                                })
+                              }
+                              className="rounded-md border border-ochre/40 bg-ochre/10 px-2.5 py-1.5 text-xs font-semibold text-ochre hover:bg-ochre/20"
+                            >
+                              {u.status === 'suspended' ? 'Activate' : 'Suspend'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === u.id}
+                              onClick={() => void handleDeleteUser(u)}
+                              className="rounded-md border border-danger/30 p-1.5 text-danger hover:bg-danger/10"
+                              title="Delete profile"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}
 
-        {/* ===================================================================
-            MODULE 5: SYSTEM HEALTH & ACTIVITY MONITOR
-           =================================================================== */}
-        {activeTab === 'health' && (
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-ink/10 bg-paper-2/60 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-ink">
-                  Database &amp; RLS Probe
-                </h3>
-                <CheckCircle2 size={18} className="text-moss" />
-              </div>
-              <p className="mt-1 text-xs text-stone">
-                PostgreSQL Row-Level Security (`FORCE ROW LEVEL SECURITY`) active on `user_profiles`, `audit_logs`, `user_documents`, `user_projects`, and `quote_requests`.
-              </p>
-              <div className="mt-4 flex items-baseline justify-between font-mono">
-                <span className="text-2xl font-bold text-moss">
-                  {dbLatencyMs} ms
-                </span>
-                <span className="rounded bg-moss-light px-2 py-0.5 text-[11px] text-moss">
-                  HEALTHY
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-ink/10 bg-paper-2/60 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-ink">
-                  Edge Middleware &amp; RBAC
-                </h3>
-                <ShieldCheck size={18} className="text-ochre" />
-              </div>
-              <p className="mt-1 text-xs text-stone">
-                Intercepts `/admin/*` and `/api/admin/*` requests, verifying JWT signature and `user.role === &apos;admin&apos;` before route execution.
-              </p>
-              <div className="mt-4 flex items-baseline justify-between font-mono">
-                <span className="text-sm font-semibold text-ink">
-                  403 Guard Active
-                </span>
-                <span className="rounded bg-ochre/20 px-2 py-0.5 text-[11px] text-ochre">
-                  ENFORCED
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-ink/10 bg-paper-2/60 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-ink">
-                  Multi-Currency FX Engine
-                </h3>
-                <AlertTriangle size={18} className="text-ochre" />
-              </div>
-              <p className="mt-1 text-xs text-stone">
-                Live mid-market USD conversion via `/api/exchange-rates` with 1-hour server TTL caching and `Intl.NumberFormat` regional rules.
-              </p>
-              <div className="mt-4 flex items-baseline justify-between font-mono">
-                <span className="text-sm font-semibold text-ink">
-                  1 USD = {rateForSelected} {currency}
-                </span>
-                <span className="rounded bg-moss-light px-2 py-0.5 text-[11px] text-moss">
-                  LIVE FX
-                </span>
-              </div>
-            </div>
-          </section>
-        )}
-      </div>
-
-      {/* Modal 1: View Content Details */}
-      {viewingContent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-xl rounded-xl border border-ink/15 bg-paper p-6 text-ink shadow-2xl">
-            <div className="flex items-center justify-between">
-              <span className="rounded bg-ink px-2.5 py-0.5 font-mono text-xs text-gold">
-                {viewingContent.type} · {viewingContent.reference_code}
-              </span>
-              <button
-                type="button"
-                onClick={() => setViewingContent(null)}
-                className="text-stone hover:text-ink"
-              >
-                ✕
-              </button>
-            </div>
-            <h3 className="mt-3 font-display text-2xl font-semibold">
-              {convertText(viewingContent.title)}
-            </h3>
-            <p className="mt-1 font-mono text-xs text-ochre">
-              {convertText(viewingContent.category_badge)}
-            </p>
-            <p className="mt-4 whitespace-pre-wrap rounded-lg border border-ink/10 bg-paper-2 p-4 text-xs leading-relaxed">
-              {convertText(viewingContent.details)}
-            </p>
-            <div className="mt-4 space-y-1 font-mono text-xs text-stone">
+        {/* TAB 3: SERVICES MODERATION & VISIBILITY CONTROL */}
+        {activeTab === 'services' && (
+          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
               <div>
-                Owner: <strong className="text-ink">{viewingContent.owner_name}</strong> ({viewingContent.owner_email})
-              </div>
-              <div>Owner UUID: {viewingContent.user_id}</div>
-              <div>Status: {viewingContent.status.toUpperCase()}</div>
-              {viewingContent.moderation_notes && (
-                <div>Moderation Notes: {viewingContent.moderation_notes}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 2: Edit Content Metadata */}
-      {editingContent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-xs">
-          <form
-            onSubmit={(e) => void handleSaveContentEdit(e)}
-            className="w-full max-w-xl space-y-4 rounded-xl border border-ink/15 bg-paper p-6 text-ink shadow-2xl"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-xl font-semibold">
-                Edit Metadata — {editingContent.reference_code}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingContent(null)}
-                className="text-stone hover:text-ink"
-              >
-                ✕
-              </button>
-            </div>
-            <div>
-              <label className="label">Record Title</label>
-              <input
-                type="text"
-                required
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="field"
-              />
-            </div>
-            <div>
-              <label className="label">Governance Status</label>
-              <select
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value as ContentStatus)}
-                className="field"
-              >
-                <option value="active">Active / Verified</option>
-                <option value="pending">Pending Review</option>
-                <option value="flagged">Flagged</option>
-                <option value="archived">Archived</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Content / Summary Payload</label>
-              <textarea
-                rows={4}
-                required
-                value={editDetails}
-                onChange={(e) => setEditDetails(e.target.value)}
-                className="field"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingContent(null)}
-                className="btn-ghost !py-2 !px-4 text-xs"
-              >
-                Cancel
-              </button>
-              <button type="submit" className="btn-primary !py-2 !px-4 text-xs">
-                Save Metadata &amp; Log Audit
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Modal 3: Inspect User Activity & Uploaded Records */}
-      {inspectingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-xs">
-          <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-ink/15 bg-paper p-6 text-ink shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-mono text-[11px] uppercase text-ochre">
-                  User Activity &amp; Security Dossier
-                </span>
-                <h3 className="font-display text-2xl font-semibold">
-                  {inspectingUser.full_name || inspectingUser.email}
-                </h3>
-                <p className="font-mono text-xs text-stone">
-                  {inspectingUser.email} · UUID: {inspectingUser.id}
+                <h2 className="font-display text-2xl font-semibold">
+                  Services Moderation &amp; Public Visibility ({filteredServices.length})
+                </h2>
+                <p className="text-xs text-stone">
+                  Only <strong>Approved</strong> services appear publicly on `/services`. Toggle Featured or Hide anytime.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setInspectingUser(null)}
-                className="text-stone hover:text-ink"
-              >
-                ✕
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="search"
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
+                  placeholder="Search services..."
+                  className="field !w-56 !py-1.5 !text-xs"
+                />
+                <select
+                  value={serviceStatusFilter}
+                  onChange={(e) => setServiceStatusFilter(e.target.value as typeof serviceStatusFilter)}
+                  className="field !w-auto !py-1.5 !text-xs"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </div>
             </div>
 
-            <div className="mt-5 space-y-4">
-              <div>
-                <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-stone">
-                  Uploaded Records &amp; Submissions ({inspectedUserContent.length})
-                </h4>
-                {inspectedUserContent.length === 0 ? (
-                  <p className="mt-2 text-xs text-stone">
-                    No uploaded records for this user.
-                  </p>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    {inspectedUserContent.map((c) => (
-                      <div
-                        key={`${c.type}-${c.id}`}
-                        className="flex items-center justify-between rounded-lg border border-ink/10 bg-paper-2 p-3 text-xs"
-                      >
+            {filteredServices.length === 0 ? (
+              <p className="py-12 text-center text-sm text-stone">No service submissions match this filter.</p>
+            ) : (
+              <div className="space-y-4">
+                {filteredServices.map((s) => {
+                  const owner = profileMap.get(s.user_id)
+                  const norm = normalizeDisplayStatus(s.status, s.approved)
+                  return (
+                    <article key={s.id} className="rounded-xl border border-ink/12 bg-paper/60 p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <span className="font-mono text-[10px] font-semibold text-ochre">
-                            [{c.type}] {c.reference_code}
-                          </span>
-                          <div className="font-semibold text-ink">{c.title}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${statusPillClasses(norm)}`}>
+                              {norm}
+                            </span>
+                            {s.is_featured && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-gold/25 px-2 py-0.5 font-mono text-[10px] font-semibold text-ochre">
+                                <Star size={11} className="fill-gold text-gold" /> Featured
+                              </span>
+                            )}
+                            <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
+                              {s.reference_code}
+                            </span>
+                            <span className="font-mono text-[11px] text-ochre">{s.expertise_area}</span>
+                          </div>
+                          <h3 className="mt-2 font-display text-lg font-semibold">{s.service_name}</h3>
+                          <p className="text-xs text-stone">
+                            Provider: <strong>{s.provider_organization}</strong> · Rate: {s.rate_or_pricing_model} (<PriceDisplay amountInUSD={s.estimated_rate_usd} />)
+                          </p>
+                          <p className="mt-1 font-mono text-[11px] text-stone">
+                            Submitted by: {owner?.full_name || 'Member'} ({owner?.email || s.user_id.slice(0, 8)})
+                            {owner?.verification_status === 'verified' && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 text-moss font-semibold">
+                                · ✓ Verified User
+                              </span>
+                            )}
+                          </p>
+                          <p className="mt-2 text-xs text-ink/80">{s.scope_description}</p>
+                          {(s.rejection_reason || s.moderation_notes) && (
+                            <p className="mt-2 rounded border border-ink/10 bg-white px-2.5 py-1 text-[11px] text-stone">
+                              Note: {s.rejection_reason || s.moderation_notes}
+                            </p>
+                          )}
                         </div>
-                        <span
-                          className={`rounded border px-2 py-0.5 font-mono text-[10px] uppercase ${getContentStatusClasses(
-                            c.status
-                          )}`}
-                        >
-                          {c.status}
-                        </span>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={reasonMap[s.id] ?? ''}
+                            onChange={(e) => setReasonMap((p) => ({ ...p, [s.id]: e.target.value }))}
+                            placeholder="Reason / note..."
+                            className="field !w-44 !py-1 !text-xs"
+                          />
+                          <button
+                            type="button"
+                            disabled={busyId === s.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: s.id,
+                                type: 'SERVICE',
+                                action: 'APPROVE',
+                                title: s.service_name,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md bg-moss px-3 py-1.5 text-xs font-semibold text-paper hover:opacity-90"
+                          >
+                            <CheckCircle2 size={13} /> Approve &amp; Publish
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === s.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: s.id,
+                                type: 'SERVICE',
+                                action: 'REJECT',
+                                title: s.service_name,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger/20"
+                          >
+                            <XCircle size={13} /> Reject
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === s.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: s.id,
+                                type: 'SERVICE',
+                                action: 'HIDE',
+                                title: s.service_name,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone hover:text-ink"
+                          >
+                            <EyeOff size={13} /> Hide
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === s.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: s.id,
+                                type: 'SERVICE',
+                                action: 'TOGGLE_FEATURED',
+                                title: s.service_name,
+                                currentFeatured: Boolean(s.is_featured),
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-gold/60 bg-gold/15 px-2.5 py-1.5 text-xs font-semibold text-ochre"
+                          >
+                            <Star size={13} /> {s.is_featured ? 'Unfeature' : 'Feature'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === s.id}
+                            onClick={() => void handlePurge(s.id, 'SERVICE', s.service_name)}
+                            className="rounded-md border border-danger/30 p-1.5 text-danger hover:bg-danger/10"
+                            title="Delete service"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB 4: OPPORTUNITIES & PROJECTS TRACKING */}
+        {activeTab === 'opportunities' && (
+          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+              <div>
+                <h2 className="font-display text-2xl font-semibold">
+                  Opportunities &amp; Project Listings ({combinedOppAndProjects.length})
+                </h2>
+                <p className="text-xs text-stone">
+                  Approve to publish immediately on `/opportunities`, reject with reason, or hide from public view.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="search"
+                  value={oppSearch}
+                  onChange={(e) => setOppSearch(e.target.value)}
+                  placeholder="Search title, mineral, submitter..."
+                  className="field !w-52 !py-1.5 !text-xs"
+                />
+                <select
+                  value={oppKindFilter}
+                  onChange={(e) => setOppKindFilter(e.target.value as typeof oppKindFilter)}
+                  className="field !w-auto !py-1.5 !text-xs"
+                >
+                  <option value="ALL">Opportunities &amp; Projects</option>
+                  <option value="OPPORTUNITY">Opportunities Only</option>
+                  <option value="PROJECT">Projects Only</option>
+                </select>
+                <select
+                  value={oppStatusFilter}
+                  onChange={(e) => setOppStatusFilter(e.target.value as typeof oppStatusFilter)}
+                  className="field !w-auto !py-1.5 !text-xs"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </div>
+            </div>
+
+            {combinedOppAndProjects.length === 0 ? (
+              <p className="py-12 text-center text-sm text-stone">No opportunities or projects match this filter.</p>
+            ) : (
+              <div className="space-y-4">
+                {combinedOppAndProjects.map((item) => {
+                  const owner = profileMap.get(item.user_id)
+                  return (
+                    <article key={`${item.kind}-${item.id}`} className="rounded-xl border border-ink/12 bg-paper/60 p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="max-w-2xl">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-semibold text-gold">
+                              {item.kind}
+                            </span>
+                            <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${statusPillClasses(item.status)}`}>
+                              {item.status}
+                            </span>
+                            {item.isFeatured && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-gold/25 px-2 py-0.5 font-mono text-[10px] font-semibold text-ochre">
+                                <Star size={11} className="fill-gold text-gold" /> Featured
+                              </span>
+                            )}
+                            <span className="font-mono text-[11px] text-stone">
+                              {new Date(item.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <h3 className="mt-2 font-display text-lg font-semibold">{item.title}</h3>
+                          <p className="text-xs text-ochre">{item.subtitle}</p>
+                          <p className="mt-1 font-mono text-[11px] text-stone">
+                            Submitted by: {owner?.full_name || 'Member'} ({owner?.email || item.user_id.slice(0, 8)})
+                            {owner?.verification_status === 'verified' && (
+                              <span className="ml-1.5 font-semibold text-moss">· ✓ Verified User</span>
+                            )}
+                            {item.valueUsd > 0 && (
+                              <> · Est. Value: <PriceDisplay amountInUSD={item.valueUsd} /></>
+                            )}
+                          </p>
+                          <p className="mt-2 text-xs text-ink/80">{item.description}</p>
+                          {item.rejectionReason && (
+                            <p className="mt-2 rounded border border-ink/10 bg-white px-2.5 py-1 text-[11px] text-stone">
+                              Note: {item.rejectionReason}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={reasonMap[item.id] ?? ''}
+                            onChange={(e) => setReasonMap((p) => ({ ...p, [item.id]: e.target.value }))}
+                            placeholder="Rejection reason / note..."
+                            className="field !w-44 !py-1 !text-xs"
+                          />
+                          <button
+                            type="button"
+                            disabled={busyId === item.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: item.id,
+                                type: item.kind,
+                                action: 'APPROVE',
+                                title: item.title,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md bg-moss px-3 py-1.5 text-xs font-semibold text-paper hover:opacity-90"
+                          >
+                            <CheckCircle2 size={13} /> Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === item.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: item.id,
+                                type: item.kind,
+                                action: 'REJECT',
+                                title: item.title,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger/20"
+                          >
+                            <XCircle size={13} /> Reject
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === item.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: item.id,
+                                type: item.kind,
+                                action: 'HIDE',
+                                title: item.title,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone hover:text-ink"
+                          >
+                            <EyeOff size={13} /> Hide
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === item.id}
+                            onClick={() =>
+                              void handleModerate({
+                                id: item.id,
+                                type: item.kind,
+                                action: 'TOGGLE_FEATURED',
+                                title: item.title,
+                                currentFeatured: item.isFeatured,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-gold/60 bg-gold/15 px-2.5 py-1.5 text-xs font-semibold text-ochre"
+                          >
+                            <Star size={13} /> {item.isFeatured ? 'Unfeature' : 'Feature'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === item.id}
+                            onClick={() => void handlePurge(item.id, item.kind, item.title)}
+                            className="rounded-md border border-danger/30 p-1.5 text-danger hover:bg-danger/10"
+                            title="Delete item"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB 5: QUOTES & IMMUTABLE SYSTEM ACTIVITY AUDIT LOG */}
+        {activeTab === 'quotes_audit' && (
+          <div className="space-y-6">
+            {/* Quote Requests Moderation */}
+            <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-2xl font-semibold">
+                    Service Quote Requests ({filteredQuotes.length})
+                  </h2>
+                  <p className="text-xs text-stone">Review, approve, reject, or close member quote requests (`public.quotes`).</p>
+                </div>
+                <select
+                  value={quoteStatusFilter}
+                  onChange={(e) => setQuoteStatusFilter(e.target.value as typeof quoteStatusFilter)}
+                  className="field !w-auto !py-1.5 !text-xs"
+                >
+                  <option value="ALL">All Quotes</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved / Quoted</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="hidden">Closed</option>
+                </select>
               </div>
 
-              <div>
-                <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-stone">
-                  User Audit Trail Events ({inspectedUserLogs.length})
-                </h4>
-                {inspectedUserLogs.length === 0 ? (
-                  <p className="mt-2 text-xs text-stone">
-                    No recorded audit events for this user.
+              {filteredQuotes.length === 0 ? (
+                <p className="py-8 text-center text-sm text-stone">No quote requests found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredQuotes.map((q) => {
+                    const owner = profileMap.get(q.user_id)
+                    const norm = normalizeDisplayStatus(q.status, q.approved)
+                    return (
+                      <div key={q.id} className="rounded-xl border border-ink/12 bg-paper/60 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${statusPillClasses(norm)}`}>
+                                {norm}
+                              </span>
+                              <span className="font-mono text-xs font-semibold text-ochre">
+                                Provider: {q.provider_name}
+                              </span>
+                              <span className="font-mono text-[11px] text-stone">
+                                Budget: <PriceDisplay amountInUSD={q.estimated_budget_usd} />
+                              </span>
+                            </div>
+                            <h3 className="mt-1.5 font-display text-base font-semibold">{q.service_requested}</h3>
+                            <p className="font-mono text-[11px] text-stone">
+                              Requested by {owner?.full_name || 'Member'} ({owner?.email || q.user_id.slice(0, 8)}) · {new Date(q.created_at).toLocaleString()}
+                            </p>
+                            <p className="mt-1.5 text-xs text-ink/80">{q.scope_notes}</p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              type="text"
+                              value={reasonMap[q.id] ?? ''}
+                              onChange={(e) => setReasonMap((p) => ({ ...p, [q.id]: e.target.value }))}
+                              placeholder="Note / reason..."
+                              className="field !w-40 !py-1 !text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={busyId === q.id}
+                              onClick={() =>
+                                void handleModerate({
+                                  id: q.id,
+                                  type: 'QUOTE',
+                                  action: 'APPROVE',
+                                  title: q.service_requested,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-md bg-moss px-2.5 py-1.5 text-xs font-semibold text-paper"
+                            >
+                              <CheckCircle2 size={13} /> Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === q.id}
+                              onClick={() =>
+                                void handleModerate({
+                                  id: q.id,
+                                  type: 'QUOTE',
+                                  action: 'REJECT',
+                                  title: q.service_requested,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs font-semibold text-danger"
+                            >
+                              <XCircle size={13} /> Reject
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === q.id}
+                              onClick={() => void handlePurge(q.id, 'QUOTE', q.service_requested)}
+                              className="rounded-md border border-danger/30 p-1.5 text-danger hover:bg-danger/10"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Immutable Activity & Governance Audit Trail */}
+            <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-2xl font-semibold">
+                    Immutable System Activity &amp; Audit Trail ({filteredAuditLogs.length})
+                  </h2>
+                  <p className="text-xs text-stone">
+                    Append-only PostgreSQL security ledger (`public.admin_audit_logs`). UPDATE and DELETE are blocked for all roles.
                   </p>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    {inspectedUserLogs.map((l) => (
-                      <div
-                        key={l.id}
-                        className="rounded-lg border border-ink/10 bg-paper-2 p-3 text-xs"
-                      >
-                        <div className="flex items-center justify-between font-mono text-[11px]">
-                          <span className="font-semibold text-ochre">
-                            {l.action}
-                          </span>
-                          <span className="text-stone">
-                            {new Date(l.created_at).toLocaleString()}
-                          </span>
-                        </div>
-                        <pre className="mt-1 overflow-x-auto text-[10px] text-ink">
-                          {JSON.stringify(l.metadata)}
-                        </pre>
-                      </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="search"
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    placeholder="Filter actor, action, target..."
+                    className="field !w-52 !py-1.5 !text-xs"
+                  />
+                  <select
+                    value={auditActionFilter}
+                    onChange={(e) => setAuditActionFilter(e.target.value)}
+                    className="field !w-auto !py-1.5 !text-xs"
+                  >
+                    <option value="ALL">All Actions</option>
+                    {distinctAuditActions.map((a) => (
+                      <option key={a} value={a}>{a}</option>
                     ))}
-                  </div>
-                )}
+                  </select>
+                </div>
               </div>
-            </div>
+
+              <div className="overflow-x-auto rounded-xl border border-ink/10">
+                <table className="w-full min-w-[720px] text-left text-xs">
+                  <thead className="border-b border-ink/10 bg-paper-2 font-mono text-[10px] uppercase tracking-wider text-stone">
+                    <tr>
+                      <th className="px-4 py-3">Timestamp</th>
+                      <th className="px-4 py-3">Action</th>
+                      <th className="px-4 py-3">Actor</th>
+                      <th className="px-4 py-3">Table</th>
+                      <th className="px-4 py-3">Target Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink/8">
+                    {filteredAuditLogs.slice(0, 100).map((log) => (
+                      <tr key={log.id} className="hover:bg-paper/50">
+                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[11px] text-stone">
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${auditBadgeClasses(log.action_type)}`}>
+                            {log.action_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-[11px]">
+                          {log.actor_email || log.actor_id?.slice(0, 8) || 'system'}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-[11px] text-stone">
+                          {log.target_table}
+                        </td>
+                        <td className="px-4 py-2.5 font-medium text-ink">
+                          {log.target_summary || log.target_id || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Modal 4: Edit Mineral Benchmark Rates (`mineral_prices`) */}
-      {editingMineral && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-xs">
-          <form
-            onSubmit={(e) => void handleSaveMineralEdit(e)}
-            className="w-full max-w-xl space-y-4 rounded-xl border border-ink/15 bg-paper p-6 text-ink shadow-2xl"
-          >
-            <div className="flex items-center justify-between">
+        {/* TAB 6: MINERAL PRICES BENCHMARK GOVERNANCE */}
+        {activeTab === 'minerals' && (
+          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
-                  {editingMineral.symbol} · {editingMineral.unit}
-                </span>
-                <h3 className="mt-1 font-display text-xl font-semibold">
-                  Update Benchmark — {editingMineral.mineral_name}
-                </h3>
+                <h2 className="font-display text-2xl font-semibold">
+                  Indicative Mineral Price Benchmarks (`public.mineral_prices`)
+                </h2>
+                <p className="text-xs text-stone">Manage LBMA/LME &amp; Tume ya Madini statutory pricing tiers.</p>
               </div>
               <button
                 type="button"
-                onClick={() => setEditingMineral(null)}
-                className="text-stone hover:text-ink"
+                onClick={() => void handleSyncMinerals()}
+                className="btn-primary !py-2 !px-4 text-xs"
               >
-                ✕
+                <RefreshCw size={13} /> Sync Live Market Benchmarks
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="label">
-                  World Market Price ({editingMineral.unit})
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={editWorldPrice}
-                  onChange={(e) => setEditWorldPrice(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
-              <div>
-                <label className="label">
-                  Mineral Market Price ({editingMineral.unit})
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={editLocalPrice}
-                  onChange={(e) => setEditLocalPrice(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
-              <div>
-                <label className="label">
-                  Buying Centre Price ({editingMineral.unit})
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={editBuyingPrice}
-                  onChange={(e) => setEditBuyingPrice(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
-              <div>
-                <label className="label">24h Trend Change (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={editTrendPct}
-                  onChange={(e) => setEditTrendPct(e.target.value)}
-                  className="field font-mono"
-                />
-              </div>
-            </div>
+            {editingMineral && (
+              <form onSubmit={handleSaveMineralEdit} className="grid gap-3 rounded-xl border border-ochre/40 bg-paper p-4 sm:grid-cols-5">
+                <div className="sm:col-span-5 font-display text-base font-semibold">
+                  Editing {editingMineral.mineral_name} ({editingMineral.symbol})
+                </div>
+                <input value={editWorldPrice} onChange={(e) => setEditWorldPrice(e.target.value)} placeholder="World USD" className="field !text-xs" />
+                <input value={editLocalPrice} onChange={(e) => setEditLocalPrice(e.target.value)} placeholder="Local USD" className="field !text-xs" />
+                <input value={editBuyingPrice} onChange={(e) => setEditBuyingPrice(e.target.value)} placeholder="Buying USD" className="field !text-xs" />
+                <input value={editTrendPct} onChange={(e) => setEditTrendPct(e.target.value)} placeholder="Trend %" className="field !text-xs" />
+                <div className="flex gap-2">
+                  <button type="submit" className="btn-primary !py-1.5 !px-3 text-xs">Save</button>
+                  <button type="button" onClick={() => setEditingMineral(null)} className="rounded border border-ink/20 px-3 text-xs">Cancel</button>
+                </div>
+              </form>
+            )}
 
-            <div className="rounded-lg border border-ink/10 bg-paper-2 p-3 font-mono text-[11px] text-stone">
-              Preview in active currency ({currency}):{' '}
-              <strong className="text-ink">
-                {formatExactUsd(Number(editWorldPrice) || 0)}
-              </strong>{' '}
-              World ·{' '}
-              <strong className="text-moss">
-                {formatExactUsd(Number(editLocalPrice) || 0)}
-              </strong>{' '}
-              Mineral Market
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {mineralBenchmarks.map((m) => (
+                <div key={m.id} className="rounded-xl border border-ink/12 bg-paper/60 p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-display font-semibold">{m.mineral_name}</span>
+                    <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{m.symbol}</span>
+                  </div>
+                  <div className="mt-2 space-y-1 font-mono text-xs text-stone">
+                    <div>World: <strong className="text-ink">${m.world_market_price_usd}</strong></div>
+                    <div>Soko la Madini: <strong className="text-ink">${m.local_market_price_usd}</strong></div>
+                    <div>Buying Centre: <strong className="text-ink">${m.buying_centre_price_usd}</strong></div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMineral(m)
+                      setEditWorldPrice(String(m.world_market_price_usd))
+                      setEditLocalPrice(String(m.local_market_price_usd))
+                      setEditBuyingPrice(String(m.buying_centre_price_usd))
+                      setEditTrendPct(String(m.trend_percentage))
+                    }}
+                    className="mt-3 rounded border border-ink/20 bg-white px-2.5 py-1 text-xs font-semibold text-ochre hover:border-ochre"
+                  >
+                    Edit Rates
+                  </button>
+                </div>
+              ))}
             </div>
+          </section>
+        )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingMineral(null)}
-                className="btn-ghost !py-2 !px-4 text-xs"
-              >
-                Cancel
-              </button>
-              <button type="submit" className="btn-primary !py-2 !px-4 text-xs">
-                Save Benchmark &amp; Log Audit
-              </button>
-            </div>
-          </form>
+        {/* Quick Icon Legend / Footer */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone">
+          <span className="inline-flex items-center gap-1.5">
+            <Briefcase size={13} /> All moderation changes enforce PostgreSQL RLS &amp; write to `public.admin_audit_logs`.
+          </span>
+          <span className="inline-flex items-center gap-1.5 font-mono">
+            <FileText size={13} /> <Clock size={13} /> Live Supabase Sync Active
+          </span>
         </div>
-      )}
+      </div>
     </div>
   )
 }

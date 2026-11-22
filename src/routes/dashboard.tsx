@@ -18,6 +18,7 @@ import {
   deleteGroundedDocument,
   fetchGroundedUserData,
   signOutUser,
+  submitUserVerificationRequest,
   useAuthState,
 } from '../lib/supabaseAuth'
 import { useSavedProjects } from '../lib/saved'
@@ -70,9 +71,18 @@ export function DashboardRouteComponent() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // Member Identity Verification Request State (`public.profiles.verification_status`)
+  const [verifCompany, setVerifCompany] = useState('')
+  const [verifPhone, setVerifPhone] = useState('')
+  const [verifNotes, setVerifNotes] = useState('')
+  const [verifMessage, setVerifMessage] = useState<string | null>(null)
+  const [verifSubmitting, setVerifSubmitting] = useState(false)
+
   const loadData = useCallback(async () => {
     const data = await fetchGroundedUserData()
     setProfile(data.profile)
+    if (data.profile?.company_name) setVerifCompany(data.profile.company_name)
+    if (data.profile?.phone) setVerifPhone(data.profile.phone)
     setDocuments(data.documents)
     setListedProjects(data.listedProjects)
     setQuoteRequests(data.quoteRequests)
@@ -128,6 +138,28 @@ export function DashboardRouteComponent() {
   const handleSignOut = async () => {
     await signOutUser()
     navigate({ to: '/login' })
+  }
+
+  const handleSubmitVerification = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setVerifMessage(null)
+    setVerifSubmitting(true)
+    try {
+      const res = await submitUserVerificationRequest({
+        companyName: verifCompany,
+        phone: verifPhone,
+        notes: verifNotes,
+      })
+      if (res.error) {
+        setVerifMessage(res.error)
+      } else {
+        setVerifMessage('Verification request submitted! An administrator will review your profile shortly.')
+        setVerifNotes('')
+        await loadData()
+      }
+    } finally {
+      setVerifSubmitting(false)
+    }
   }
 
   return (
@@ -192,6 +224,88 @@ export function DashboardRouteComponent() {
             </button>
           </div>
         </div>
+
+        {/* Member Identity Verification Status & Request Panel */}
+        <section className="mt-6 rounded-xl border border-ink/12 bg-white/80 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  Identity &amp; Organization Verification
+                </h2>
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${
+                    profile?.verification_status === 'verified'
+                      ? 'border-moss/40 bg-moss-light text-moss'
+                      : profile?.verification_status === 'pending'
+                        ? 'border-gold/50 bg-gold/20 text-ochre'
+                        : profile?.verification_status === 'rejected'
+                          ? 'border-danger/40 bg-danger/15 text-danger'
+                          : 'border-ink/15 bg-paper text-stone'
+                  }`}
+                >
+                  {profile?.verification_status || 'unverified'}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-stone">
+                {profile?.verification_status === 'verified'
+                  ? 'Your account holds an official MineConnect Verified badge across all listings and quotes.'
+                  : profile?.verification_status === 'pending'
+                    ? 'Your verification submission is in the Admin Governance queue for review.'
+                    : 'Submit your organization details to earn a Verified badge on your services, projects, and opportunities.'}
+              </p>
+              {profile?.verification_notes && (
+                <p className="mt-1 text-xs italic text-ink/75">
+                  Admin Note: {profile.verification_notes}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {profile?.verification_status !== 'verified' && (
+            <form onSubmit={handleSubmitVerification} className="mt-4 grid gap-3 sm:grid-cols-4">
+              <input
+                type="text"
+                required
+                value={verifCompany}
+                onChange={(e) => setVerifCompany(e.target.value)}
+                placeholder="Company / Organization Name"
+                className="field !py-2 !text-xs"
+              />
+              <input
+                type="tel"
+                value={verifPhone}
+                onChange={(e) => setVerifPhone(e.target.value)}
+                placeholder="Phone (+255 ...)"
+                className="field !py-2 !text-xs"
+              />
+              <input
+                type="text"
+                value={verifNotes}
+                onChange={(e) => setVerifNotes(e.target.value)}
+                placeholder="BRELA / Mining Licence Ref (optional)"
+                className="field !py-2 !text-xs"
+              />
+              <button
+                type="submit"
+                disabled={verifSubmitting}
+                className="btn-primary !py-2 text-xs disabled:opacity-50"
+              >
+                {verifSubmitting
+                  ? 'Submitting...'
+                  : profile?.verification_status === 'pending'
+                    ? 'Update Request'
+                    : 'Request Verification'}
+              </button>
+            </form>
+          )}
+
+          {verifMessage && (
+            <p className="mt-3 rounded border border-moss/30 bg-moss-light px-3 py-2 text-xs font-medium text-moss">
+              {verifMessage}
+            </p>
+          )}
+        </section>
 
         {/* Active Subscription Tier & Real-Time Quota Governance Widget */}
         <div className="mt-6">

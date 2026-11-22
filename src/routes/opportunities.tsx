@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   LayoutGrid,
   List,
@@ -14,6 +14,7 @@ import {
   BarChart3,
   CheckCircle2,
   ArrowUpRight,
+  Star,
 } from 'lucide-react'
 import {
   INVESTMENT_BANDS,
@@ -27,11 +28,13 @@ import {
   type Project,
 } from '../data/fixtures'
 import { useSavedProjects } from '../lib/saved'
+import { fetchApprovedPublicOpportunities } from '../lib/supabaseAuth'
 import { useI18n } from '../i18n'
 import LiveMarketTicker from '../components/LiveMarketTicker'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
 import VerificationBadge from '../components/VerificationBadge'
+import type { UserListedProject, UserOpportunityRecord } from '../types/database'
 
 type Search = {
   q?: string
@@ -128,6 +131,15 @@ function Opportunities() {
   const { saved, isSaved, toggle } = useSavedProjects()
   const [drawer, setDrawer] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [liveOpportunities, setLiveOpportunities] = useState<UserOpportunityRecord[]>([])
+  const [liveProjects, setLiveProjects] = useState<UserListedProject[]>([])
+
+  useEffect(() => {
+    void fetchApprovedPublicOpportunities().then((res) => {
+      setLiveOpportunities(res.opportunities)
+      setLiveProjects(res.projects)
+    })
+  }, [])
 
   const results = useMemo(
     () => applyFilters(PROJECTS, search, saved, localizeProject, tv),
@@ -182,6 +194,59 @@ function Opportunities() {
       </section>
 
       <OpportunityStreamsHub activeType={search.type} onSelectType={(type) => set({ type: search.type === type ? undefined : type })} />
+
+      {(liveOpportunities.length > 0 || liveProjects.length > 0) && (
+        <section className="mx-auto max-w-7xl px-5 pt-10 lg:px-8">
+          <div className="rounded-2xl border border-moss/30 bg-white/90 p-6 shadow-xs">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-moss">
+                  <CheckCircle2 size={13} /> Live Admin-Approved Marketplace (`public.opportunities` &amp; `public.projects`)
+                </span>
+                <h2 className="mt-0.5 font-display text-2xl font-semibold text-ink">
+                  Verified Member Opportunities &amp; Projects ({liveOpportunities.length + liveProjects.length})
+                </h2>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {liveOpportunities.map((opp) => (
+                <article key={`opp-${opp.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{opp.category}</span>
+                    {opp.is_featured && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gold/25 px-2 py-0.5 font-mono text-[10px] font-semibold text-ochre">
+                        <Star size={10} className="fill-gold text-gold" /> Featured
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="mt-2 font-display text-lg font-semibold text-ink">{opp.title}</h3>
+                  <p className="text-xs text-ochre">{opp.organization} · {opp.location}</p>
+                  <p className="mt-2 line-clamp-3 text-xs text-stone">{opp.description}</p>
+                  <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 font-mono text-[11px] text-stone">
+                    <span>{opp.compensation_usd > 0 ? formatUsd(opp.compensation_usd) : 'Schedule'}</span>
+                    <span>Due {opp.deadline}</span>
+                  </div>
+                </article>
+              ))}
+              {liveProjects.map((proj) => (
+                <article key={`proj-${proj.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="rounded bg-moss px-2 py-0.5 font-mono text-[10px] text-paper">VERIFIED PROJECT</span>
+                    <span className="font-mono text-[10px] text-ochre">{proj.mineral} · {proj.region}</span>
+                  </div>
+                  <h3 className="mt-2 font-display text-lg font-semibold text-ink">{proj.title}</h3>
+                  <p className="text-xs text-stone">{proj.licence_type} ({proj.licence_reference})</p>
+                  <p className="mt-2 line-clamp-3 text-xs text-stone">{proj.summary}</p>
+                  <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 font-mono text-[11px] text-stone">
+                    <span className="font-semibold text-ink">{formatUsd(proj.investment_usd)}</span>
+                    <span>{new Date(proj.created_at).toLocaleDateString()}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="mx-auto grid max-w-7xl gap-10 px-5 py-10 lg:grid-cols-[260px_1fr] lg:px-8">
         <aside className="hidden lg:block">
