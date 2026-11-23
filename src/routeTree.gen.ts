@@ -25,6 +25,7 @@ import { Route as MapRouteImport } from './routes/map'
 import { Route as MarketsRouteImport } from './routes/markets'
 import { Route as OpportunitiesRouteImport } from './routes/opportunities'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ServicesRouteImport } from './routes/services'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as VaultRouteImport } from './routes/vault'
@@ -111,6 +112,11 @@ const PricingRoute = PricingRouteImport.update({
   path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ServicesRoute = ServicesRouteImport.update({
   id: '/services',
   path: '/services',
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
   '/vault': typeof VaultRoute
@@ -177,6 +184,7 @@ export interface FileRoutesByTo {
   '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
   '/vault': typeof VaultRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/markets': typeof MarketsRoute
   '/opportunities': typeof OpportunitiesRoute
   '/pricing': typeof PricingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/services': typeof ServicesRoute
   '/signup': typeof SignupRoute
   '/vault': typeof VaultRoute
@@ -226,6 +235,7 @@ export interface FileRouteTypes {
     | '/markets'
     | '/opportunities'
     | '/pricing'
+    | '/reset-password'
     | '/services'
     | '/signup'
     | '/vault'
@@ -249,6 +259,7 @@ export interface FileRouteTypes {
     | '/markets'
     | '/opportunities'
     | '/pricing'
+    | '/reset-password'
     | '/services'
     | '/signup'
     | '/vault'
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/markets'
     | '/opportunities'
     | '/pricing'
+    | '/reset-password'
     | '/services'
     | '/signup'
     | '/vault'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   MarketsRoute: typeof MarketsRoute
   OpportunitiesRoute: typeof OpportunitiesRoute
   PricingRoute: typeof PricingRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ServicesRoute: typeof ServicesRoute
   SignupRoute: typeof SignupRoute
   VaultRoute: typeof VaultRoute
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/services': {
       id: '/services'
       path: '/services'
@@ -472,6 +492,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketsRoute: MarketsRoute,
   OpportunitiesRoute: OpportunitiesRoute,
   PricingRoute: PricingRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ServicesRoute: ServicesRoute,
   SignupRoute: SignupRoute,
   VaultRoute: VaultRoute,

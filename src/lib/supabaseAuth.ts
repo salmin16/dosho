@@ -54,6 +54,7 @@ export interface AuthState {
   session: AuthSession | null
   profile: UserProfile | null
   isAdmin: boolean
+  passwordRecovery: boolean
   loading: boolean
   authLoading: boolean
   profileLoading: boolean
@@ -67,10 +68,30 @@ const PRIMARY_OWNER_EMAIL = 'salminmwenesi@gmail.com'
 let currentSession: AuthSession | null = null
 let currentProfile: UserProfile | null = null
 let currentProfileError: string | null = null
+let passwordRecoveryActive = false
 let authLoading = true
 let profileLoading = false
 let authBootstrapped = false
 let authInitPromise: Promise<AuthSession | null> | null = null
+
+function hasRecoveryIndicatorInUrl(): boolean {
+  if (typeof window === 'undefined') return false
+  const hash = window.location.hash || ''
+  const search = new URLSearchParams(window.location.search)
+  return (
+    hash.includes('type=recovery') ||
+    search.get('type') === 'recovery'
+  )
+}
+
+export function isPasswordRecoveryActive(): boolean {
+  return passwordRecoveryActive
+}
+
+export function clearPasswordRecoveryState(): void {
+  passwordRecoveryActive = false
+  notifyAuthListeners()
+}
 
 export function evaluateIsAdmin(
   profile: Partial<UserProfile> | null | undefined,
@@ -399,13 +420,22 @@ function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
 
   if (!authBootstrapped) {
     authBootstrapped = true
+    if (hasRecoveryIndicatorInUrl()) {
+      passwordRecoveryActive = true
+    }
     // CRITICAL: Defer Supabase DB queries outside onAuthStateChange callback with setTimeout(0)
     // to avoid @supabase/supabase-js v2 GoTrue internal auth lock deadlocks.
     supabase.auth.onAuthStateChange((event, nextSdkSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryActive = true
+        notifyAuthListeners()
+      }
+
       if (event === 'SIGNED_OUT' || !nextSdkSession?.user) {
         authLoading = false
         profileLoading = false
         currentProfileError = null
+        passwordRecoveryActive = false
         setCurrentSession(null, null)
         return
       }
@@ -471,6 +501,7 @@ export function useAuthState(): AuthState {
         (currentSession.user.role === 'admin' ||
           evaluateIsAdmin(currentProfile, currentSession.user.email))
     ),
+    passwordRecovery: passwordRecoveryActive,
     loading: authLoading || profileLoading,
     authLoading,
     profileLoading,
@@ -702,7 +733,232 @@ export async function signOutUser(): Promise<void> {
   if (supabase) {
     await supabase.auth.signOut()
   }
+  passwordRecoveryActive = false
   setCurrentSession(null)
+}
+
+/**
+ * Security-hardened password recovery email request.
+ * Always responds neutrally (anti-enumeration) so callers never reveal whether an email exists.
+ */
+export async function requestPasswordResetEmail(
+  rawEmail: string
+): Promise<{ ok: boolean; error?: string }> {
+  const email = rawEmail.trim().toLowerCase()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: 'Please enter a valid email address.' }
+  }
+
+  let supabase
+  try {
+    supabase = requireSupabaseClient()
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Supabase is not configured.',
+    }
+  }
+
+  const redirectTo =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/reset-password`
+      : undefined
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  })
+
+  if (error) {
+    // Log internally for operators, but never disclose account existence to the requester
+    console.warn('[MineConnect Auth] Password reset request warning:', error.message)
+    if (/rate limit|too many requests|for security purposes/i.test(error.message)) {
+      return {
+        ok: false,
+        error: 'Too many reset requests. Please wait a minute before trying again.',
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+function scrubSensitiveUrlTokens(): void {
+  if (typeof window === 'undefined') return
+  try {
+    const cleanUrl = window.location.pathname
+    if (window.location.search || window.location.hash) {
+      window.history.replaceState({}, document.title, cleanUrl)
+    }
+  } catch {
+    // ignore history errors
+  }
+}
+
+/**
+ * Validates and exchanges Supabase recovery credentials (PKCE `code`, `token_hash`,
+ * implicit hash `access_token`, or active `PASSWORD_RECOVERY` auth event).
+ * Scrubs sensitive tokens from the browser URL bar immediately after exchange.
+ */
+export async function verifyRecoverySessionFromUrl(): Promise<{
+  valid: boolean
+  reason?: string
+}> {
+  if (typeof window === 'undefined') {
+    return { valid: false, reason: 'Client browser context required.' }
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return { valid: false, reason: 'Authentication service is not configured.' }
+  }
+
+  const url = new URL(window.location.href)
+  const searchParams = url.searchParams
+  const hashParams = new URLSearchParams(
+    window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
+  )
+
+  const urlError =
+    searchParams.get('error_description') ||
+    hashParams.get('error_description') ||
+    searchParams.get('error') ||
+    hashParams.get('error')
+
+  if (urlError) {
+    scrubSensitiveUrlTokens()
+    passwordRecoveryActive = false
+    notifyAuthListeners()
+    return { valid: false, reason: 'This password reset link is invalid or has expired.' }
+  }
+
+  const code = searchParams.get('code')
+  const tokenHash = searchParams.get('token_hash')
+  const queryType = searchParams.get('type')
+  const hashType = hashParams.get('type')
+  const hashAccessToken = hashParams.get('access_token')
+  const hashRefreshToken = hashParams.get('refresh_token')
+
+  // 1. PKCE recovery code exchange (`?code=...`)
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+    scrubSensitiveUrlTokens()
+    if (error || !data.session) {
+      passwordRecoveryActive = false
+      notifyAuthListeners()
+      return { valid: false, reason: 'This password reset link is invalid or has expired.' }
+    }
+    passwordRecoveryActive = true
+    notifyAuthListeners()
+    return { valid: true }
+  }
+
+  // 2. Email OTP recovery token_hash verification (`?token_hash=...&type=recovery`)
+  if (tokenHash && queryType === 'recovery') {
+    const { data, error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'recovery',
+    })
+    scrubSensitiveUrlTokens()
+    if (error || !data.session) {
+      passwordRecoveryActive = false
+      notifyAuthListeners()
+      return { valid: false, reason: 'This password reset link is invalid or has expired.' }
+    }
+    passwordRecoveryActive = true
+    notifyAuthListeners()
+    return { valid: true }
+  }
+
+  // 3. Implicit hash recovery tokens (`#access_token=...&refresh_token=...&type=recovery`)
+  if (hashAccessToken && hashRefreshToken && hashType === 'recovery') {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: hashAccessToken,
+      refresh_token: hashRefreshToken,
+    })
+    scrubSensitiveUrlTokens()
+    if (error || !data.session) {
+      passwordRecoveryActive = false
+      notifyAuthListeners()
+      return { valid: false, reason: 'This password reset link is invalid or has expired.' }
+    }
+    passwordRecoveryActive = true
+    notifyAuthListeners()
+    return { valid: true }
+  }
+
+  // 4. Recovery already hydrated via Supabase `PASSWORD_RECOVERY` auth state event
+  await waitForAuthReady()
+  if (passwordRecoveryActive) {
+    const { data } = await supabase.auth.getSession()
+    scrubSensitiveUrlTokens()
+    if (data.session) {
+      return { valid: true }
+    }
+  }
+
+  scrubSensitiveUrlTokens()
+  return { valid: false, reason: 'This password reset link is invalid or has expired.' }
+}
+
+/**
+ * Updates the user's password during an active Supabase recovery session,
+ * scrubs URL tokens, and clears the temporary recovery session cleanly.
+ */
+export async function completePasswordRecoveryReset(params: {
+  newPassword: string
+  confirmPassword: string
+}): Promise<{ ok: boolean; error?: string }> {
+  const pwdError = validateStrongPassword(params.newPassword)
+  if (pwdError) {
+    return { ok: false, error: pwdError }
+  }
+  if (params.newPassword !== params.confirmPassword) {
+    return { ok: false, error: 'Passwords do not match.' }
+  }
+
+  let supabase
+  try {
+    supabase = requireSupabaseClient()
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Supabase is not configured.',
+    }
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  if (!sessionData.session) {
+    passwordRecoveryActive = false
+    notifyAuthListeners()
+    return {
+      ok: false,
+      error: 'This password reset link is invalid or has expired. Please request a new reset link.',
+    }
+  }
+
+  const { data, error } = await supabase.auth.updateUser({
+    password: params.newPassword,
+  })
+
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+
+  if (data.user) {
+    recordAuditActivity({
+      userId: data.user.id,
+      action: 'UPDATE_SETTINGS',
+      metadata: { event: 'password_reset_completed' },
+    })
+  }
+
+  // Session hygiene: clear sensitive URL tokens & sign out temporary recovery session
+  scrubSensitiveUrlTokens()
+  passwordRecoveryActive = false
+  await supabase.auth.signOut()
+  setCurrentSession(null, null)
+
+  return { ok: true }
 }
 
 /**

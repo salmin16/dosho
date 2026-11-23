@@ -46,7 +46,7 @@ function RootComponent() {
 
 function Chrome({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
-  const { session, loading: authLoading } = useAuthState()
+  const { session, passwordRecovery, loading: authLoading } = useAuthState()
   // Subscribe Chrome & child routes to active currency AND language changes so all formatting and translation calls re-render immediately
   const { currency, rateForSelected, lang } = useLocalization()
 
@@ -64,11 +64,37 @@ function Chrome({ children }: { children: React.ReactNode }) {
     normalizedPath === '/map' || normalizedPath.startsWith('/map/')
   const isAdminPage =
     normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')
+  const isResetPasswordPage =
+    normalizedPath === '/reset-password' ||
+    normalizedPath.startsWith('/reset-password/')
   const isAuthPage =
     normalizedPath === '/login' ||
     normalizedPath === '/signup' ||
+    isResetPasswordPage ||
     normalizedPath.startsWith('/login/') ||
     normalizedPath.startsWith('/signup/')
+
+  // Global Supabase PASSWORD_RECOVERY catch: if Supabase redirects to `/` or any page
+  // with a recovery hash/query or fires PASSWORD_RECOVERY, route straight to `/reset-password`
+  // while preserving any recovery query/hash tokens for immediate exchange & scrubbing.
+  useEffect(() => {
+    if (isResetPasswordPage) return
+    const hasRecoveryUrl =
+      typeof window !== 'undefined' &&
+      (window.location.hash.includes('type=recovery') ||
+        new URLSearchParams(window.location.search).get('type') === 'recovery')
+
+    if (hasRecoveryUrl) {
+      window.location.replace(
+        `/reset-password${window.location.search}${window.location.hash}`
+      )
+      return
+    }
+
+    if (passwordRecovery) {
+      navigate({ to: '/reset-password', replace: true })
+    }
+  }, [isResetPasswordPage, navigate, passwordRecovery])
 
   // Strict Mandatory Membership Guard:
   // Wait for Supabase Auth hydration before enforcing redirect so authenticated users never bounce.

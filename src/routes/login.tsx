@@ -1,35 +1,107 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
-import { signInWithEmail, useAuthState } from '../lib/supabaseAuth'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  Lock,
+  Mail,
+  ShieldCheck,
+} from 'lucide-react'
+import {
+  requestPasswordResetEmail,
+  signInWithEmail,
+  useAuthState,
+} from '../lib/supabaseAuth'
+
+const RESET_COOLDOWN_KEY = 'mineconnect_pwd_reset_cooldown_until'
+const RESET_COOLDOWN_SECONDS = 60
+
+function readRemainingCooldownSeconds(): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const raw = window.sessionStorage.getItem(RESET_COOLDOWN_KEY)
+    if (!raw) return 0
+    const until = Number(raw)
+    if (!Number.isFinite(until)) return 0
+    return Math.max(0, Math.ceil((until - Date.now()) / 1000))
+  } catch {
+    return 0
+  }
+}
+
+function writeCooldownWindow(seconds: number): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(
+      RESET_COOLDOWN_KEY,
+      String(Date.now() + seconds * 1000)
+    )
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { next?: string; reason?: string; mode?: 'signin' | 'forgot'; reset?: string } => ({
     next: typeof s.next === 'string' && s.next.startsWith('/') ? s.next : undefined,
     reason: typeof s.reason === 'string' ? s.reason : undefined,
+    mode: s.mode === 'forgot' ? 'forgot' : undefined,
+    reset: typeof s.reset === 'string' ? s.reset : undefined,
   }),
   component: LoginRouteComponent,
 })
 
 function LoginRouteComponent() {
   const navigate = useNavigate()
-  const { session, loading: authLoading, configured } = useAuthState()
-  const { next, reason } = Route.useSearch()
+  const { session, passwordRecovery, loading: authLoading, configured } = useAuthState()
+  const { next, reason, mode: initialMode, reset } = Route.useSearch()
+
+  const [mode, setMode] = useState<'signin' | 'forgot'>(
+    initialMode === 'forgot' ? 'forgot' : 'signin'
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
+  // Forgot-password state + 60s anti-abuse cooldown
+  const [resetSending, setResetSending] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(() =>
+    readRemainingCooldownSeconds()
+  )
+
+  const targetDestination =
+    next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
   useEffect(() => {
-    if (!authLoading && session) {
+    if (initialMode === 'forgot') {
+      setMode('forgot')
+    }
+  }, [initialMode])
+
+  useEffect(() => {
+    if (!authLoading && session && !passwordRecovery) {
       navigate({ to: targetDestination as '/dashboard' })
     }
-  }, [authLoading, session, navigate, targetDestination])
+  }, [authLoading, session, passwordRecovery, navigate, targetDestination])
 
-  // Instant Sign-In: button is immediately enabled as soon as email and password are entered.
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timer = window.setInterval(() => {
+      setCooldownSeconds(readRemainingCooldownSeconds())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownSeconds])
+
   const isSubmitDisabled = submitting || !email.trim() || !password
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,11 +123,59 @@ function LoginRouteComponent() {
       }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Unexpected sign-in error. Please try again.'
+        err instanceof Error
+          ? err.message
+          : 'Unexpected sign-in error. Please try again.'
       )
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError('Please enter a valid email address.')
+      return
+    }
+
+    if (cooldownSeconds > 0) {
+      return
+    }
+
+    setResetSending(true)
+    try {
+      const res = await requestPasswordResetEmail(trimmedEmail)
+      if (!res.ok && res.error) {
+        setError(res.error)
+        return
+      }
+      setResetSent(true)
+      writeCooldownWindow(RESET_COOLDOWN_SECONDS)
+      setCooldownSeconds(RESET_COOLDOWN_SECONDS)
+    } catch {
+      // Security-safe neutral state even on unexpected transient failures
+      setResetSent(true)
+      writeCooldownWindow(RESET_COOLDOWN_SECONDS)
+      setCooldownSeconds(RESET_COOLDOWN_SECONDS)
+    } finally {
+      setResetSending(false)
+    }
+  }
+
+  const switchToForgot = () => {
+    setError(null)
+    setResetSent(false)
+    setCooldownSeconds(readRemainingCooldownSeconds())
+    setMode('forgot')
+  }
+
+  const switchToSignIn = () => {
+    setError(null)
+    setMode('signin')
   }
 
   const reasonBanner =
@@ -72,123 +192,235 @@ function LoginRouteComponent() {
   return (
     <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
-        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-6 shadow-sm sm:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
-            <ShieldCheck size={14} />
-            RLS-Grounded Portal
-          </div>
-
-          <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
-            Sign in to MineConnect
-          </h1>
-          <p className="mt-1.5 text-sm text-stone">
-            Access your private investor &amp; operator due-diligence vault.
-          </p>
-
-          {reasonBanner && (
-            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-ochre/30 bg-ochre/10 p-3.5 text-xs font-medium text-ink">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-ochre" />
-              <span>{reasonBanner}</span>
-            </div>
-          )}
-
-          {!configured && (
-            <div
-              role="alert"
-              className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
-            >
-              Supabase environment variables (`VITE_SUPABASE_URL` &amp; `VITE_SUPABASE_ANON_KEY`) are not configured. Sign-in requires an active Supabase connection.
-            </div>
-          )}
-
-          {error && (
-            <div
-              role="alert"
-              className="mt-5 rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
-            >
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
-            <div>
-              <label htmlFor="login-email" className="label">
-                Work Email
-              </label>
-              <div className="relative">
-                <Mail
-                  size={16}
-                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
-                />
-                <input
-                  id="login-email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="operator@miningcorp.co.tz"
-                  className="field !pl-10"
-                />
+        <div className="rounded-xl border border-ink/12 bg-paper-2/75 p-6 shadow-sm sm:p-8">
+          {mode === 'signin' ? (
+            <>
+              <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
+                <ShieldCheck size={14} />
+                Member Portal
               </div>
-            </div>
 
-            <div>
-              <label htmlFor="login-password" className="label">
-                Password
-              </label>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
-                />
-                <input
-                  id="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="field !pl-10 !pr-12"
-                />
+              <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
+                Sign in to MineConnect
+              </h1>
+              <p className="mt-1.5 text-sm text-stone">
+                Access your private investor &amp; operator due-diligence vault.
+              </p>
+
+              {reset === 'success' && (
+                <div
+                  role="status"
+                  className="mt-4 flex items-start gap-2.5 rounded-lg border border-moss/35 bg-moss-light p-3.5 text-xs font-medium text-moss"
+                >
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    Your password has been updated successfully. Sign in below with your new password.
+                  </span>
+                </div>
+              )}
+
+              {reasonBanner && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-ochre/30 bg-ochre/10 p-3.5 text-xs font-medium text-ink">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0 text-ochre" />
+                  <span>{reasonBanner}</span>
+                </div>
+              )}
+
+              {!configured && (
+                <div
+                  role="alert"
+                  className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
+                >
+                  Supabase environment variables are not configured. Sign-in requires an active Supabase connection.
+                </div>
+              )}
+
+              {error && (
+                <div
+                  role="alert"
+                  className="mt-5 rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
+                >
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
+                <div>
+                  <label htmlFor="login-email" className="label">
+                    Work Email
+                  </label>
+                  <div className="relative">
+                    <Mail
+                      size={16}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
+                    />
+                    <input
+                      id="login-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="operator@miningcorp.co.tz"
+                      className="field !pl-10"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <label htmlFor="login-password" className="label !mb-0">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={switchToForgot}
+                      className="text-xs font-medium text-ochre transition hover:text-ochre-dark hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock
+                      size={16}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
+                    />
+                    <input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="field !pl-10 !pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
+                    >
+                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitDisabled}
+                  className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign In to Workspace'
+                  )}
+                </button>
+              </form>
+
+              <p className="mt-6 text-center text-sm text-stone">
+                New to MineConnect?{' '}
+                <Link
+                  to="/signup"
+                  search={{ next, reason } as unknown as undefined}
+                  className="font-semibold text-ochre hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
+                <KeyRound size={14} />
+                Account Recovery
+              </div>
+
+              <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
+                Reset Your Password
+              </h1>
+              <p className="mt-1.5 text-sm text-stone">
+                Enter your work email and we will send a single-use password recovery link.
+              </p>
+
+              {error && (
+                <div
+                  role="alert"
+                  className="mt-5 rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
+                >
+                  {error}
+                </div>
+              )}
+
+              {resetSent && (
+                <div
+                  role="status"
+                  className="mt-5 flex items-start gap-2.5 rounded-lg border border-moss/35 bg-moss-light p-4 text-xs leading-relaxed text-moss"
+                >
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    If an account exists for that email address, a secure password reset link has been sent. Please check your inbox and spam folder.
+                  </span>
+                </div>
+              )}
+
+              <form onSubmit={handleRequestReset} className="mt-6 space-y-5" noValidate>
+                <div>
+                  <label htmlFor="reset-email" className="label">
+                    Work Email
+                  </label>
+                  <div className="relative">
+                    <Mail
+                      size={16}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
+                    />
+                    <input
+                      id="reset-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="operator@miningcorp.co.tz"
+                      className="field !pl-10"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={resetSending || !email.trim() || cooldownSeconds > 0}
+                  className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {resetSending ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Sending reset link...
+                    </>
+                  ) : cooldownSeconds > 0 ? (
+                    `Resend available in ${cooldownSeconds}s`
+                  ) : (
+                    'Send Reset Link'
+                  )}
+                </button>
+              </form>
+
+              <div className="mt-6 border-t border-ink/10 pt-5 text-center">
                 <button
                   type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
+                  onClick={switchToSignIn}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 text-sm font-semibold text-ochre transition hover:text-ochre-dark hover:underline"
                 >
-                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                  <ArrowLeft size={15} />
+                  Back to Sign In
                 </button>
               </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitDisabled}
-              className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In to Workspace'
-              )}
-            </button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-stone">
-            New to MineConnect?{' '}
-            <Link
-              to="/signup"
-              search={{ next, reason } as unknown as undefined}
-              className="font-semibold text-ochre hover:underline"
-            >
-              Create an account
-            </Link>
-          </p>
+            </>
+          )}
         </div>
       </div>
     </div>
