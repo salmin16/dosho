@@ -32,7 +32,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.frankfurter.app https://open.er-api.com https://api.gold-api.com https://tile.openstreetmap.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.supabase.co https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://api.frankfurter.app https://open.er-api.com https://cdn.jsdelivr.net https://api.gold-api.com https://tile.openstreetmap.org; frame-src 'self' https://challenges.cloudflare.com; child-src 'self' https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         }
       ]
     }

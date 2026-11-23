@@ -22,11 +22,12 @@ interface CloudflareTurnstileRenderOptions {
   'refresh-expired'?: 'auto' | 'manual' | 'never';
   callback?: (token: string) => void;
   'expired-callback'?: () => void;
-  'error-callback'?: (errorCode?: string) => void;
+  'error-callback'?: (errorCode?: string | number) => void;
   'timeout-callback'?: () => void;
 }
 
 interface CloudflareTurnstileApi {
+  ready?: (callback: () => void) => void;
   render: (
     container: HTMLElement | string,
     options: CloudflareTurnstileRenderOptions,
@@ -43,9 +44,24 @@ declare global {
 
 let turnstileScriptPromise: Promise<CloudflareTurnstileApi> | null = null;
 
-function loadTurnstileApi(): Promise<CloudflareTurnstileApi> {
+function removeExistingTurnstileScripts(): void {
+  if (typeof document === 'undefined') return;
+  const scripts = document.querySelectorAll<HTMLScriptElement>(
+    'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
+  );
+  scripts.forEach((el) => el.remove());
+}
+
+function loadTurnstileApi(
+  options: { forceReload?: boolean } = {},
+): Promise<CloudflareTurnstileApi> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Browser environment required for Turnstile.'));
+  }
+
+  if (options.forceReload && !window.turnstile) {
+    removeExistingTurnstileScripts();
+    turnstileScriptPromise = null;
   }
 
   if (window.turnstile) {
@@ -57,13 +73,22 @@ function loadTurnstileApi(): Promise<CloudflareTurnstileApi> {
   }
 
   turnstileScriptPromise = new Promise<CloudflareTurnstileApi>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
-    );
+    let settled = false;
+    const finishResolve = (api: CloudflareTurnstileApi) => {
+      if (settled) return;
+      settled = true;
+      resolve(api);
+    };
+    const finishReject = (reason: Error) => {
+      if (settled) return;
+      settled = true;
+      turnstileScriptPromise = null;
+      reject(reason);
+    };
 
-    const waitForGlobal = () => {
+    const pollForApi = () => {
       if (window.turnstile) {
-        resolve(window.turnstile);
+        finishResolve(window.turnstile);
         return;
       }
       let attempts = 0;
@@ -71,44 +96,49 @@ function loadTurnstileApi(): Promise<CloudflareTurnstileApi> {
         attempts += 1;
         if (window.turnstile) {
           window.clearInterval(poll);
-          resolve(window.turnstile);
-        } else if (attempts >= 50) {
+          finishResolve(window.turnstile);
+        } else if (attempts >= 80) {
           window.clearInterval(poll);
-          turnstileScriptPromise = null;
-          reject(new Error('Cloudflare Turnstile failed to initialize.'));
+          removeExistingTurnstileScripts();
+          finishReject(new Error('TURNSTILE_INIT_TIMEOUT'));
         }
       }, 100);
     };
 
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
+    );
+
     if (existing) {
-      if (window.turnstile) {
-        resolve(window.turnstile);
+      if (existing.dataset.turnstileFailed === 'true') {
+        existing.remove();
       } else {
-        existing.addEventListener('load', waitForGlobal, { once: true });
+        existing.addEventListener('load', pollForApi, { once: true });
         existing.addEventListener(
           'error',
           () => {
-            turnstileScriptPromise = null;
-            reject(new Error('Failed to load Cloudflare Turnstile script.'));
+            existing.dataset.turnstileFailed = 'true';
+            existing.remove();
+            finishReject(new Error('TURNSTILE_SCRIPT_BLOCKED'));
           },
           { once: true },
         );
-        // Also poll in case the existing script already finished loading
-        waitForGlobal();
+        pollForApi();
+        return;
       }
-      return;
     }
 
     const script = document.createElement('script');
     script.src = TURNSTILE_SCRIPT_SRC;
     script.async = true;
-    script.defer = true;
-    script.addEventListener('load', waitForGlobal, { once: true });
+    script.dataset.mineconnectTurnstile = 'true';
+    script.addEventListener('load', pollForApi, { once: true });
     script.addEventListener(
       'error',
       () => {
-        turnstileScriptPromise = null;
-        reject(new Error('Failed to load Cloudflare Turnstile script.'));
+        script.dataset.turnstileFailed = 'true';
+        script.remove();
+        finishReject(new Error('TURNSTILE_SCRIPT_BLOCKED'));
       },
       { once: true },
     );
@@ -116,6 +146,46 @@ function loadTurnstileApi(): Promise<CloudflareTurnstileApi> {
   });
 
   return turnstileScriptPromise;
+}
+
+function describeTurnstileError(rawCode?: string | number): {
+  message: string;
+  codeHint?: string;
+} {
+  const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
+  if (!code) {
+    return {
+      message: 'Security verification could not complete. Please retry.',
+    };
+  }
+  if (code === '110200') {
+    return {
+      message: 'Security verification domain mismatch. Please contact support or retry.',
+      codeHint: 'Code 110200 (hostname not allowlisted)',
+    };
+  }
+  if (code === '110100' || code === '110110') {
+    return {
+      message: 'Security widget key configuration error. Please contact support.',
+      codeHint: `Code ${code} (sitekey configuration)`,
+    };
+  }
+  if (code === 'TURNSTILE_SCRIPT_BLOCKED') {
+    return {
+      message: 'Unable to load security verification. Please disable script blockers and retry.',
+      codeHint: 'Script blocked or network error',
+    };
+  }
+  if (code === 'TURNSTILE_INIT_TIMEOUT') {
+    return {
+      message: 'Security verification timed out while loading. Please retry.',
+      codeHint: 'Initialization timeout',
+    };
+  }
+  return {
+    message: 'Security verification could not complete. Please retry.',
+    codeHint: `Code ${code}`,
+  };
 }
 
 export interface TurnstileWidgetHandle {
@@ -137,17 +207,20 @@ export function getPublicTurnstileSiteKey(): string | null {
   // Static `import.meta.env.*` accesses so Vite statically inlines them in production builds
   const viteSiteKey =
     typeof import.meta !== 'undefined' && import.meta.env
-      ? import.meta.env.VITE_TURNSTILE_SITE_KEY ||
-        import.meta.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-      : undefined;
+      ? (import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim() ||
+        (import.meta.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '').trim()
+      : '';
 
   const procSiteKey =
     typeof process !== 'undefined' && process.env
-      ? process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ||
-        process.env.VITE_TURNSTILE_SITE_KEY
-      : undefined;
+      ? (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '').trim() ||
+        (process.env.VITE_TURNSTILE_SITE_KEY || '').trim()
+      : '';
 
-  const raw = String(viteSiteKey || procSiteKey || '').trim();
+  const raw = (viteSiteKey || procSiteKey)
+    .replace(/[\r\n]+/g, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
 
   if (!raw || raw.includes('your-turnstile-site-key')) {
     return null;
@@ -175,6 +248,7 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     const siteKey = getPublicTurnstileSiteKey();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const widgetIdRef = useRef<string | null>(null);
+    const forceReloadNextRef = useRef<boolean>(false);
 
     const onVerifyRef = useRef(onVerify);
     const onExpireRef = useRef(onExpire);
@@ -189,11 +263,14 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
       'loading' | 'ready' | 'verified' | 'expired' | 'error'
     >('loading');
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [diagnosticHint, setDiagnosticHint] = useState<string | null>(null);
     const [renderGeneration, setRenderGeneration] = useState(0);
 
     const resetWidget = useCallback(() => {
       onExpireRef.current?.();
       setStatusMessage(null);
+      setDiagnosticHint(null);
+
       if (widgetIdRef.current && window.turnstile) {
         try {
           setWidgetState('ready');
@@ -202,6 +279,11 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
         } catch {
           // Fall through to full re-render if widget instance was detached
         }
+      }
+
+      // If window.turnstile failed to load, clean stale script tag and reload fresh
+      if (!window.turnstile) {
+        forceReloadNextRef.current = true;
       }
       setWidgetState('loading');
       setRenderGeneration((g) => g + 1);
@@ -218,25 +300,27 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     useEffect(() => {
       if (!siteKey) return;
       let cancelled = false;
+      const shouldForceReload = forceReloadNextRef.current;
+      forceReloadNextRef.current = false;
 
       setWidgetState('loading');
       setStatusMessage(null);
+      setDiagnosticHint(null);
 
-      void loadTurnstileApi()
-        .then((api) => {
-          if (cancelled || !containerRef.current) return;
+      const mountWidget = (api: CloudflareTurnstileApi) => {
+        if (cancelled || !containerRef.current) return;
 
-          // Clear any prior widget instance before explicit render
-          if (widgetIdRef.current) {
-            try {
-              api.remove(widgetIdRef.current);
-            } catch {
-              // ignore cleanup errors
-            }
-            widgetIdRef.current = null;
+        if (widgetIdRef.current) {
+          try {
+            api.remove(widgetIdRef.current);
+          } catch {
+            // ignore cleanup errors
           }
-          containerRef.current.innerHTML = '';
+          widgetIdRef.current = null;
+        }
+        containerRef.current.innerHTML = '';
 
+        try {
           const id = api.render(containerRef.current, {
             sitekey: siteKey,
             theme,
@@ -248,43 +332,73 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
               if (cancelled) return;
               setWidgetState('verified');
               setStatusMessage(null);
+              setDiagnosticHint(null);
               onVerifyRef.current(token);
             },
             'expired-callback': () => {
               if (cancelled) return;
               setWidgetState('expired');
               setStatusMessage('Security check expired. Refreshing verification…');
+              setDiagnosticHint(null);
               onExpireRef.current?.();
             },
             'timeout-callback': () => {
               if (cancelled) return;
               setWidgetState('expired');
               setStatusMessage('Security verification timed out. Please retry.');
+              setDiagnosticHint('Challenge timeout');
               onExpireRef.current?.();
               onTimeoutRef.current?.();
             },
-            'error-callback': () => {
+            'error-callback': (errorCode?: string | number) => {
               if (cancelled) return;
-              const msg =
-                'Security verification could not complete. Please retry or check your network.';
+              const described = describeTurnstileError(errorCode);
+              console.warn('[MineConnect Turnstile] Widget error:', {
+                errorCode,
+                action,
+                hostname: typeof window !== 'undefined' ? window.location.hostname : '',
+              });
               setWidgetState('error');
-              setStatusMessage(msg);
+              setStatusMessage(described.message);
+              setDiagnosticHint(described.codeHint ?? null);
               onExpireRef.current?.();
-              onErrorRef.current?.(msg);
+              onErrorRef.current?.(described.message);
             },
           });
 
           widgetIdRef.current = id;
           setWidgetState((prev) => (prev === 'verified' ? 'verified' : 'ready'));
-        })
-        .catch(() => {
-          if (cancelled) return;
-          const msg =
-            'Unable to load security verification. Please disable script blockers and retry.';
+        } catch (renderErr) {
+          const errMsg =
+            renderErr instanceof Error ? renderErr.message : 'Render error';
+          console.warn('[MineConnect Turnstile] Render exception:', errMsg);
           setWidgetState('error');
-          setStatusMessage(msg);
+          setStatusMessage('Security verification failed to render. Please retry.');
+          setDiagnosticHint(errMsg);
           onExpireRef.current?.();
-          onErrorRef.current?.(msg);
+          onErrorRef.current?.('Security verification failed to render. Please retry.');
+        }
+      };
+
+      void loadTurnstileApi({ forceReload: shouldForceReload })
+        .then((api) => {
+          if (cancelled) return;
+          if (typeof api.ready === 'function') {
+            api.ready(() => mountWidget(api));
+          } else {
+            mountWidget(api);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          const code = err instanceof Error ? err.message : 'TURNSTILE_SCRIPT_BLOCKED';
+          const described = describeTurnstileError(code);
+          console.warn('[MineConnect Turnstile] Script load failed:', code);
+          setWidgetState('error');
+          setStatusMessage(described.message);
+          setDiagnosticHint(described.codeHint ?? null);
+          onExpireRef.current?.();
+          onErrorRef.current?.(described.message);
         });
 
       return () => {
@@ -321,14 +435,21 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
 
           {(widgetState === 'error' || widgetState === 'expired') && (
             <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 border-t border-ink/10 pt-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 text-danger">
-                <ShieldAlert size={13} className="shrink-0" />
-                <span>{statusMessage || 'Verification expired. Please retry.'}</span>
-              </span>
+              <div className="min-w-0 flex-1">
+                <span className="inline-flex items-start gap-1.5 text-danger">
+                  <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+                  <span>{statusMessage || 'Verification expired. Please retry.'}</span>
+                </span>
+                {diagnosticHint && (
+                  <span className="mt-0.5 block pl-5 font-mono text-[10px] text-stone">
+                    {diagnosticHint}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={resetWidget}
-                className="inline-flex items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
               >
                 <RefreshCw size={11} />
                 Retry
