@@ -147,12 +147,12 @@ function Pricing() {
               <article
                 key={p.id}
                 id={p.id}
-                className={`relative flex flex-col rounded-2xl border p-6 transition ${
+                className={`relative flex flex-col rounded-xl border p-6 transition duration-150 ${
                   hl
-                    ? 'border-ink bg-ink text-paper shadow-xl'
+                    ? 'border-ink bg-ink text-paper shadow-md'
                     : isSelectedForCheckout
-                      ? 'border-ochre bg-white shadow-lg ring-2 ring-ochre'
-                      : 'border-ink/10 bg-white/60 hover:border-ochre/40'
+                      ? 'border-ochre bg-white shadow-sm ring-1 ring-ochre'
+                      : 'border-ink/12 bg-white shadow-xs hover:border-ochre/45 hover:shadow-sm'
                 }`}
               >
                 {hl && (

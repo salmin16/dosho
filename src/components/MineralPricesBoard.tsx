@@ -13,7 +13,6 @@ import {
   Scale,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
 } from 'lucide-react'
 import {
   getStoredMineralPrices,
@@ -193,19 +192,15 @@ export default function MineralPricesBoard({
       className="grain relative isolate overflow-hidden border-b border-ink/15 bg-ink py-20 text-paper lg:py-24"
     >
       {/* Signature MineConnect Topographic Contour Texture */}
-      <div className="contours absolute inset-0 -z-10" aria-hidden="true" />
-      <div
-        className="pointer-events-none absolute -top-36 left-1/2 -z-10 h-80 w-[56rem] -translate-x-1/2 rounded-full bg-ochre/15 blur-3xl"
-        aria-hidden="true"
-      />
+      <div className="contours absolute inset-0 -z-10 opacity-75" aria-hidden="true" />
 
       <div className="relative mx-auto max-w-7xl space-y-8 px-5 lg:px-8">
         {/* Top Header & Regulatory Board Masthead */}
         <div className="flex flex-col justify-between gap-6 border-b border-paper/12 pb-8 lg:flex-row lg:items-end">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
-                <Sparkles size={12} />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">
+                <Scale size={12} />
                 {ui(
                   'Indicative Mineral Prices · Tume ya Madini Aligned',
                   'Bei Elekezi za Madini · Tume ya Madini',
@@ -320,7 +315,7 @@ export default function MineralPricesBoard({
             return (
               <article
                 key={m.id}
-                className="flex flex-col justify-between rounded-xl border border-paper/12 bg-gradient-to-b from-ink-2 to-ink p-5 shadow-xl transition hover:border-gold/40"
+                className="flex flex-col justify-between rounded-xl border border-paper/12 bg-ink-2 p-5 shadow-sm transition duration-150 hover:border-gold/40"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
@@ -382,7 +377,7 @@ export default function MineralPricesBoard({
         </div>
 
         {/* 3. Detailed Breakdown Matrix Table */}
-        <div className="overflow-hidden rounded-2xl border border-ink/15 bg-paper text-ink shadow-2xl">
+        <div className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm">
           {/* Matrix Filter Bar */}
           <div className="flex flex-col justify-between gap-4 border-b border-ink/10 bg-paper-2 px-6 py-5 sm:flex-row sm:items-center">
             <div>

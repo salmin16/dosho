@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { Check } from 'lucide-react';
+import { ClickPesaProviderLogo } from './ClickPesaBrandLogos';
 import type { ClickPesaProviderCode, ClickPesaRail } from '../types/database';
 
 export type PaymentMethod =
@@ -533,15 +535,15 @@ export function PaymentMethodSelector({
   onSelect,
 }: PaymentMethodSelectorProps) {
   return (
-    <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-950 p-5 text-slate-100 shadow-2xl sm:p-6">
+    <div className="space-y-6 rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-sm sm:p-6">
       {/* Mobile Money Section */}
       <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-400">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-gold">
             1. Tanzania Mobile Money (Instant USSD STK Push)
           </h3>
-          <span className="font-mono text-[10px] text-slate-400">
-            Vodacom · Airtel · Yas/Tigo · Halotel · Zantel
+          <span className="font-mono text-[10px] text-paper/60">
+            Vodacom · Airtel · Yas · Halotel · Zantel
           </span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -549,44 +551,35 @@ export function PaymentMethodSelector({
             (provider) => {
               const isSelected = selectedMethod === provider.id;
               return (
-                <div
+                <button
+                  type="button"
                   key={provider.id}
                   onClick={() => onSelect(provider.id, provider.channel)}
-                  className={`group relative flex cursor-pointer items-center overflow-hidden rounded-xl border bg-gradient-to-br ${provider.bgGlow} p-3.5 transition-all ${
+                  className={`flex min-h-[64px] items-center gap-3 rounded-xl border p-3 text-left transition duration-150 ${
                     isSelected
-                      ? 'border-amber-500 bg-slate-900 ring-2 ring-amber-500/35 shadow-lg'
-                      : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                      ? 'border-gold bg-ink-2 ring-1 ring-gold/40 shadow-sm'
+                      : 'border-paper/12 bg-ink-2/70 hover:border-paper/30 hover:bg-ink-2'
                   }`}
                 >
-                  {/* Official Network Logo Watermark in Background */}
-                  <div
-                    className={`pointer-events-none absolute -bottom-2 -right-2 transition-transform duration-300 group-hover:scale-105 ${
-                      isSelected ? 'opacity-25' : 'opacity-[0.12]'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {provider.watermarkSvg}
-                  </div>
-
-                  <div
-                    className={`relative z-10 mr-3.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${provider.badgeColor} ${provider.textColor} shadow-md ring-1 ring-white/15`}
-                  >
-                    {provider.logoSvg}
-                  </div>
-                  <div className="relative z-10 min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-100">
+                  <ClickPesaProviderLogo
+                    code={provider.providerCode}
+                    variant="badge"
+                    className="h-9 w-[76px] shrink-0 rounded-md ring-1 ring-white/10"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-paper">
                       {provider.name}
                     </p>
-                    <p className="truncate text-xs text-slate-400">
+                    <p className="truncate text-xs text-paper/60">
                       {provider.subtitle}
                     </p>
                   </div>
                   {isSelected && (
-                    <div className="relative z-10 ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-slate-950 shadow">
-                      ✓
-                    </div>
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-ink">
+                      <Check size={12} strokeWidth={2.25} />
+                    </span>
                   )}
-                </div>
+                </button>
               );
             }
           )}
@@ -595,11 +588,11 @@ export function PaymentMethodSelector({
 
       {/* Banks Section */}
       <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-400">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-gold">
             2. Partner Commercial Banks (Control Number &amp; Direct Transfer)
           </h3>
-          <span className="font-mono text-[10px] text-slate-400">
+          <span className="font-mono text-[10px] text-paper/60">
             CRDB · NMB · NBC
           </span>
         </div>
@@ -608,48 +601,39 @@ export function PaymentMethodSelector({
             (provider) => {
               const isSelected = selectedMethod === provider.id;
               return (
-                <div
+                <button
+                  type="button"
                   key={provider.id}
                   onClick={() => onSelect(provider.id, provider.channel)}
-                  className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-gradient-to-br ${provider.bgGlow} p-4 transition-all ${
+                  className={`flex flex-col rounded-xl border p-3.5 text-left transition duration-150 ${
                     isSelected
-                      ? 'border-amber-500 bg-slate-900 ring-2 ring-amber-500/35 shadow-lg'
-                      : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                      ? 'border-gold bg-ink-2 ring-1 ring-gold/40 shadow-sm'
+                      : 'border-paper/12 bg-ink-2/70 hover:border-paper/30 hover:bg-ink-2'
                   }`}
                 >
-                  {/* Official Bank Logo Watermark in Background */}
-                  <div
-                    className={`pointer-events-none absolute -bottom-2 -right-2 transition-transform duration-300 group-hover:scale-105 ${
-                      isSelected ? 'opacity-25' : 'opacity-[0.12]'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {provider.watermarkSvg}
-                  </div>
-
-                  <div className="relative z-10 mb-2.5 flex items-center justify-between">
-                    <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-lg ${provider.badgeColor} ${provider.textColor} shadow ring-1 ring-white/15`}
-                    >
-                      {provider.logoSvg}
-                    </div>
+                  <div className="mb-2.5 flex items-center justify-between gap-2">
+                    <ClickPesaProviderLogo
+                      code={provider.providerCode}
+                      variant="badge"
+                      className="h-9 w-[76px] shrink-0 rounded-md ring-1 ring-white/10"
+                    />
                     {isSelected ? (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-slate-950 shadow">
-                        ✓
-                      </div>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-ink">
+                        <Check size={12} strokeWidth={2.25} />
+                      </span>
                     ) : (
-                      <span className="rounded bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-300">
+                      <span className="rounded border border-paper/12 bg-ink px-2 py-0.5 font-mono text-[10px] text-paper/70">
                         {provider.ussdCode}
                       </span>
                     )}
                   </div>
-                  <p className="relative z-10 text-sm font-semibold text-slate-100">
+                  <p className="text-sm font-semibold text-paper">
                     {provider.name}
                   </p>
-                  <p className="relative z-10 mt-0.5 truncate text-[11px] text-slate-400">
+                  <p className="mt-0.5 truncate text-[11px] text-paper/60">
                     {provider.subtitle}
                   </p>
-                </div>
+                </button>
               );
             }
           )}
@@ -658,11 +642,11 @@ export function PaymentMethodSelector({
 
       {/* International Cards Section */}
       <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-400">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-gold">
             3. International &amp; Local Cards (3D Secure 2.0)
           </h3>
-          <span className="font-mono text-[10px] text-slate-400">
+          <span className="font-mono text-[10px] text-paper/60">
             Visa · Mastercard · UnionPay
           </span>
         </div>
@@ -671,44 +655,35 @@ export function PaymentMethodSelector({
             (provider) => {
               const isSelected = selectedMethod === provider.id;
               return (
-                <div
+                <button
+                  type="button"
                   key={provider.id}
                   onClick={() => onSelect(provider.id, provider.channel)}
-                  className={`group relative flex cursor-pointer items-center overflow-hidden rounded-xl border bg-gradient-to-br ${provider.bgGlow} p-3.5 transition-all ${
+                  className={`flex min-h-[64px] items-center gap-3 rounded-xl border p-3 text-left transition duration-150 ${
                     isSelected
-                      ? 'border-amber-500 bg-slate-900 ring-2 ring-amber-500/35 shadow-lg'
-                      : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                      ? 'border-gold bg-ink-2 ring-1 ring-gold/40 shadow-sm'
+                      : 'border-paper/12 bg-ink-2/70 hover:border-paper/30 hover:bg-ink-2'
                   }`}
                 >
-                  {/* Official Card Logo Watermark in Background */}
-                  <div
-                    className={`pointer-events-none absolute -bottom-2 -right-2 transition-transform duration-300 group-hover:scale-105 ${
-                      isSelected ? 'opacity-25' : 'opacity-[0.12]'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {provider.watermarkSvg}
-                  </div>
-
-                  <div
-                    className={`relative z-10 mr-3.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${provider.badgeColor} ${provider.textColor} shadow-md ring-1 ring-white/15`}
-                  >
-                    {provider.logoSvg}
-                  </div>
-                  <div className="relative z-10 min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-100">
+                  <ClickPesaProviderLogo
+                    code={provider.providerCode}
+                    variant="badge"
+                    className="h-9 w-[76px] shrink-0 rounded-md ring-1 ring-white/10"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-paper">
                       {provider.name}
                     </p>
-                    <p className="truncate text-xs text-slate-400">
+                    <p className="truncate text-xs text-paper/60">
                       {provider.subtitle}
                     </p>
                   </div>
                   {isSelected && (
-                    <div className="relative z-10 ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-slate-950 shadow">
-                      ✓
-                    </div>
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-ink">
+                      <Check size={12} strokeWidth={2.25} />
+                    </span>
                   )}
-                </div>
+                </button>
               );
             }
           )}

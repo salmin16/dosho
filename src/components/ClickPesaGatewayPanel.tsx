@@ -7,7 +7,6 @@ import {
   Loader2,
   Lock,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { useLocalization } from '../context/LocalizationContext';
 import {
@@ -247,7 +246,7 @@ export default function ClickPesaGatewayPanel({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-ink/15 bg-white shadow-xl">
+    <div className="overflow-hidden rounded-xl border border-ink/15 bg-white shadow-sm">
       {/* ClickPesa Fintech Header Bar */}
       <div className="border-b border-ink/15 bg-ink px-6 py-5 text-paper">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -314,24 +313,11 @@ export default function ClickPesaGatewayPanel({
         {activeRail === 'MOBILE_MONEY' && (
           <div
             style={{
-              background: activeBrandTheme.cardBgGradient,
-              borderColor: activeBrandTheme.primaryHex,
+              borderLeftColor: activeBrandTheme.primaryHex,
             }}
-            className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            className="rounded-xl border border-ink/15 border-l-4 bg-paper/60 p-5 shadow-xs"
           >
-            {/* Large Official Network Logo Watermark in Terminal Background */}
-            <div
-              className="pointer-events-none absolute -right-4 -top-4 opacity-[0.12]"
-              aria-hidden="true"
-            >
-              <ClickPesaProviderLogo
-                code={selectedProvider}
-                variant="watermark"
-                className="h-36 w-56 rounded-2xl"
-              />
-            </div>
-
-            <div className="relative z-10 grid grid-cols-1 gap-5 lg:grid-cols-[1.35fr_1fr]">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.35fr_1fr]">
               <div>
                 <div className="mb-3 flex items-center gap-3">
                   <ClickPesaProviderLogo
@@ -412,24 +398,11 @@ export default function ClickPesaGatewayPanel({
         {activeRail === 'BANK_TRANSFER' && (
           <div
             style={{
-              background: activeBrandTheme.cardBgGradient,
-              borderColor: activeBrandTheme.primaryHex,
+              borderLeftColor: activeBrandTheme.primaryHex,
             }}
-            className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            className="rounded-xl border border-ink/15 border-l-4 bg-paper/60 p-5 shadow-xs"
           >
-            {/* Large Official Bank Logo Watermark in Terminal Background */}
-            <div
-              className="pointer-events-none absolute -right-4 -top-4 opacity-[0.12]"
-              aria-hidden="true"
-            >
-              <ClickPesaProviderLogo
-                code={selectedProvider}
-                variant="watermark"
-                className="h-36 w-56 rounded-2xl"
-              />
-            </div>
-
-            <div className="relative z-10">
+            <div>
               <div className="mb-4 flex items-center gap-3">
                 <ClickPesaProviderLogo
                   code={selectedProvider}
@@ -494,24 +467,11 @@ export default function ClickPesaGatewayPanel({
         {activeRail === 'INTERNATIONAL_CARD' && (
           <div
             style={{
-              background: activeBrandTheme.cardBgGradient,
-              borderColor: activeBrandTheme.primaryHex,
+              borderLeftColor: activeBrandTheme.primaryHex,
             }}
-            className="relative overflow-hidden rounded-2xl border-2 p-5 shadow-md"
+            className="rounded-xl border border-ink/15 border-l-4 bg-paper/60 p-5 shadow-xs"
           >
-            {/* Large Official Card Network Logo Watermark in Terminal Background */}
-            <div
-              className="pointer-events-none absolute -right-4 -top-4 opacity-[0.12]"
-              aria-hidden="true"
-            >
-              <ClickPesaProviderLogo
-                code={selectedProvider}
-                variant="watermark"
-                className="h-36 w-56 rounded-2xl"
-              />
-            </div>
-
-            <div className="relative z-10">
+            <div>
               <div className="mb-4 flex items-center gap-3">
                 <ClickPesaProviderLogo
                   code={selectedProvider}
@@ -729,7 +689,7 @@ export default function ClickPesaGatewayPanel({
             style={{
               backgroundColor: activeBrandTheme.primaryHex,
             }}
-            className="btn-primary w-full justify-center !py-3.5 !px-6 text-sm text-white shadow-lg transition hover:brightness-110 disabled:opacity-60 sm:w-auto sm:min-w-[280px]"
+            className="btn-primary w-full justify-center !py-3.5 !px-6 text-sm text-white shadow-sm transition hover:brightness-110 disabled:opacity-60 sm:w-auto sm:min-w-[280px]"
           >
             {txState === 'INITIATED' || txState === 'PROCESSING' ? (
               <>
@@ -742,7 +702,7 @@ export default function ClickPesaGatewayPanel({
               </>
             ) : (
               <>
-                <Sparkles size={16} />
+                <ShieldCheck size={16} />
                 {ui(
                   `Subscribe via ${activeChannel.shortName} (${formattedDisplayPrice})`,
                   `Jiunge kupitia ${activeChannel.shortName} (${formattedDisplayPrice})`,

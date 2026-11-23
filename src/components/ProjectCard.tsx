@@ -22,7 +22,7 @@ export default function ProjectCard({
 
   return (
     <article
-      className={`group relative overflow-hidden rounded-xl border border-ink/10 bg-white/60 transition duration-300 hover:-translate-y-0.5 hover:border-ink/20 hover:bg-white hover:shadow-[0_24px_48px_-28px_rgba(21,18,15,0.45)] ${
+      className={`group relative overflow-hidden rounded-xl border border-ink/12 bg-white shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-md ${
         layout === 'row' ? 'grid sm:grid-cols-[240px_1fr]' : 'flex flex-col'
       }`}
     >
@@ -81,7 +81,7 @@ export default function ProjectCard({
         <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-ink/10 pt-4 text-sm mt-5">
           <div className="min-w-0">
             <dt className="truncate font-mono text-[10px] uppercase tracking-wider text-stone">{t('card.seeking')}</dt>
-            <dd className="mt-0.5 font-semibold">{formatUsd(p.investmentUsd)}</dd>
+            <dd className="mt-0.5 font-semibold tabular-nums">{formatUsd(p.investmentUsd)}</dd>
           </div>
           <div className="min-w-0">
             <dt className="truncate font-mono text-[10px] uppercase tracking-wider text-stone">{t('card.stage')}</dt>

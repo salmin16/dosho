@@ -7,7 +7,6 @@ import {
   Layers,
   MapPin,
   RotateCcw,
-  Sparkles,
   X,
 } from 'lucide-react';
 import type { Project } from '../data/fixtures';
@@ -525,17 +524,14 @@ export default function TanzaniaMap({
 
   return (
     <div
-      className={`relative isolate z-0 overflow-hidden rounded-2xl border border-gold/25 bg-ink text-paper shadow-2xl ${className}`}
+      className={`relative isolate z-0 overflow-hidden rounded-xl border border-gold/25 bg-ink text-paper shadow-md ${className}`}
       role="region"
       aria-label={t('map.ariaLabel')}
     >
       {/* Top Bar: Clean Status Pill + Region Selector + Reset */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-gold/20 bg-ink-2 px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
-          </span>
+          <span className="inline-flex h-2 w-2 rounded-full bg-gold" />
           <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">
             Tanzania Regional GIS (31 Mikoa)
           </span>
@@ -616,11 +612,11 @@ export default function TanzaniaMap({
 
         {/* Organized Clicked-Region Dossier Card (ONLY visible when a region is clicked) */}
         {clickedRegionMeta && (
-          <div className="pointer-events-auto absolute bottom-4 left-4 z-[450] w-[calc(100%-2rem)] max-w-sm rounded-xl border border-gold/45 bg-ink/95 p-4 shadow-2xl backdrop-blur-md">
+          <div className="pointer-events-auto absolute bottom-4 left-4 z-[450] w-[calc(100%-2rem)] max-w-sm rounded-xl border border-gold/40 bg-ink/95 p-4 shadow-md backdrop-blur-md">
             <div className="flex items-start justify-between gap-3 border-b border-paper/10 pb-2.5">
               <div>
                 <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                  <Sparkles size={11} />
+                  <MapPin size={11} />
                   {clickedRegionMeta.regionCode} · {clickedRegionMeta.zone}
                 </span>
                 <h4 className="font-display mt-0.5 text-xl font-medium text-paper">

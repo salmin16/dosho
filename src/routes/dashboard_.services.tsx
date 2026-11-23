@@ -10,7 +10,6 @@ import {
   ExternalLink,
   LayoutDashboard,
   ShieldCheck,
-  Sparkles,
   Wrench,
 } from 'lucide-react'
 import {
@@ -190,7 +189,7 @@ function DashboardServicesRouteComponent() {
 
           {services.length === 0 ? (
             <div className="mt-6 rounded-xl border border-dashed border-ink/15 bg-paper p-10 text-center">
-              <Sparkles size={24} className="mx-auto text-ochre" />
+              <Wrench size={24} className="mx-auto text-ochre" />
               <p className="mt-2 font-display text-base font-semibold text-ink">
                 No Service Profiles Submitted Yet
               </p>

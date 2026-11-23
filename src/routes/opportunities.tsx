@@ -434,10 +434,10 @@ function OpportunityStreamsHub({
             return (
               <article
                 key={stream.id}
-                className={`group relative flex flex-col justify-between rounded-2xl border p-6 transition duration-300 ${
+                className={`group relative flex flex-col justify-between rounded-xl border p-6 transition duration-200 ${
                   isSelected
-                    ? 'border-ochre bg-white shadow-[0_20px_50px_-24px_rgba(192,97,43,0.35)] ring-2 ring-ochre/25'
-                    : 'border-ink/12 bg-white/75 hover:-translate-y-0.5 hover:border-ink/25 hover:bg-white hover:shadow-[0_24px_48px_-28px_rgba(21,18,15,0.35)]'
+                    ? 'border-ochre bg-white shadow-sm ring-1 ring-ochre/30'
+                    : 'border-ink/12 bg-white shadow-xs hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-md'
                 }`}
               >
                 <div>

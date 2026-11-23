@@ -8,7 +8,6 @@ import {
   Crown,
   Lock,
   ShieldCheck,
-  Sparkles,
   Zap,
 } from 'lucide-react';
 import { useLocalization } from '../context/LocalizationContext';
@@ -305,7 +304,7 @@ export default function SubscriptionStatusWidget({
       <div className="mt-6 flex flex-col justify-between gap-4 rounded-xl border border-paper/10 bg-paper/[0.04] p-4 lg:flex-row lg:items-center">
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <span className="font-mono text-[10px] uppercase tracking-wider text-gold">
-            <Sparkles size={12} className="mr-1 inline" />
+            <CheckCircle2 size={12} className="mr-1 inline" />
             {ui('Tier Entitlements:', 'Haki za Mpango:', 'Permisos del Nivel:')}
           </span>
 

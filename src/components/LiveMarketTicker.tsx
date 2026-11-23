@@ -127,16 +127,13 @@ export default function LiveMarketTicker({
     <div
       data-currency={currency}
       data-language={language}
-      className="rounded-2xl border border-paper/15 bg-ink-2/95 p-4 text-paper shadow-xl backdrop-blur-md lg:p-5"
+      className="rounded-xl border border-paper/15 bg-ink-2 p-4 text-paper shadow-sm lg:p-5"
     >
       {/* Top Status & Desk Telemetry Header */}
       <div className="flex flex-col justify-between gap-3 border-b border-paper/10 pb-3.5 lg:flex-row lg:items-center">
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="inline-flex items-center gap-2 rounded-full border border-moss/50 bg-moss/25 px-3 py-1 font-mono text-[11px] font-semibold tracking-wider text-[#9de4b4]">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#9de4b4] opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9de4b4]" />
-            </span>
+            <span className="inline-flex h-2 w-2 rounded-full bg-[#9de4b4]" />
             {telemetry.syncMode === 'LIVE_API'
               ? ui(
                   'LIVE SPOT FEED · LBMA / LME / TUME YA MADINI',

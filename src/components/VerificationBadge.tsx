@@ -26,12 +26,12 @@ export default function VerificationBadge({
   const Icon = level === 0 ? ShieldAlert : level >= 3 ? ShieldCheck : Shield
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border font-mono uppercase tracking-[0.08em] ${TONE[level]} ${
-        size === 'sm' ? 'px-2.5 py-1 text-[10px]' : 'px-3 py-1.5 text-[11px]'
+      className={`inline-flex items-center gap-1.5 rounded-full border font-mono font-medium uppercase tracking-[0.07em] ${TONE[level]} ${
+        size === 'sm' ? 'px-2.5 py-0.5 text-[10px]' : 'px-3 py-1 text-[11px]'
       }`}
       title={`${meta.name}: ${meta.description}`}
     >
-      <Icon size={size === 'sm' ? 12 : 14} strokeWidth={2.2} className="shrink-0" />
+      <Icon size={size === 'sm' ? 12 : 14} strokeWidth={1.75} className="shrink-0" />
       <span className="truncate">
         L{level} · {meta.short}
       </span>

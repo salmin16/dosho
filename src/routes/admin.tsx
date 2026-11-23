@@ -633,7 +633,7 @@ export function MasterAdminDashboard({
     >
       <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
         {/* Executive Command Header */}
-        <header className="rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-xl lg:p-8">
+        <header className="rounded-xl border border-ink/15 bg-ink p-6 text-paper shadow-sm lg:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -746,12 +746,12 @@ export function MasterAdminDashboard({
                   key={card.label}
                   type="button"
                   onClick={() => setActiveTab(card.tab)}
-                  className="rounded-xl border border-ink/12 bg-white/80 p-4 text-left transition hover:border-ochre/50 hover:shadow-sm"
+                  className="rounded-xl border border-ink/15 bg-white p-4 text-left shadow-xs transition duration-150 hover:border-ochre/50 hover:shadow-sm"
                 >
                   <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
                     {card.label}
                   </div>
-                  <div className={`mt-2 font-display text-3xl font-semibold ${card.accent}`}>
+                  <div className={`mt-2 font-display text-3xl font-semibold tabular-nums ${card.accent}`}>
                     {card.value}
                   </div>
                 </button>

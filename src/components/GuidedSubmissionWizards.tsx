@@ -13,7 +13,6 @@ import {
   MapPin,
   Save,
   ShieldCheck,
-  Sparkles,
   Wrench,
 } from 'lucide-react';
 import {
@@ -317,7 +316,7 @@ export function GuidedOpportunityWizard({
 
   if (submittedRecord) {
     return (
-      <div className="grain relative overflow-hidden rounded-2xl border border-gold/40 bg-ink p-8 text-paper shadow-2xl">
+      <div className="relative overflow-hidden rounded-xl border border-gold/40 bg-ink p-8 text-paper shadow-sm">
         <div className="contours absolute inset-0" aria-hidden="true" />
         <div className="relative space-y-5">
           <div className="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-moss/30 px-3.5 py-1 font-mono text-xs font-semibold uppercase tracking-wider text-gold">
@@ -393,7 +392,7 @@ export function GuidedOpportunityWizard({
   }
 
   return (
-    <div className="grain relative overflow-hidden rounded-2xl border border-gold/30 bg-ink text-paper shadow-2xl">
+    <div className="relative overflow-hidden rounded-xl border border-gold/30 bg-ink text-paper shadow-sm">
       <div className="contours absolute inset-0" aria-hidden="true" />
 
       {/* Top Wizard Header & Stepper Bar */}
@@ -401,7 +400,7 @@ export function GuidedOpportunityWizard({
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">
-              <Sparkles size={12} />
+              <FileCheck2 size={12} />
               Guided Publishing Workflow · `public.opportunities`
             </span>
             <h2 className="font-display mt-1 text-2xl font-light text-paper sm:text-3xl">
@@ -1067,7 +1066,7 @@ export function GuidedServiceWizard({
 
   if (submittedRecord) {
     return (
-      <div className="grain relative overflow-hidden rounded-2xl border border-gold/40 bg-ink p-8 text-paper shadow-2xl">
+      <div className="relative overflow-hidden rounded-xl border border-gold/40 bg-ink p-8 text-paper shadow-sm">
         <div className="contours absolute inset-0" aria-hidden="true" />
         <div className="relative space-y-5">
           <div className="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-moss/30 px-3.5 py-1 font-mono text-xs font-semibold uppercase tracking-wider text-gold">
@@ -1144,7 +1143,7 @@ export function GuidedServiceWizard({
   }
 
   return (
-    <div className="grain relative overflow-hidden rounded-2xl border border-gold/30 bg-ink text-paper shadow-2xl">
+    <div className="relative overflow-hidden rounded-xl border border-gold/30 bg-ink text-paper shadow-sm">
       <div className="contours absolute inset-0" aria-hidden="true" />
 
       {/* Top Wizard Header & Stepper Bar */}
