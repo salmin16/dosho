@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
 import { Logo } from '../components/Header'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
+import { formatSafeUserError } from '../lib/verifyTurnstileClient'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
 import TurnstileWidget, {
@@ -30,6 +31,7 @@ function SignUpRouteComponent() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -99,17 +101,21 @@ function SignUpRouteComponent() {
         setPassword('')
         setConfirmPassword('')
       } else if (res.error) {
-        setError(res.error)
+        setError(formatSafeUserError(res.error, 'Unable to create your account. Please try again.'))
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Unexpected sign-up error. Please try again.'
+        formatSafeUserError(
+          err instanceof Error ? err.message : undefined,
+          'Unexpected sign-up error. Please try again.'
+        )
       )
     } finally {
       setSubmitting(false)
       setCaptchaToken('')
+      setTurnstileResetKey((k) => k + 1)
       turnstileRef.current?.reset()
     }
   }
@@ -291,6 +297,7 @@ function SignUpRouteComponent() {
               <div className="pt-1">
                 <TurnstileWidget
                   ref={turnstileRef}
+                  resetKey={turnstileResetKey}
                   theme="light"
                   action="signup"
                   onVerify={(token) => {

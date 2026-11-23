@@ -21,7 +21,10 @@ import TurnstileWidget, {
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
 import { submitComplianceComplaint, useAuthSession } from '../lib/supabaseAuth'
-import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
+import {
+  formatSafeUserError,
+  verifyTurnstileForForm,
+} from '../lib/verifyTurnstileClient'
 import type { ComplianceComplaintCategory } from '../types/database'
 
 const COMPLAINT_CATEGORIES: ComplianceComplaintCategory[] = [
@@ -191,6 +194,7 @@ function ComplianceComplaintSection() {
   const [referenceCode, setReferenceCode] = useState('')
   const [description, setDescription] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [trackingId, setTrackingId] = useState<string | null>(null)
@@ -234,15 +238,28 @@ function ComplianceComplaintSection() {
         description,
       })
       if (!res.ok) {
-        setError(res.error || 'Unable to submit complaint. Please try again.')
+        setError(
+          formatSafeUserError(
+            res.error,
+            'Unable to submit your compliance report right now. Please try again.',
+          ),
+        )
         return
       }
       setTrackingId(res.trackingId || 'CMP-LOGGED')
       setReferenceCode('')
       setDescription('')
+    } catch (submitErr) {
+      setError(
+        formatSafeUserError(
+          submitErr instanceof Error ? submitErr.message : undefined,
+          'Unable to submit your compliance report right now. Please try again.',
+        ),
+      )
     } finally {
       setSubmitting(false)
       setCaptchaToken('')
+      setTurnstileResetKey((k) => k + 1)
       turnstileRef.current?.reset()
     }
   }
@@ -304,7 +321,12 @@ function ComplianceComplaintSection() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setTrackingId(null)}
+                  onClick={() => {
+                    setTrackingId(null)
+                    setError(null)
+                    setCaptchaToken('')
+                    setTurnstileResetKey((k) => k + 1)
+                  }}
                   className="mt-3 text-xs font-semibold underline"
                 >
                   Submit another compliance report
@@ -393,6 +415,7 @@ function ComplianceComplaintSection() {
             {turnstileEnabled && (
               <TurnstileWidget
                 ref={turnstileRef}
+                resetKey={turnstileResetKey}
                 theme="light"
                 action="compliance-complaint"
                 onVerify={(token) => {

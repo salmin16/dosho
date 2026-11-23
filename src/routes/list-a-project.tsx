@@ -10,7 +10,10 @@ import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
-import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
+import {
+  formatSafeUserError,
+  verifyTurnstileForForm,
+} from '../lib/verifyTurnstileClient'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -61,6 +64,7 @@ function ListProject() {
   const [submitted, setSubmitted] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
@@ -157,9 +161,18 @@ function ListProject() {
         })
         setSubmitted(`MC-SUB-${Math.floor(10000 + Math.random() * 89999)}`)
         window.scrollTo({ top: 0, behavior: 'smooth' })
+      } catch (err) {
+        setErrors((prev) => ({
+          ...prev,
+          captcha: formatSafeUserError(
+            err instanceof Error ? err.message : undefined,
+            'We could not submit your project listing right now. Please try again.',
+          ),
+        }))
       } finally {
         setSubmitting(false)
         setCaptchaToken('')
+        setTurnstileResetKey((k) => k + 1)
         turnstileRef.current?.reset()
       }
       return
@@ -564,6 +577,7 @@ function ListProject() {
                 <div className="pt-2">
                   <TurnstileWidget
                     ref={turnstileRef}
+                    resetKey={turnstileResetKey}
                     theme="light"
                     action="list-project"
                     onVerify={(token) => {

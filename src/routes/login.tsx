@@ -20,6 +20,7 @@ import {
   signInWithEmail,
   useAuthState,
 } from '../lib/supabaseAuth'
+import { formatSafeUserError } from '../lib/verifyTurnstileClient'
 
 const RESET_COOLDOWN_KEY = 'mineconnect_pwd_reset_cooldown_until'
 const RESET_COOLDOWN_SECONDS = 60
@@ -73,11 +74,18 @@ function LoginRouteComponent() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
+
+  const triggerTurnstileReset = () => {
+    setCaptchaToken('')
+    setTurnstileResetKey((k) => k + 1)
+    turnstileRef.current?.reset()
+  }
 
   // Forgot-password state + 60s anti-abuse cooldown
   const [resetSending, setResetSending] = useState(false)
@@ -142,20 +150,20 @@ function LoginRouteComponent() {
         ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.error) {
-        setError(res.error)
+        setError(formatSafeUserError(res.error, 'Invalid email or password. Please try again.'))
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : 'Unexpected sign-in error. Please try again.'
+        formatSafeUserError(
+          err instanceof Error ? err.message : undefined,
+          'Unexpected sign-in error. Please try again.'
+        )
       )
     } finally {
       setSubmitting(false)
-      setCaptchaToken('')
-      turnstileRef.current?.reset()
+      triggerTurnstileReset()
     }
   }
 
@@ -185,7 +193,7 @@ function LoginRouteComponent() {
         captchaToken || undefined
       )
       if (!res.ok && res.error) {
-        setError(res.error)
+        setError(formatSafeUserError(res.error, 'Unable to send reset link. Please try again.'))
         return
       }
       setResetSent(true)
@@ -198,24 +206,21 @@ function LoginRouteComponent() {
       setCooldownSeconds(RESET_COOLDOWN_SECONDS)
     } finally {
       setResetSending(false)
-      setCaptchaToken('')
-      turnstileRef.current?.reset()
+      triggerTurnstileReset()
     }
   }
 
   const switchToForgot = () => {
     setError(null)
     setResetSent(false)
-    setCaptchaToken('')
-    turnstileRef.current?.reset()
+    triggerTurnstileReset()
     setCooldownSeconds(readRemainingCooldownSeconds())
     setMode('forgot')
   }
 
   const switchToSignIn = () => {
     setError(null)
-    setCaptchaToken('')
-    turnstileRef.current?.reset()
+    triggerTurnstileReset()
     setMode('signin')
   }
 
@@ -353,6 +358,7 @@ function LoginRouteComponent() {
                   <TurnstileWidget
                     key="turnstile-login"
                     ref={turnstileRef}
+                    resetKey={turnstileResetKey}
                     theme="light"
                     action="login"
                     onVerify={(token) => {
@@ -451,6 +457,7 @@ function LoginRouteComponent() {
                   <TurnstileWidget
                     key="turnstile-forgot"
                     ref={turnstileRef}
+                    resetKey={turnstileResetKey}
                     theme="light"
                     action="forgot-password"
                     onVerify={(token) => {

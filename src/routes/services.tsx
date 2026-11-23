@@ -13,7 +13,10 @@ import {
   getSession,
   useAuthSession,
 } from '../lib/supabaseAuth'
-import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
+import {
+  formatSafeUserError,
+  verifyTurnstileForForm,
+} from '../lib/verifyTurnstileClient'
 import { useCurrency } from '../lib/currency'
 import type { UserServiceRecord } from '../types/database'
 
@@ -268,6 +271,7 @@ function QuoteModal({
   const [budgetInput, setBudgetInput] = useState('25000')
   const [acceptedInvestorTerms, setAcceptedInvestorTerms] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [sent, setSent] = useState(false)
   const [err, setErr] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -381,13 +385,26 @@ function QuoteModal({
                   scopeNotes: scopeVal,
                 })
                 if (res.error) {
-                  setErr(res.error)
+                  setErr(
+                    formatSafeUserError(
+                      res.error,
+                      'Unable to submit your quote request right now. Please try again.',
+                    ),
+                  )
                   return
                 }
                 setSent(true)
+              } catch (submitErr) {
+                setErr(
+                  formatSafeUserError(
+                    submitErr instanceof Error ? submitErr.message : undefined,
+                    'Unable to submit your quote request right now. Please try again.',
+                  ),
+                )
               } finally {
                 setSubmitting(false)
                 setCaptchaToken('')
+                setTurnstileResetKey((k) => k + 1)
                 turnstileRef.current?.reset()
               }
             }}
@@ -478,6 +495,7 @@ function QuoteModal({
               {turnstileEnabled && (
                 <TurnstileWidget
                   ref={turnstileRef}
+                  resetKey={turnstileResetKey}
                   theme="light"
                   action="request-quote"
                   onVerify={(token) => {

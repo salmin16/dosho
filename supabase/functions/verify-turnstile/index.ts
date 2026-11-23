@@ -6,6 +6,13 @@
 const TURNSTILE_SITEVERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
+const DEFAULT_ALLOWED_HOSTNAMES = [
+  'mineconnect-mocha.vercel.app',
+  'salmin-three.vercel.app',
+  'localhost',
+  '127.0.0.1',
+];
+
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
@@ -18,14 +25,45 @@ interface VerifyRequestBody {
   action?: string;
 }
 
+interface TurnstileSiteverifyOutcome {
+  success?: boolean;
+  hostname?: string;
+  action?: string;
+  'error-codes'?: string[];
+}
+
 function sanitizeIp(raw: string | null): string | undefined {
   if (!raw) return undefined;
   const candidate = raw.split(',')[0]?.trim() ?? '';
-  // Accept clean IPv4 or IPv6 strings only
   if (/^[0-9a-fA-F:.]{3,45}$/.test(candidate)) {
     return candidate;
   }
   return undefined;
+}
+
+function getAllowedHostnames(): Set<string> {
+  const extra = (Deno.env.get('TURNSTILE_ALLOWED_HOSTNAMES') ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set([...DEFAULT_ALLOWED_HOSTNAMES, ...extra]);
+}
+
+function isHostnameAllowed(hostname: string | undefined): boolean {
+  if (!hostname) return true;
+  const normalized = hostname.trim().toLowerCase().replace(/:\d+$/, '');
+  if (!normalized) return true;
+  return getAllowedHostnames().has(normalized);
+}
+
+function jsonResponse(
+  payload: { success: boolean; error?: string },
+  status: number,
+): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  });
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -34,31 +72,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Method not allowed.' }),
-      {
-        status: 405,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      },
-    );
+    return jsonResponse({ success: false, error: 'Method not allowed.' }, 405);
   }
 
-  // Strip accidental surrounding quotes if pasted with quotes in dashboard secrets
   const secretKey = Deno.env
     .get('TURNSTILE_SECRET_KEY')
     ?.trim()
     .replace(/^["']|["']$/g, '');
 
   if (!secretKey) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: 'Server security verification is not configured.',
-      }),
-      {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      },
+    return jsonResponse(
+      { success: false, error: 'Server security verification is not configured.' },
+      500,
     );
   }
 
@@ -66,26 +91,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     body = (await req.json()) as VerifyRequestBody;
   } catch {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Invalid JSON request payload.' }),
-      {
-        status: 400,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      },
-    );
+    return jsonResponse({ success: false, error: 'Invalid request payload.' }, 400);
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
   if (!token) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: 'Missing Cloudflare Turnstile verification token.',
-      }),
-      {
-        status: 403,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      },
+    return jsonResponse(
+      { success: false, error: 'Missing security verification token.' },
+      403,
     );
   }
 
@@ -112,68 +125,59 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
 
     const rawText = await upstream.text();
-    let result: {
-      success?: boolean;
-      hostname?: string;
-      action?: string;
-      'error-codes'?: string[];
-    } | null = null;
-
+    let outcome: TurnstileSiteverifyOutcome | null = null;
     try {
-      result = JSON.parse(rawText);
+      outcome = JSON.parse(rawText) as TurnstileSiteverifyOutcome;
     } catch {
-      result = null;
+      outcome = null;
     }
 
-    if (!upstream.ok && !result) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Upstream security verification service unavailable.',
-          upstreamStatus: upstream.status,
-        }),
+    if (!upstream.ok && !outcome) {
+      console.warn('[verify-turnstile] Upstream HTTP failure:', upstream.status);
+      return jsonResponse(
         {
-          status: 403,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          success: false,
+          error: 'Security verification service is temporarily unavailable. Please retry.',
         },
+        403,
       );
     }
 
-    if (!result?.success) {
-      return new Response(
-        JSON.stringify({
+    if (outcome?.success !== true) {
+      console.warn('[verify-turnstile] Cloudflare rejected token:', {
+        action: body.action ?? 'unspecified',
+        errorCodes: outcome?.['error-codes'] ?? [],
+      });
+      return jsonResponse(
+        {
           success: false,
           error:
             'Security verification failed or expired. Please complete the challenge again.',
-          errorCodes: result?.['error-codes'] ?? [],
-        }),
-        {
-          status: 403,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         },
+        403,
       );
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        hostname: result.hostname ?? null,
-      }),
+    if (!isHostnameAllowed(outcome.hostname)) {
+      console.warn('[verify-turnstile] Disallowed hostname:', outcome.hostname);
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Security verification failed for this domain. Please refresh and try again.',
+        },
+        403,
+      );
+    }
+
+    return jsonResponse({ success: true }, 200);
+  } catch (err) {
+    console.warn('[verify-turnstile] Verification exception:', err);
+    return jsonResponse(
       {
-        status: 200,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      },
-    );
-  } catch {
-    return new Response(
-      JSON.stringify({
         success: false,
-        error: 'Unable to complete server-side security verification.',
-      }),
-      {
-        status: 403,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        error: 'Unable to complete security verification. Please retry.',
       },
+      403,
     );
   }
 });
