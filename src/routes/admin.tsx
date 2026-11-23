@@ -1570,7 +1570,7 @@ export function MasterAdminDashboard({
         {/* Quick Icon Legend / Footer */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone">
           <span className="inline-flex items-center gap-1.5">
-            <Briefcase size={13} /> All moderation changes enforce PostgreSQL RLS &amp; write to `public.admin_audit_logs`.
+            <Briefcase size={13} /> All moderation changes are enforced server-side and recorded in the immutable audit trail.
           </span>
           <span className="inline-flex items-center gap-1.5 font-mono">
             <FileText size={13} /> <Clock size={13} /> Live Supabase Sync Active

@@ -776,12 +776,7 @@ export function GuidedOpportunityWizard({
                     <strong className="text-gold">
                       4. PDPA 2022 &amp; Audit Trail Consent:
                     </strong>{' '}
-                    I consent to recording this submission under{' '}
-                    <code className="font-mono text-gold">
-                      auth.uid() = user_id
-                    </code>{' '}
-                    and logging an immutable event in{' '}
-                    <code className="font-mono text-gold">public.audit_logs</code>.
+                    I consent to recording this submission under my verified member account and logging it in the platform compliance audit trail.
                   </span>
                 </label>
               </div>
@@ -1539,11 +1534,7 @@ export function GuidedServiceWizard({
                     <strong className="text-gold">
                       4. PDPA 2022 &amp; Audit Trail Consent:
                     </strong>{' '}
-                    I consent to binding this service profile to{' '}
-                    <code className="font-mono text-gold">
-                      auth.uid() = user_id
-                    </code>{' '}
-                    and recording an immutable audit event.
+                    I consent to linking this service profile to my verified member account and recording a compliance audit event.
                   </span>
                 </label>
               </div>

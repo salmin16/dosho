@@ -180,18 +180,18 @@ function GroundedAuthHeroBanner() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-moss/30 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-              Supabase + PostgreSQL RLS + Audit Trail
+              Verified Member Workspace
             </span>
             <h2 className="font-display text-base font-semibold text-paper">
               {session
-                ? `Authenticated Vault Active — ${session.user.fullName} (${session.user.email})`
-                : 'Enterprise Due-Diligence Vault & Admin Governance Console'}
+                ? `Welcome, ${session.user.fullName} (${session.user.email})`
+                : 'Enterprise Due-Diligence Vault & Marketplace Portal'}
             </h2>
           </div>
           <p className="mt-1 text-xs text-paper/70">
             {session
-              ? `Your session is grounded to UUID ${session.user.id} (Role: ${session.user.role.toUpperCase()}). Access your private dossiers${isAdmin ? ' or open the Admin Dashboard' : ''}.`
-              : 'Sign in or provision an account to access private geological dossiers, real-time multi-currency conversion, and verified marketplace listings.'}
+              ? `Access your private due-diligence dossiers, membership plan, and listings${isAdmin ? ' or open the Admin Dashboard' : ''}.`
+              : 'Sign in or create an account to access private geological dossiers, real-time multi-currency conversion, and verified marketplace listings.'}
           </p>
         </div>
       </div>

@@ -74,7 +74,7 @@ function DashboardServicesRouteComponent() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
                   <ShieldCheck size={13} />
-                  public.services · RLS: auth.uid() = user_id
+                  {ui('Verified Provider Publishing', 'Uchapishaji wa Mtoa Huduma', 'Publicación de Proveedor')}
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
                   <Coins size={12} className="text-gold" />

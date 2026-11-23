@@ -26,7 +26,6 @@ import { PROJECTS } from '../data/fixtures'
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
-import LiveMarketTicker from '../components/LiveMarketTicker'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
 import type {
@@ -169,16 +168,11 @@ export function DashboardRouteComponent() {
       className="min-h-screen bg-paper pb-24 pt-28 text-ink"
     >
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
-        {/* Grounded Session Header */}
+        {/* Clean Workspace Welcome Header */}
         <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
-                <ShieldCheck size={14} />
-                {ui('RLS Policy Active: auth.uid() = user_id · Role:', 'Sera ya RLS Inafanya Kazi: auth.uid() = user_id · Wajibu:', 'Política RLS Activa: auth.uid() = user_id · Rol:')}{' '}
-                {session.user.role.toUpperCase()}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/85">
                 <Coins size={13} className="text-gold" />
                 {currencyMeta.flag} {currency} (1 USD ={' '}
                 {rateForSelected.toLocaleString('en-US', {
@@ -192,10 +186,7 @@ export function DashboardRouteComponent() {
               {profile?.full_name || session.user.fullName}
             </h1>
             <p className="mt-1 text-sm text-paper/75">
-              {ui('Authenticated Email:', 'Barua Pepe Iliyothibitishwa:', 'Correo Autenticado:')}{' '}
-              <span className="font-mono">{session.user.email}</span> ·{' '}
-              {ui('User UUID:', 'Kitambulisho cha Mtumiaji:', 'UUID de Usuario:')}{' '}
-              <span className="font-mono text-gold">{session.user.id}</span>
+              {session.user.email}
             </p>
           </div>
 
@@ -317,11 +308,6 @@ export function DashboardRouteComponent() {
           />
         </div>
 
-        {/* Real-Time Market Status & Statutory Benchmark Ticker */}
-        <div className="mt-6">
-          <LiveMarketTicker compact showFullMarketsLink />
-        </div>
-
         {/* Guided Publishing Module Quick-Access Banner */}
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Link
@@ -332,9 +318,9 @@ export function DashboardRouteComponent() {
               <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
                 <Compass size={13} />
                 {ui(
-                  '3-Step Guided Wizard · public.opportunities',
-                  'Mfumo wa Hatua 3 · public.opportunities',
-                  'Asistente de 3 Pasos · public.opportunities',
+                  '3-Step Guided Wizard',
+                  'Mfumo wa Hatua 3',
+                  'Asistente de 3 Pasos',
                 )}
               </span>
               <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
@@ -365,9 +351,9 @@ export function DashboardRouteComponent() {
               <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
                 <Wrench size={13} />
                 {ui(
-                  '3-Step Guided Wizard · public.services',
-                  'Mfumo wa Hatua 3 · public.services',
-                  'Asistente de 3 Pasos · public.services',
+                  '3-Step Guided Wizard',
+                  'Mfumo wa Hatua 3',
+                  'Asistente de 3 Pasos',
                 )}
               </span>
               <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
@@ -402,10 +388,11 @@ export function DashboardRouteComponent() {
               </h2>
             </div>
             <p className="mt-1 text-xs text-stone">
-              {ui('Records are strictly bound to', 'Rekodi zimefungwa moja kwa moja kwa', 'Los registros están vinculados a')}{' '}
-              <code className="font-mono text-ink">
-                user_id = {session.user.id.slice(0, 8)}…
-              </code>
+              {ui(
+                'Private due-diligence notes accessible only to your account.',
+                'Maelezo binafsi ya uhakiki yanayoweza kuonekana na akaunti yako pekee.',
+                'Notas privadas de debida diligencia visibles solo para su cuenta.',
+              )}
             </p>
 
             {error && (
@@ -507,7 +494,7 @@ export function DashboardRouteComponent() {
                   </h2>
                 </div>
                 <span className="rounded bg-moss-light px-2.5 py-1 font-mono text-[11px] text-moss">
-                  SELECT * FROM user_documents WHERE user_id = auth.uid()
+                  {ui('Private Workspace', 'Hifadhi Binafsi', 'Espacio Privado')}
                 </span>
               </div>
 
@@ -540,7 +527,6 @@ export function DashboardRouteComponent() {
                             {convertText(doc.content)}
                           </p>
                           <div className="mt-3 flex flex-wrap items-center gap-4 font-mono text-[11px] text-stone">
-                            <span>Owner UUID: {doc.user_id}</span>
                             <span>
                               {ui('Created:', 'Imeundwa:', 'Creado:')}{' '}
                               {new Date(doc.created_at).toLocaleString()}

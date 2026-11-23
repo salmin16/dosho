@@ -65,8 +65,8 @@ export default async function DashboardPage() {
                 <p className="font-medium text-slate-200">
                   {profile?.full_name || user.email}
                 </p>
-                <p className="font-mono text-[11px] text-slate-400">
-                  UUID: {user.id}
+                <p className="text-[11px] text-slate-400">
+                  {user.email}
                 </p>
               </div>
 
@@ -89,19 +89,13 @@ export default async function DashboardPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-xl font-bold text-white">
-                  Welcome back, {profile?.full_name || user.email}
+                  Welcome, {profile?.full_name || user.email}
                 </h1>
                 <p className="mt-1 text-sm text-slate-400">
-                  All queries in this Server Component execute with your scoped JWT session. PostgreSQL Row-Level Security guarantees zero cross-tenant data leakage.
+                  {user.email}
                 </p>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2.5 font-mono text-xs text-slate-300">
-                <div>
-                  Role:{' '}
-                  <span className="text-emerald-400">
-                    {profile?.role ?? 'user'}
-                  </span>
-                </div>
                 <div>
                   Plan Tier:{' '}
                   <span className="text-indigo-400">

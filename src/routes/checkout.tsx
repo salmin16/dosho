@@ -348,7 +348,7 @@ function CheckoutPageComponent() {
                 </h3>
                 <p className="mx-auto mt-2 max-w-md text-sm text-stone">
                   {ui(
-                    'ClickPesa subscriptions are bound strictly to your verified Supabase member UUID.',
+                    'ClickPesa subscriptions are linked directly to your verified MineConnect member account.',
                     'Usajili wa ClickPesa unaunganishwa moja kwa moja na akaunti yako ya Supabase.',
                     'Las suscripciones de ClickPesa están vinculadas estrictamente a su cuenta verificada de Supabase.'
                   )}

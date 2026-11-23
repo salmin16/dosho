@@ -51,7 +51,7 @@ export default function DocumentManager({
           New Grounded Record
         </h2>
         <p className="mt-1 text-xs text-slate-400">
-          Automatically bound to your <code className="text-indigo-400">auth.uid()</code> via PostgreSQL RLS.
+          Private records visible only to your account.
         </p>
 
         {error && (
@@ -133,8 +133,8 @@ export default function DocumentManager({
           <h2 className="text-lg font-semibold text-white">
             Your Grounded Documents ({initialDocuments.length})
           </h2>
-          <span className="text-xs text-slate-400">
-            Filtered by <code className="text-emerald-400">auth.uid() = user_id</code>
+          <span className="text-xs text-emerald-400">
+            Private Workspace
           </span>
         </div>
 
@@ -163,7 +163,6 @@ export default function DocumentManager({
                       {doc.content}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                      <span>Owner UUID: {doc.user_id}</span>
                       <span>
                         Created: {new Date(doc.created_at).toLocaleString()}
                       </span>

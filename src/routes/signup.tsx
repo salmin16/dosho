@@ -123,14 +123,14 @@ function SignUpRouteComponent() {
         <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-6 shadow-sm sm:p-8">
           <div className="inline-flex items-center gap-2 rounded-full bg-moss/15 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-moss">
             <ShieldCheck size={14} />
-            PostgreSQL RLS Provisioning
+            Verified Member Portal
           </div>
 
           <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
             Create your account
           </h1>
           <p className="mt-1.5 text-sm text-stone">
-            Provision an isolated due-diligence vault bound to your UUID.
+            Create your private mining &amp; investment due-diligence workspace.
           </p>
 
           {reasonBanner && (

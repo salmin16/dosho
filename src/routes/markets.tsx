@@ -111,13 +111,13 @@ function MarketsPageComponent() {
               </div>
               <div>
                 <span className="font-mono text-[10px] uppercase tracking-widest text-gold">
-                  {ui('PostgreSQL RLS + Audit Trail', 'Usalama wa Hifadhidata ya PostgreSQL', 'PostgreSQL RLS + Auditoría')}
+                  {ui('Verified Market Governance', 'Usimamizi wa Soko la Madini', 'Gobernanza de Mercado Verificada')}
                 </span>
                 <h4 className="font-display mt-1 text-2xl font-medium text-paper">
                   {ui(
-                    'Administrative Benchmark Governance (`public.mineral_prices`)',
-                    'Usimamizi wa Bei Elekezi za Madini (`public.mineral_prices`)',
-                    'Gobernanza Administrativa de Precios (`public.mineral_prices`)',
+                    'Administrative Benchmark Governance',
+                    'Usimamizi wa Bei Elekezi za Madini',
+                    'Gobernanza Administrativa de Precios',
                   )}
                 </h4>
                 <p className="mt-1 max-w-2xl text-sm text-paper/70">
