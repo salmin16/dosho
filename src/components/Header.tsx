@@ -184,7 +184,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             <Link
               to="/markets"
               onClick={() => setOpen(false)}
-              className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ochre"
+              className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ink transition hover:text-ochre focus-visible:text-ochre"
+              activeProps={{ className: '!text-ochre' }}
             >
               <span>
                 {ui('Indicative Mineral Markets', 'Bei Elekezi za Madini', 'Mercados de Minerales')}
@@ -195,7 +196,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 key={n.to}
                 to={n.to}
                 onClick={() => setOpen(false)}
-                className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl"
+                className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ink transition hover:text-ochre focus-visible:text-ochre"
+                activeProps={{ className: '!text-ochre' }}
               >
                 <span>{t(n.key)}</span>
                 {!session && <Lock size={14} className="text-stone" />}
@@ -206,7 +208,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               <Link
                 to="/dashboard"
                 onClick={() => setOpen(false)}
-                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-ochre"
+                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-ink transition hover:text-ochre focus-visible:text-ochre"
+                activeProps={{ className: '!text-ochre' }}
               >
                 <ShieldCheck size={16} className="shrink-0" />
                 <span className="truncate">
