@@ -338,16 +338,11 @@ export default function MineralTrendChart({
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.2 : 0.18
 
-  // Complementary tier benchmarks strictly expressed in local unit rates (/g, /kg, /ct)
-  const counterpartTier = isStatutoryLocal
-    ? convertToChartUnitUsd(
-        activeMineral.world_market_price_usd,
-        activeMineral.unit,
-      )
-    : convertToChartUnitUsd(
-        activeMineral.local_market_price_usd,
-        activeMineral.unit,
-      )
+  // Reference statutory benchmarks strictly expressed in local unit rates (/g, /kg, /ct)
+  const sokoTier = convertToChartUnitUsd(
+    activeMineral.local_market_price_usd,
+    activeMineral.unit,
+  )
 
   const buyingTier = convertToChartUnitUsd(
     activeMineral.buying_centre_price_usd,
@@ -383,17 +378,11 @@ export default function MineralTrendChart({
               )}
             </span>
             <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
-              {isStatutoryLocal
-                ? ui(
-                    `Statutory Local (${series.unitSuffix})`,
-                    `Soko la Ndani (${series.unitSuffix})`,
-                    `Local Oficial (${series.unitSuffix})`,
-                  )
-                : ui(
-                    `Global Spot (${series.unitSuffix})`,
-                    `Soko la Dunia (${series.unitSuffix})`,
-                    `Spot Global (${series.unitSuffix})`,
-                  )}
+              {ui(
+                `World Spot Parity (${series.unitSuffix})`,
+                `Soko la Dunia (${series.unitSuffix})`,
+                `Paridad Spot Mundial (${series.unitSuffix})`,
+              )}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded border border-ink/12 bg-paper/75 px-2 py-0.5 font-mono text-[10px] font-semibold text-ink">
               <span
@@ -406,17 +395,11 @@ export default function MineralTrendChart({
             </span>
           </div>
           <p className="mt-1 text-xs text-stone">
-            {isStatutoryLocal
-              ? ui(
-                  `Plotting statutory Tanzania Mineral Market (Soko la Madini) rates in local units (${currency}${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
-                  `Inaonyesha mwenendo wa bei rasmi za Soko la Madini kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
-                  `Graficando tasas oficiales del Mercado Mineral de Tanzania en unidades locales (${currency}${series.unitSuffix}), sincronizado con el modo de Mercados.`,
-                )
-              : ui(
-                  `Plotting international LBMA/LME Global Spot benchmarks converted to local units (${currency}${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
-                  `Inaonyesha mwenendo wa bei za kimataifa za LBMA/LME kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
-                  `Graficando referencias internacionales LBMA/LME Global Spot convertidas a unidades locales (${currency}${series.unitSuffix}), sincronizado con el modo de Mercados.`,
-                )}
+            {ui(
+              `Plotting World Spot Parity benchmarks in local units (${currency}${series.unitSuffix}). Currency and language controlled globally by the top navigation bar.`,
+              `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha ndani (${currency}${series.unitSuffix}). Sarafu na lugha zinasimamiwa kwenye upau mkuu wa juu.`,
+              `Graficando referencias de Paridad Spot Mundial en unidades locales (${currency}${series.unitSuffix}). Moneda e idioma controlados desde la barra superior.`,
+            )}
           </p>
         </div>
 
@@ -554,17 +537,11 @@ export default function MineralTrendChart({
               </>
             ) : (
               <>
-                {isStatutoryLocal
-                  ? ui(
-                      'Statutory Soko la Madini rate ·',
-                      'Bei rasmi ya Soko la Madini ·',
-                      'Tasa oficial Soko la Madini ·',
-                    )
-                  : ui(
-                      'Global Spot benchmark ·',
-                      'Bei elekezi ya Soko la Dunia ·',
-                      'Referencia Global Spot ·',
-                    )}{' '}
+                {ui(
+                  'World Spot Parity rate ·',
+                  'Bei ya Soko la Dunia ·',
+                  'Tasa de Paridad Spot Mundial ·',
+                )}{' '}
                 {timeframeLabel(timeframe)} ·{' '}
                 {activeMineral.exchange_desk ?? 'LBMA / Tume ya Madini'}
               </>
@@ -608,9 +585,7 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${timeframe} ${
-              isStatutoryLocal ? 'Statutory Local' : 'Global Spot'
-            } ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${series.unitSuffix})`}
+            aria-label={`${activeMineral.mineral_name} ${timeframe} World Spot Parity ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${series.unitSuffix})`}
             className="block w-full cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ochre/40"
             onPointerMove={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerDown={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
@@ -852,16 +827,16 @@ export default function MineralTrendChart({
 
         <div>
           <span className="block font-mono text-[10px] uppercase tracking-wider text-moss">
-            {isStatutoryLocal
-              ? ui('World Spot Parity', 'Soko la Dunia', 'Paridad Spot Mundial')
-              : ui('Soko la Madini', 'Soko la Madini', 'Mercado Mineral')}{' '}
-            ({counterpartTier.unitSuffix})
+            {ui(
+              'Statutory Soko la Madini',
+              'Soko la Madini (Rasmi)',
+              'Soko la Madini Oficial',
+            )}{' '}
+            ({sokoTier.unitSuffix})
           </span>
           <span className="font-mono text-xs font-bold text-moss tabular-nums">
-            {formatPrice(counterpartTier.unitUsd)}
-            <span className="font-normal text-stone">
-              {counterpartTier.unitSuffix}
-            </span>
+            {formatPrice(sokoTier.unitUsd)}
+            <span className="font-normal text-stone">{sokoTier.unitSuffix}</span>
           </span>
         </div>
 

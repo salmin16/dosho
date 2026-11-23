@@ -222,9 +222,9 @@ function sampleNormalizedArray(values: number[], t: number): number {
 
 /**
  * Generates a deterministic, realistic historical + live trend series for a mineral
- * in either `metric_local` (Statutory Local Soko la Madini rate) or `standard`
- * (Global Spot benchmark), ALWAYS expressed in local metric units (/g, /kg, or /ct)
- * and anchored precisely to the mineral's live benchmark rate at the terminal point.
+ * anchored to its World Spot Parity benchmark (`world_market_price_usd`), ALWAYS
+ * expressed in local metric units (/g, /kg, or /ct) at every point including the
+ * live terminal marker.
  */
 export function buildMineralTrendSeries(
   mineral: MineralPriceRecord,
@@ -232,19 +232,8 @@ export function buildMineralTrendSeries(
   mode: ChartPricingMode = 'metric_local',
   anchorNowMs?: number,
 ): MineralTrendSeries {
-  const isStatutoryLocal = mode === 'metric_local'
-  const baseSpotUsd = isStatutoryLocal
-    ? mineral.local_market_price_usd
-    : mineral.world_market_price_usd
-
-  // Proportional ratio between statutory local market rate and global world spot
-  const tierRatio =
-    isStatutoryLocal && mineral.world_market_price_usd > 0
-      ? mineral.local_market_price_usd / mineral.world_market_price_usd
-      : 1
-
   const { unitUsd: currentUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(baseSpotUsd, mineral.unit)
+    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit)
 
   const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
   const { count, spanMs } = TIMEFRAME_CONFIG[timeframe]
@@ -262,7 +251,7 @@ export function buildMineralTrendSeries(
   if (timeframe === '1D') {
     if (mineral.day_open_usd && mineral.day_open_usd > 0) {
       startUnitUsd = convertToChartUnitUsd(
-        mineral.day_open_usd * tierRatio,
+        mineral.day_open_usd,
         mineral.unit,
       ).unitUsd
     } else {
@@ -281,8 +270,7 @@ export function buildMineralTrendSeries(
     startUnitUsd = currentUnitUsd / (1 + effectiveDrift)
   }
 
-  // Keep seed shared across modes for the same mineral+timeframe so toggling
-  // Statutory Local vs Global Spot smoothly compares the same market trajectory in /g, /kg, /ct
+  // Deterministic seed per mineral + timeframe
   const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v1`))
   const vol = profile.volatility[timeframe]
 
@@ -305,17 +293,17 @@ export function buildMineralTrendSeries(
   const sparkConverted =
     mineral.sparkline_points && mineral.sparkline_points.length >= 2
       ? mineral.sparkline_points.map(
-          (p) => convertToChartUnitUsd(p * tierRatio, mineral.unit).unitUsd,
+          (p) => convertToChartUnitUsd(p, mineral.unit).unitUsd,
         )
       : null
 
   const dayLowUnit =
     mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToChartUnitUsd(mineral.day_low_usd * tierRatio, mineral.unit).unitUsd
+      ? convertToChartUnitUsd(mineral.day_low_usd, mineral.unit).unitUsd
       : null
   const dayHighUnit =
     mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToChartUnitUsd(mineral.day_high_usd * tierRatio, mineral.unit).unitUsd
+      ? convertToChartUnitUsd(mineral.day_high_usd, mineral.unit).unitUsd
       : null
 
   const points: MineralTrendPoint[] = []
