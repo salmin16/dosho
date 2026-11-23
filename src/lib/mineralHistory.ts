@@ -20,12 +20,11 @@ export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
 ] as const
 
 export type LocalUnitSuffix = '/g' | '/kg' | '/ct'
-export type GlobalUnitSuffix = '/toz' | '/lb' | '/t' | '/ct'
-export type ChartUnitSuffix = LocalUnitSuffix | GlobalUnitSuffix
+export type ChartUnitSuffix = LocalUnitSuffix
 
 export interface UnitPriceConversion {
   unitUsd: number
-  unitSuffix: ChartUnitSuffix
+  unitSuffix: LocalUnitSuffix
   unitSingular: string
 }
 
@@ -38,7 +37,7 @@ export interface MineralTrendSeries {
   mode: ChartPricingMode
   timeframe: ChartTimeframe
   points: MineralTrendPoint[]
-  unitSuffix: ChartUnitSuffix
+  unitSuffix: LocalUnitSuffix
   unitSingular: string
   startUnitUsd: number
   currentUnitUsd: number
@@ -49,38 +48,17 @@ export interface MineralTrendSeries {
 }
 
 /**
- * Converts a USD benchmark value to either:
- * - `metric_local`: Tanzania statutory local metric units (/g, /kg, /ct)
- * - `standard`: Global spot exchange units (/toz, /lb, /t, /ct)
+ * Strictly converts any USD benchmark value into Tanzania local metric units
+ * (/g, /kg, or /ct) across both Statutory Local and Global Spot chart modes.
+ * Never returns troy ounces (/toz), pounds (/lb), or tonnes (/t).
  */
 export function convertToChartUnitUsd(
   usdAmount: number,
   rawUnit: string,
-  mode: ChartPricingMode,
 ): UnitPriceConversion {
   const safeUsd = Number.isFinite(usdAmount) && usdAmount > 0 ? usdAmount : 0
   const baseUnit = rawUnit.replace(/^USD\//i, '').trim().toLowerCase()
 
-  if (mode === 'standard') {
-    if (baseUnit === 'toz' || baseUnit === 'oz') {
-      return { unitUsd: safeUsd, unitSuffix: '/toz', unitSingular: 'troy oz' }
-    }
-    if (baseUnit === 'lb' || baseUnit === 'lbs') {
-      return { unitUsd: safeUsd, unitSuffix: '/lb', unitSingular: 'lb' }
-    }
-    if (baseUnit === 'carat' || baseUnit === 'ct') {
-      return { unitUsd: safeUsd, unitSuffix: '/ct', unitSingular: 'carat' }
-    }
-    if (baseUnit === 'g' || baseUnit === 'gram') {
-      return { unitUsd: safeUsd, unitSuffix: '/g', unitSingular: 'gram' }
-    }
-    if (baseUnit === 'kg') {
-      return { unitUsd: safeUsd, unitSuffix: '/kg', unitSingular: 'kg' }
-    }
-    return { unitUsd: safeUsd, unitSuffix: '/t', unitSingular: 'tonne' }
-  }
-
-  // Statutory Local metric units (/g, /kg, /ct)
   if (baseUnit === 'toz' || baseUnit === 'oz') {
     return {
       unitUsd: safeUsd / GRAMS_PER_TROY_OUNCE,
@@ -244,9 +222,9 @@ function sampleNormalizedArray(values: number[], t: number): number {
 
 /**
  * Generates a deterministic, realistic historical + live trend series for a mineral
- * in either `metric_local` (Statutory Local market price in /g, /kg, /ct) or
- * `standard` (Global Spot market price in /toz, /lb, /t, /ct), anchored precisely
- * to the mineral's live benchmark rate at the terminal point.
+ * in either `metric_local` (Statutory Local Soko la Madini rate) or `standard`
+ * (Global Spot benchmark), ALWAYS expressed in local metric units (/g, /kg, or /ct)
+ * and anchored precisely to the mineral's live benchmark rate at the terminal point.
  */
 export function buildMineralTrendSeries(
   mineral: MineralPriceRecord,
@@ -266,7 +244,7 @@ export function buildMineralTrendSeries(
       : 1
 
   const { unitUsd: currentUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(baseSpotUsd, mineral.unit, mode)
+    convertToChartUnitUsd(baseSpotUsd, mineral.unit)
 
   const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
   const { count, spanMs } = TIMEFRAME_CONFIG[timeframe]
@@ -286,7 +264,6 @@ export function buildMineralTrendSeries(
       startUnitUsd = convertToChartUnitUsd(
         mineral.day_open_usd * tierRatio,
         mineral.unit,
-        mode,
       ).unitUsd
     } else {
       const denom = 1 + (mineral.trend_percentage || 0) / 100
@@ -305,7 +282,7 @@ export function buildMineralTrendSeries(
   }
 
   // Keep seed shared across modes for the same mineral+timeframe so toggling
-  // Statutory Local vs Global Spot smoothly re-scales the same underlying market trajectory
+  // Statutory Local vs Global Spot smoothly compares the same market trajectory in /g, /kg, /ct
   const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v1`))
   const vol = profile.volatility[timeframe]
 
@@ -328,17 +305,17 @@ export function buildMineralTrendSeries(
   const sparkConverted =
     mineral.sparkline_points && mineral.sparkline_points.length >= 2
       ? mineral.sparkline_points.map(
-          (p) => convertToChartUnitUsd(p * tierRatio, mineral.unit, mode).unitUsd,
+          (p) => convertToChartUnitUsd(p * tierRatio, mineral.unit).unitUsd,
         )
       : null
 
   const dayLowUnit =
     mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToChartUnitUsd(mineral.day_low_usd * tierRatio, mineral.unit, mode).unitUsd
+      ? convertToChartUnitUsd(mineral.day_low_usd * tierRatio, mineral.unit).unitUsd
       : null
   const dayHighUnit =
     mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToChartUnitUsd(mineral.day_high_usd * tierRatio, mineral.unit, mode).unitUsd
+      ? convertToChartUnitUsd(mineral.day_high_usd * tierRatio, mineral.unit).unitUsd
       : null
 
   const points: MineralTrendPoint[] = []

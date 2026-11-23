@@ -338,23 +338,20 @@ export default function MineralTrendChart({
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.2 : 0.18
 
-  // Complementary tier benchmarks expressed in the active pricing mode's exact unit
+  // Complementary tier benchmarks strictly expressed in local unit rates (/g, /kg, /ct)
   const counterpartTier = isStatutoryLocal
     ? convertToChartUnitUsd(
         activeMineral.world_market_price_usd,
         activeMineral.unit,
-        'metric_local',
       )
     : convertToChartUnitUsd(
         activeMineral.local_market_price_usd,
         activeMineral.unit,
-        'standard',
       )
 
   const buyingTier = convertToChartUnitUsd(
     activeMineral.buying_centre_price_usd,
     activeMineral.unit,
-    activeMode,
   )
 
   // Tooltip horizontal alignment so it never clips off left or right edge
@@ -411,14 +408,14 @@ export default function MineralTrendChart({
           <p className="mt-1 text-xs text-stone">
             {isStatutoryLocal
               ? ui(
-                  `Plotting statutory Tanzania Mineral Market (Soko la Madini) rates in ${currency} (${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
-                  `Inaonyesha mwenendo wa bei rasmi za Soko la Madini kwa ${currency} (${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
-                  `Graficando tasas oficiales del Mercado Mineral de Tanzania en ${currency} (${series.unitSuffix}), sincronizado con el modo de Mercados.`,
+                  `Plotting statutory Tanzania Mineral Market (Soko la Madini) rates in local units (${currency}${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
+                  `Inaonyesha mwenendo wa bei rasmi za Soko la Madini kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
+                  `Graficando tasas oficiales del Mercado Mineral de Tanzania en unidades locales (${currency}${series.unitSuffix}), sincronizado con el modo de Mercados.`,
                 )
               : ui(
-                  `Plotting international LBMA/LME Global Spot benchmarks in ${currency} (${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
-                  `Inaonyesha mwenendo wa bei za kimataifa za LBMA/LME kwa ${currency} (${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
-                  `Graficando referencias internacionales LBMA/LME Global Spot en ${currency} (${series.unitSuffix}), sincronizado con el modo de Mercados.`,
+                  `Plotting international LBMA/LME Global Spot benchmarks converted to local units (${currency}${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
+                  `Inaonyesha mwenendo wa bei za kimataifa za LBMA/LME kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
+                  `Graficando referencias internacionales LBMA/LME Global Spot convertidas a unidades locales (${currency}${series.unitSuffix}), sincronizado con el modo de Mercados.`,
                 )}
           </p>
         </div>
