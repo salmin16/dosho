@@ -8,6 +8,8 @@ import type { MineralPriceRecord } from '../types/database'
 
 export type ChartTimeframe = '1D' | '5D' | '1M' | '1Y' | '5Y' | 'Max'
 
+export type ChartPricingMode = 'metric_local' | 'standard'
+
 export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
   '1D',
   '5D',
@@ -18,45 +20,70 @@ export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
 ] as const
 
 export type LocalUnitSuffix = '/g' | '/kg' | '/ct'
+export type GlobalUnitSuffix = '/toz' | '/lb' | '/t' | '/ct'
+export type ChartUnitSuffix = LocalUnitSuffix | GlobalUnitSuffix
 
-export interface LocalUnitConversion {
-  localUnitUsd: number
-  unitSuffix: LocalUnitSuffix
+export interface UnitPriceConversion {
+  unitUsd: number
+  unitSuffix: ChartUnitSuffix
   unitSingular: string
 }
 
 export interface MineralTrendPoint {
   timestampMs: number
-  localUnitUsd: number
+  unitUsd: number
 }
 
 export interface MineralTrendSeries {
+  mode: ChartPricingMode
   timeframe: ChartTimeframe
   points: MineralTrendPoint[]
-  unitSuffix: LocalUnitSuffix
+  unitSuffix: ChartUnitSuffix
   unitSingular: string
-  startLocalUsd: number
-  currentLocalUsd: number
-  minLocalUsd: number
-  maxLocalUsd: number
-  changeLocalUsd: number
+  startUnitUsd: number
+  currentUnitUsd: number
+  minUnitUsd: number
+  maxUnitUsd: number
+  changeUnitUsd: number
   changePct: number
 }
 
 /**
- * Strictly converts any international USD benchmark unit into Tanzania statutory
- * local metric units (/g, /kg, or /ct). Never returns troy ounces, pounds, or tonnes.
+ * Converts a USD benchmark value to either:
+ * - `metric_local`: Tanzania statutory local metric units (/g, /kg, /ct)
+ * - `standard`: Global spot exchange units (/toz, /lb, /t, /ct)
  */
-export function convertToLocalUnitUsd(
+export function convertToChartUnitUsd(
   usdAmount: number,
   rawUnit: string,
-): LocalUnitConversion {
+  mode: ChartPricingMode,
+): UnitPriceConversion {
   const safeUsd = Number.isFinite(usdAmount) && usdAmount > 0 ? usdAmount : 0
   const baseUnit = rawUnit.replace(/^USD\//i, '').trim().toLowerCase()
 
+  if (mode === 'standard') {
+    if (baseUnit === 'toz' || baseUnit === 'oz') {
+      return { unitUsd: safeUsd, unitSuffix: '/toz', unitSingular: 'troy oz' }
+    }
+    if (baseUnit === 'lb' || baseUnit === 'lbs') {
+      return { unitUsd: safeUsd, unitSuffix: '/lb', unitSingular: 'lb' }
+    }
+    if (baseUnit === 'carat' || baseUnit === 'ct') {
+      return { unitUsd: safeUsd, unitSuffix: '/ct', unitSingular: 'carat' }
+    }
+    if (baseUnit === 'g' || baseUnit === 'gram') {
+      return { unitUsd: safeUsd, unitSuffix: '/g', unitSingular: 'gram' }
+    }
+    if (baseUnit === 'kg') {
+      return { unitUsd: safeUsd, unitSuffix: '/kg', unitSingular: 'kg' }
+    }
+    return { unitUsd: safeUsd, unitSuffix: '/t', unitSingular: 'tonne' }
+  }
+
+  // Statutory Local metric units (/g, /kg, /ct)
   if (baseUnit === 'toz' || baseUnit === 'oz') {
     return {
-      localUnitUsd: safeUsd / GRAMS_PER_TROY_OUNCE,
+      unitUsd: safeUsd / GRAMS_PER_TROY_OUNCE,
       unitSuffix: '/g',
       unitSingular: 'gram',
     }
@@ -64,7 +91,7 @@ export function convertToLocalUnitUsd(
 
   if (baseUnit === 'lb' || baseUnit === 'lbs') {
     return {
-      localUnitUsd: (safeUsd / GRAMS_PER_POUND) * 1000,
+      unitUsd: (safeUsd / GRAMS_PER_POUND) * 1000,
       unitSuffix: '/kg',
       unitSingular: 'kg',
     }
@@ -72,7 +99,7 @@ export function convertToLocalUnitUsd(
 
   if (baseUnit === 'carat' || baseUnit === 'ct') {
     return {
-      localUnitUsd: safeUsd,
+      unitUsd: safeUsd,
       unitSuffix: '/ct',
       unitSingular: 'carat',
     }
@@ -80,23 +107,22 @@ export function convertToLocalUnitUsd(
 
   if (baseUnit === 'g' || baseUnit === 'gram') {
     return {
-      localUnitUsd: safeUsd,
+      unitUsd: safeUsd,
       unitSuffix: '/g',
       unitSingular: 'gram',
     }
   }
 
-  // Default for tonne / mt / kg benchmarks
   if (baseUnit === 'kg') {
     return {
-      localUnitUsd: safeUsd,
+      unitUsd: safeUsd,
       unitSuffix: '/kg',
       unitSingular: 'kg',
     }
   }
 
   return {
-    localUnitUsd: safeUsd / KILOGRAMS_PER_TONNE,
+    unitUsd: safeUsd / KILOGRAMS_PER_TONNE,
     unitSuffix: '/kg',
     unitSingular: 'kg',
   }
@@ -217,17 +243,30 @@ function sampleNormalizedArray(values: number[], t: number): number {
 }
 
 /**
- * Generates a deterministic, realistic historical + live trend series for a mineral,
- * strictly expressed in local statutory unit rates (/g, /kg, or /ct) and anchored
- * precisely to the mineral's live benchmark rate at the terminal point.
+ * Generates a deterministic, realistic historical + live trend series for a mineral
+ * in either `metric_local` (Statutory Local market price in /g, /kg, /ct) or
+ * `standard` (Global Spot market price in /toz, /lb, /t, /ct), anchored precisely
+ * to the mineral's live benchmark rate at the terminal point.
  */
 export function buildMineralTrendSeries(
   mineral: MineralPriceRecord,
   timeframe: ChartTimeframe,
+  mode: ChartPricingMode = 'metric_local',
   anchorNowMs?: number,
 ): MineralTrendSeries {
-  const { localUnitUsd: currentLocalUsd, unitSuffix, unitSingular } =
-    convertToLocalUnitUsd(mineral.world_market_price_usd, mineral.unit)
+  const isStatutoryLocal = mode === 'metric_local'
+  const baseSpotUsd = isStatutoryLocal
+    ? mineral.local_market_price_usd
+    : mineral.world_market_price_usd
+
+  // Proportional ratio between statutory local market rate and global world spot
+  const tierRatio =
+    isStatutoryLocal && mineral.world_market_price_usd > 0
+      ? mineral.local_market_price_usd / mineral.world_market_price_usd
+      : 1
+
+  const { unitUsd: currentUnitUsd, unitSuffix, unitSingular } =
+    convertToChartUnitUsd(baseSpotUsd, mineral.unit, mode)
 
   const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
   const { count, spanMs } = TIMEFRAME_CONFIG[timeframe]
@@ -241,17 +280,20 @@ export function buildMineralTrendSeries(
   const startMs = endMs - spanMs
 
   // Determine the anchored opening value for this timeframe
-  let startLocalUsd: number
+  let startUnitUsd: number
   if (timeframe === '1D') {
     if (mineral.day_open_usd && mineral.day_open_usd > 0) {
-      startLocalUsd = convertToLocalUnitUsd(mineral.day_open_usd, mineral.unit).localUnitUsd
+      startUnitUsd = convertToChartUnitUsd(
+        mineral.day_open_usd * tierRatio,
+        mineral.unit,
+        mode,
+      ).unitUsd
     } else {
       const denom = 1 + (mineral.trend_percentage || 0) / 100
-      startLocalUsd = denom > 0.2 ? currentLocalUsd / denom : currentLocalUsd
+      startUnitUsd = denom > 0.2 ? currentUnitUsd / denom : currentUnitUsd
     }
   } else {
     const horizonDrift = profile.drift[timeframe]
-    // Slightly modulate shorter-horizon drift with the mineral's live 24h momentum
     const liveTilt =
       timeframe === '5D'
         ? ((mineral.trend_percentage || 0) / 100) * 0.45
@@ -259,17 +301,17 @@ export function buildMineralTrendSeries(
           ? ((mineral.trend_percentage || 0) / 100) * 0.2
           : 0
     const effectiveDrift = Math.max(-0.55, Math.min(2.2, horizonDrift + liveTilt))
-    startLocalUsd = currentLocalUsd / (1 + effectiveDrift)
+    startUnitUsd = currentUnitUsd / (1 + effectiveDrift)
   }
 
-  // Build deterministic Brownian bridge + commodity macro cycle
+  // Keep seed shared across modes for the same mineral+timeframe so toggling
+  // Statutory Local vs Global Spot smoothly re-scales the same underlying market trajectory
   const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v1`))
   const vol = profile.volatility[timeframe]
 
   // Generate raw Brownian increments
   const walk: number[] = [0]
   for (let i = 1; i < count; i++) {
-    // Box-Muller-like approximation using sum of 3 uniforms centered at 0
     const z = (rng() + rng() + rng() - 1.5) * 1.15
     walk.push(walk[i - 1] + z)
   }
@@ -282,44 +324,42 @@ export function buildMineralTrendSeries(
   })
   const maxAbsBridge = Math.max(0.0001, ...bridge.map((v) => Math.abs(v)))
 
-  // Optional shape influence from stored sparkline_points on 1D / 5D
-  const sparkLocal =
+  // Optional shape influence from stored sparkline_points on 1D
+  const sparkConverted =
     mineral.sparkline_points && mineral.sparkline_points.length >= 2
       ? mineral.sparkline_points.map(
-          (p) => convertToLocalUnitUsd(p, mineral.unit).localUnitUsd,
+          (p) => convertToChartUnitUsd(p * tierRatio, mineral.unit, mode).unitUsd,
         )
       : null
 
-  const dayLowLocal =
+  const dayLowUnit =
     mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToLocalUnitUsd(mineral.day_low_usd, mineral.unit).localUnitUsd
+      ? convertToChartUnitUsd(mineral.day_low_usd * tierRatio, mineral.unit, mode).unitUsd
       : null
-  const dayHighLocal =
+  const dayHighUnit =
     mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToLocalUnitUsd(mineral.day_high_usd, mineral.unit).localUnitUsd
+      ? convertToChartUnitUsd(mineral.day_high_usd * tierRatio, mineral.unit, mode).unitUsd
       : null
 
   const points: MineralTrendPoint[] = []
-  const meanLevel = (startLocalUsd + currentLocalUsd) / 2
+  const meanLevel = (startUnitUsd + currentUnitUsd) / 2
 
   for (let i = 0; i < count; i++) {
     const t = i / (count - 1)
     const timestampMs = Math.round(startMs + t * spanMs)
 
     if (i === 0) {
-      points.push({ timestampMs, localUnitUsd: startLocalUsd })
+      points.push({ timestampMs, unitUsd: startUnitUsd })
       continue
     }
     if (i === count - 1) {
-      points.push({ timestampMs, localUnitUsd: currentLocalUsd })
+      points.push({ timestampMs, unitUsd: currentUnitUsd })
       continue
     }
 
-    // Smooth trend interpolation between start and live terminal point
-    const linear = startLocalUsd + (currentLocalUsd - startLocalUsd) * t
-    const envelope = Math.sin(Math.PI * t) // 0 at ends, 1 in middle
+    const linear = startUnitUsd + (currentUnitUsd - startUnitUsd) * t
+    const envelope = Math.sin(Math.PI * t)
 
-    // Macro cyclical wave for multi-month / multi-year realism
     const macroWave =
       timeframe === '1D'
         ? Math.sin(t * Math.PI * 2.5 + profile.cyclePhase) * 0.25
@@ -332,51 +372,49 @@ export function buildMineralTrendSeries(
     let value =
       linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.55)
 
-    // Blend subtle sparkline contour on 1D
-    if (timeframe === '1D' && sparkLocal) {
-      const sparkVal = sampleNormalizedArray(sparkLocal, t)
-      const sparkSpan = sparkLocal[sparkLocal.length - 1] - sparkLocal[0]
-      const expectedLinearSpark = sparkLocal[0] + sparkSpan * t
+    if (timeframe === '1D' && sparkConverted) {
+      const sparkVal = sampleNormalizedArray(sparkConverted, t)
+      const sparkSpan = sparkConverted[sparkConverted.length - 1] - sparkConverted[0]
+      const expectedLinearSpark = sparkConverted[0] + sparkSpan * t
       const sparkResidual = sparkVal - expectedLinearSpark
       value += sparkResidual * 0.45 * envelope
     }
 
-    // Respect intraday low/high guardrails on 1D when available
-    if (timeframe === '1D' && dayLowLocal !== null && dayHighLocal !== null) {
-      const lowGuard = Math.min(dayLowLocal, startLocalUsd, currentLocalUsd)
-      const highGuard = Math.max(dayHighLocal, startLocalUsd, currentLocalUsd)
+    if (timeframe === '1D' && dayLowUnit !== null && dayHighUnit !== null) {
+      const lowGuard = Math.min(dayLowUnit, startUnitUsd, currentUnitUsd)
+      const highGuard = Math.max(dayHighUnit, startUnitUsd, currentUnitUsd)
       value = Math.max(lowGuard, Math.min(highGuard, value))
     }
 
-    // Ensure strictly positive price floor
-    const positiveFloor = Math.max(0.0001, Math.min(startLocalUsd, currentLocalUsd) * 0.35)
+    const positiveFloor = Math.max(0.0001, Math.min(startUnitUsd, currentUnitUsd) * 0.35)
     points.push({
       timestampMs,
-      localUnitUsd: Math.max(positiveFloor, value),
+      unitUsd: Math.max(positiveFloor, value),
     })
   }
 
-  let minLocalUsd = points[0].localUnitUsd
-  let maxLocalUsd = points[0].localUnitUsd
+  let minUnitUsd = points[0].unitUsd
+  let maxUnitUsd = points[0].unitUsd
   for (const pt of points) {
-    if (pt.localUnitUsd < minLocalUsd) minLocalUsd = pt.localUnitUsd
-    if (pt.localUnitUsd > maxLocalUsd) maxLocalUsd = pt.localUnitUsd
+    if (pt.unitUsd < minUnitUsd) minUnitUsd = pt.unitUsd
+    if (pt.unitUsd > maxUnitUsd) maxUnitUsd = pt.unitUsd
   }
 
-  const changeLocalUsd = currentLocalUsd - startLocalUsd
+  const changeUnitUsd = currentUnitUsd - startUnitUsd
   const changePct =
-    startLocalUsd > 0 ? (changeLocalUsd / startLocalUsd) * 100 : 0
+    startUnitUsd > 0 ? (changeUnitUsd / startUnitUsd) * 100 : 0
 
   return {
+    mode,
     timeframe,
     points,
     unitSuffix,
     unitSingular,
-    startLocalUsd,
-    currentLocalUsd,
-    minLocalUsd,
-    maxLocalUsd,
-    changeLocalUsd,
+    startUnitUsd,
+    currentUnitUsd,
+    minUnitUsd,
+    maxUnitUsd,
+    changeUnitUsd,
     changePct,
   }
 }
@@ -477,7 +515,6 @@ export function computeNiceAxisTicks(
     lo = Math.max(0, lo - pad)
     hi = hi + pad
   } else {
-    // Add subtle vertical breathing room (8% top/bottom) so curve & dot never clip
     const span = hi - lo
     lo = Math.max(0, lo - span * 0.08)
     hi = hi + span * 0.08

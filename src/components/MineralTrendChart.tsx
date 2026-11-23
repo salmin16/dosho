@@ -7,9 +7,10 @@ import {
   CHART_TIMEFRAMES,
   buildMineralTrendSeries,
   computeNiceAxisTicks,
-  convertToLocalUnitUsd,
+  convertToChartUnitUsd,
   formatChartAxisDate,
   formatChartTooltipDate,
+  type ChartPricingMode,
   type ChartTimeframe,
 } from '../lib/mineralHistory'
 import type { MineralPriceRecord } from '../types/database'
@@ -18,6 +19,9 @@ export interface MineralTrendChartProps {
   minerals: MineralPriceRecord[]
   selectedSymbol?: string
   onSelectSymbol?: (symbol: string) => void
+  /** Shared pricing mode synced bidirectionally with /markets ('metric_local' | 'standard') */
+  unitBasis?: ChartPricingMode
+  onUnitBasisChange?: (mode: ChartPricingMode) => void
 }
 
 function getShortMineralLabel(mineralName: string): string {
@@ -29,6 +33,8 @@ export default function MineralTrendChart({
   minerals,
   selectedSymbol: controlledSymbol,
   onSelectSymbol,
+  unitBasis: controlledUnitBasis,
+  onUnitBasisChange,
 }: MineralTrendChartProps) {
   const {
     currency,
@@ -45,10 +51,14 @@ export default function MineralTrendChart({
   const [internalSymbol, setInternalSymbol] = useState<string>(
     () => minerals[0]?.symbol ?? 'XAU',
   )
+  const [internalUnitBasis, setInternalUnitBasis] =
+    useState<ChartPricingMode>('metric_local')
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1M')
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
+  const activeMode = controlledUnitBasis ?? internalUnitBasis
+  const isStatutoryLocal = activeMode === 'metric_local'
 
   const handleSymbolChange = useCallback(
     (symbol: string) => {
@@ -62,11 +72,21 @@ export default function MineralTrendChart({
     [onSelectSymbol],
   )
 
+  const handleModeChange = useCallback(
+    (nextMode: ChartPricingMode) => {
+      setHoverIndex(null)
+      if (onUnitBasisChange) {
+        onUnitBasisChange(nextMode)
+      } else {
+        setInternalUnitBasis(nextMode)
+      }
+    },
+    [onUnitBasisChange],
+  )
+
   const activeMineral = useMemo(() => {
     if (!minerals.length) return null
-    return (
-      minerals.find((m) => m.symbol === activeSymbol) ?? minerals[0]
-    )
+    return minerals.find((m) => m.symbol === activeSymbol) ?? minerals[0]
   }, [minerals, activeSymbol])
 
   // Observe container width for razor-sharp, non-distorted SVG text & strokes
@@ -93,31 +113,39 @@ export default function MineralTrendChart({
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Reset scrub index when timeframe changes
+  // Reset scrub index when timeframe or pricing mode changes
   useEffect(() => {
     setHoverIndex(null)
-  }, [timeframe])
+  }, [timeframe, activeMode])
 
   const series = useMemo(() => {
     if (!activeMineral) return null
-    return buildMineralTrendSeries(activeMineral, timeframe)
-  }, [activeMineral, timeframe])
+    return buildMineralTrendSeries(activeMineral, timeframe, activeMode)
+  }, [activeMineral, timeframe, activeMode])
 
   // Format a value that is already in the active display currency for Y-axis ticks
   const formatAxisTickValue = useCallback(
     (displayValue: number): string => {
-      const usdEquivalent = rateForSelected > 0 ? displayValue / rateForSelected : displayValue
+      const usdEquivalent =
+        rateForSelected > 0 ? displayValue / rateForSelected : displayValue
       const isZeroDecimal = currency === 'TZS' || currency === 'JPY'
       const absVal = Math.abs(displayValue)
 
       if (absVal >= 1_000_000) {
-        const compactNum = (displayValue / 1_000_000).toFixed(2)
+        const decimals = absVal >= 10_000_000 ? 1 : 2
+        const compactNum = (displayValue / 1_000_000).toFixed(decimals)
         return `${currencyMeta.symbol}${compactNum}M`
       }
 
       return formatPrice(usdEquivalent, {
         minimumFractionDigits: isZeroDecimal ? 0 : absVal < 10 ? 2 : 0,
-        maximumFractionDigits: isZeroDecimal ? 0 : absVal < 10 ? 2 : absVal < 100 ? 2 : 0,
+        maximumFractionDigits: isZeroDecimal
+          ? 0
+          : absVal < 10
+            ? 2
+            : absVal < 100
+              ? 2
+              : 0,
       })
     },
     [currency, currencyMeta.symbol, formatPrice, rateForSelected],
@@ -156,7 +184,7 @@ export default function MineralTrendChart({
     if (!series || series.points.length < 2) return null
 
     const height = chartWidth < 520 ? 248 : 308
-    const convertedValues = series.points.map((p) => p.localUnitUsd * rateForSelected)
+    const convertedValues = series.points.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
 
@@ -176,7 +204,7 @@ export default function MineralTrendChart({
       4,
     )
 
-    const padLeft = Math.min(120, Math.max(66, Math.round(maxLabelLen * 7.2 + 16)))
+    const padLeft = Math.min(126, Math.max(66, Math.round(maxLabelLen * 7.2 + 16)))
     const padRight = 22
     const padTop = 18
     const padBottom = 34
@@ -295,29 +323,38 @@ export default function MineralTrendChart({
   const activeCoord = chartGeometry.coords[activePointIdx]
   const terminalCoord = chartGeometry.coords[lastIdx]
 
-  const displayedLocalUsd = activePoint.localUnitUsd
-  const displayedDeltaUsd = displayedLocalUsd - series.startLocalUsd
+  const displayedUnitUsd = activePoint.unitUsd
+  const displayedDeltaUsd = displayedUnitUsd - series.startUnitUsd
   const displayedDeltaPct =
-    series.startLocalUsd > 0
-      ? (displayedDeltaUsd / series.startLocalUsd) * 100
+    series.startUnitUsd > 0
+      ? (displayedDeltaUsd / series.startUnitUsd) * 100
       : 0
 
   // Trend polarity based on overall selected timeframe performance
-  const seriesPositive = series.changeLocalUsd >= 0
+  const seriesPositive = series.changeUnitUsd >= 0
   const displayedPositive = displayedDeltaUsd >= 0
 
   // Classic institutional palette harmonized with MineConnect brand tokens
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.2 : 0.18
 
-  // Local statutory reference tiers (strictly /g, /kg, or /ct)
-  const sokoLocal = convertToLocalUnitUsd(
-    activeMineral.local_market_price_usd,
-    activeMineral.unit,
-  )
-  const buyingLocal = convertToLocalUnitUsd(
+  // Complementary tier benchmarks expressed in the active pricing mode's exact unit
+  const counterpartTier = isStatutoryLocal
+    ? convertToChartUnitUsd(
+        activeMineral.world_market_price_usd,
+        activeMineral.unit,
+        'metric_local',
+      )
+    : convertToChartUnitUsd(
+        activeMineral.local_market_price_usd,
+        activeMineral.unit,
+        'standard',
+      )
+
+  const buyingTier = convertToChartUnitUsd(
     activeMineral.buying_centre_price_usd,
     activeMineral.unit,
+    activeMode,
   )
 
   // Tooltip horizontal alignment so it never clips off left or right edge
@@ -333,10 +370,11 @@ export default function MineralTrendChart({
       )}
       data-currency={currency}
       data-language={language}
+      data-unit-basis={activeMode}
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
-      {/* Top Masthead Bar */}
-      <div className="flex flex-col justify-between gap-3 border-b border-ink/10 bg-paper-2 px-5 py-4 sm:flex-row sm:items-center lg:px-6">
+      {/* Top Masthead Bar with Synced Bidirectional Mode Toggle */}
+      <div className="flex flex-col justify-between gap-3 border-b border-ink/10 bg-paper-2 px-5 py-4 lg:flex-row lg:items-center lg:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
@@ -348,32 +386,77 @@ export default function MineralTrendChart({
               )}
             </span>
             <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
-              {ui(
-                `Local Unit Rate (${series.unitSuffix})`,
-                `Kipimo cha Ndani (${series.unitSuffix})`,
-                `Tasa Local (${series.unitSuffix})`,
-              )}
+              {isStatutoryLocal
+                ? ui(
+                    `Statutory Local (${series.unitSuffix})`,
+                    `Soko la Ndani (${series.unitSuffix})`,
+                    `Local Oficial (${series.unitSuffix})`,
+                  )
+                : ui(
+                    `Global Spot (${series.unitSuffix})`,
+                    `Soko la Dunia (${series.unitSuffix})`,
+                    `Spot Global (${series.unitSuffix})`,
+                  )}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded border border-ink/12 bg-paper/75 px-2 py-0.5 font-mono text-[10px] font-semibold text-ink">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: strokeColor }}
+                aria-hidden="true"
+              />
+              {currencyMeta.flag} {currency}
+              {series.unitSuffix}
             </span>
           </div>
           <p className="mt-1 text-xs text-stone">
-            {ui(
-              `Anchored to live statutory local-unit pricing in ${currency} (${series.unitSuffix}). Controlled globally by the top navigation bar.`,
-              `Imeunganishwa moja kwa moja na bei hai za kipimo cha ndani kwa ${currency} (${series.unitSuffix}) kupitia upau mkuu wa juu.`,
-              `Anclado al precio local vigente en ${currency} (${series.unitSuffix}). Controlado globalmente desde la barra superior.`,
-            )}
+            {isStatutoryLocal
+              ? ui(
+                  `Plotting statutory Tanzania Mineral Market (Soko la Madini) rates in ${currency} (${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
+                  `Inaonyesha mwenendo wa bei rasmi za Soko la Madini kwa ${currency} (${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
+                  `Graficando tasas oficiales del Mercado Mineral de Tanzania en ${currency} (${series.unitSuffix}), sincronizado con el modo de Mercados.`,
+                )
+              : ui(
+                  `Plotting international LBMA/LME Global Spot benchmarks in ${currency} (${series.unitSuffix}). Synced with the Markets mode toggle and top navbar.`,
+                  `Inaonyesha mwenendo wa bei za kimataifa za LBMA/LME kwa ${currency} (${series.unitSuffix}), ikioana na swichi ya Soko na upau mkuu wa juu.`,
+                  `Graficando referencias internacionales LBMA/LME Global Spot en ${currency} (${series.unitSuffix}), sincronizado con el modo de Mercados.`,
+                )}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-semibold text-ink">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: strokeColor }}
-              aria-hidden="true"
-            />
-            {currencyMeta.flag} {currency}
-            {series.unitSuffix}
-          </span>
+        {/* Compact Bidirectional Statutory Local / Global Spot Toggle (No Currency/Language Controls) */}
+        <div
+          role="group"
+          aria-label={ui(
+            'Chart pricing mode',
+            'Modi ya bei za chati',
+            'Modo de precios del gráfico',
+          )}
+          className="inline-flex shrink-0 self-start rounded-lg border border-ink/15 bg-paper p-0.5 lg:self-center"
+        >
+          <button
+            type="button"
+            aria-pressed={isStatutoryLocal}
+            onClick={() => handleModeChange('metric_local')}
+            className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
+              isStatutoryLocal
+                ? 'bg-ochre text-paper shadow-xs'
+                : 'text-ink-3 hover:text-ink'
+            }`}
+          >
+            {ui('Statutory Local', 'Soko la Ndani', 'Local Oficial')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={!isStatutoryLocal}
+            onClick={() => handleModeChange('standard')}
+            className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
+              !isStatutoryLocal
+                ? 'bg-ochre text-paper shadow-xs'
+                : 'text-ink-3 hover:text-ink'
+            }`}
+          >
+            {ui('Global Spot', 'Soko la Dunia', 'Spot Global')}
+          </button>
         </div>
       </div>
 
@@ -431,7 +514,7 @@ export default function MineralTrendChart({
 
           <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="font-mono text-3xl font-bold tracking-tight text-ink tabular-nums sm:text-4xl">
-              {formatPrice(displayedLocalUsd)}
+              {formatPrice(displayedUnitUsd)}
             </span>
             <span className="font-mono text-base font-medium text-stone">
               {series.unitSuffix}
@@ -474,7 +557,17 @@ export default function MineralTrendChart({
               </>
             ) : (
               <>
-                {ui('Live local benchmark ·', 'Bei hai ya kipimo cha ndani ·', 'Referencia local vigente ·')}{' '}
+                {isStatutoryLocal
+                  ? ui(
+                      'Statutory Soko la Madini rate ·',
+                      'Bei rasmi ya Soko la Madini ·',
+                      'Tasa oficial Soko la Madini ·',
+                    )
+                  : ui(
+                      'Global Spot benchmark ·',
+                      'Bei elekezi ya Soko la Dunia ·',
+                      'Referencia Global Spot ·',
+                    )}{' '}
                 {timeframeLabel(timeframe)} ·{' '}
                 {activeMineral.exchange_desk ?? 'LBMA / Tume ya Madini'}
               </>
@@ -518,8 +611,10 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${timeframe} ${ui('local unit price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${series.unitSuffix})`}
-            className="block w-full cursor-crosshair touch-none outline-none focus-visible:ring-2 focus-visible:ring-ochre/40 rounded-lg"
+            aria-label={`${activeMineral.mineral_name} ${timeframe} ${
+              isStatutoryLocal ? 'Statutory Local' : 'Global Spot'
+            } ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${series.unitSuffix})`}
+            className="block w-full cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ochre/40"
             onPointerMove={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerDown={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerLeave={() => setHoverIndex(null)}
@@ -692,7 +787,7 @@ export default function MineralTrendChart({
             <div
               role="status"
               aria-live="polite"
-              className="pointer-events-none absolute top-3 z-20 min-w-[196px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
+              className="pointer-events-none absolute top-3 z-20 min-w-[200px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
               style={
                 tooltipAlignRight
                   ? {
@@ -703,7 +798,7 @@ export default function MineralTrendChart({
                     }
                   : {
                       left: `${Math.min(
-                        chartGeometry.width - 210,
+                        chartGeometry.width - 214,
                         Math.max(chartGeometry.padLeft + 8, activeCoord.x + 14),
                       )}px`,
                     }
@@ -717,7 +812,7 @@ export default function MineralTrendChart({
                 )}
               </div>
               <div className="mt-1 flex items-baseline gap-1 font-mono text-sm font-bold text-paper tabular-nums">
-                <span>{formatPrice(displayedLocalUsd)}</span>
+                <span>{formatPrice(displayedUnitUsd)}</span>
                 <span className="text-[11px] font-normal text-gold">
                   {series.unitSuffix}
                 </span>
@@ -736,14 +831,14 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Statutory Local-Unit Benchmark Strip */}
+      {/* Mode-Matched Benchmark Summary Strip */}
       <div className="grid grid-cols-2 gap-3 border-t border-ink/10 bg-paper-2/70 px-5 py-3.5 sm:grid-cols-4 lg:px-6">
         <div>
           <span className="block font-mono text-[10px] uppercase tracking-wider text-stone">
             {timeframe} {ui('High', 'Juu Zaidi', 'Máximo')} ({series.unitSuffix})
           </span>
           <span className="font-mono text-xs font-bold text-ink tabular-nums">
-            {formatPrice(series.maxLocalUsd)}
+            {formatPrice(series.maxUnitUsd)}
             <span className="font-normal text-stone">{series.unitSuffix}</span>
           </span>
         </div>
@@ -753,28 +848,34 @@ export default function MineralTrendChart({
             {timeframe} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({series.unitSuffix})
           </span>
           <span className="font-mono text-xs font-bold text-ink tabular-nums">
-            {formatPrice(series.minLocalUsd)}
+            {formatPrice(series.minUnitUsd)}
             <span className="font-normal text-stone">{series.unitSuffix}</span>
           </span>
         </div>
 
         <div>
           <span className="block font-mono text-[10px] uppercase tracking-wider text-moss">
-            {ui('Soko la Madini', 'Soko la Madini', 'Mercado Mineral')} ({series.unitSuffix})
+            {isStatutoryLocal
+              ? ui('World Spot Parity', 'Soko la Dunia', 'Paridad Spot Mundial')
+              : ui('Soko la Madini', 'Soko la Madini', 'Mercado Mineral')}{' '}
+            ({counterpartTier.unitSuffix})
           </span>
           <span className="font-mono text-xs font-bold text-moss tabular-nums">
-            {formatPrice(sokoLocal.localUnitUsd)}
-            <span className="font-normal text-stone">{sokoLocal.unitSuffix}</span>
+            {formatPrice(counterpartTier.unitUsd)}
+            <span className="font-normal text-stone">
+              {counterpartTier.unitSuffix}
+            </span>
           </span>
         </div>
 
         <div>
           <span className="block font-mono text-[10px] uppercase tracking-wider text-ochre">
-            {ui('Buying Centre Floor', 'Kituo cha Ununuzi', 'Centro de Compra')} ({series.unitSuffix})
+            {ui('Buying Centre Floor', 'Kituo cha Ununuzi', 'Centro de Compra')} (
+            {buyingTier.unitSuffix})
           </span>
           <span className="font-mono text-xs font-bold text-ink tabular-nums">
-            {formatPrice(buyingLocal.localUnitUsd)}
-            <span className="font-normal text-stone">{buyingLocal.unitSuffix}</span>
+            {formatPrice(buyingTier.unitUsd)}
+            <span className="font-normal text-stone">{buyingTier.unitSuffix}</span>
           </span>
         </div>
       </div>
