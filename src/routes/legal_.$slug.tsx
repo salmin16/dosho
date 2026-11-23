@@ -271,7 +271,7 @@ function ComplianceComplaintSection() {
                   Complaint Recorded — Reference {trackingId}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed opacity-90">
-                  Thank you for helping protect marketplace integrity. Our compliance team will acknowledge your report within 48 hours and investigate within 7 business days.
+                  Your complaint has been logged. Our compliance team will review your report and follow up at your submitted email address within 48 hours.
                 </p>
                 <button
                   type="button"
