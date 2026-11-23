@@ -10,7 +10,6 @@ import {
   convertToChartUnitUsd,
   formatChartAxisDate,
   formatChartTooltipDate,
-  type ChartPricingMode,
   type ChartTimeframe,
 } from '../lib/mineralHistory'
 import type { MineralPriceRecord } from '../types/database'
@@ -19,9 +18,6 @@ export interface MineralTrendChartProps {
   minerals: MineralPriceRecord[]
   selectedSymbol?: string
   onSelectSymbol?: (symbol: string) => void
-  /** Shared pricing mode synced bidirectionally with /markets ('metric_local' | 'standard') */
-  unitBasis?: ChartPricingMode
-  onUnitBasisChange?: (mode: ChartPricingMode) => void
 }
 
 function getShortMineralLabel(mineralName: string): string {
@@ -33,8 +29,6 @@ export default function MineralTrendChart({
   minerals,
   selectedSymbol: controlledSymbol,
   onSelectSymbol,
-  unitBasis: controlledUnitBasis,
-  onUnitBasisChange,
 }: MineralTrendChartProps) {
   const {
     currency,
@@ -51,14 +45,10 @@ export default function MineralTrendChart({
   const [internalSymbol, setInternalSymbol] = useState<string>(
     () => minerals[0]?.symbol ?? 'XAU',
   )
-  const [internalUnitBasis, setInternalUnitBasis] =
-    useState<ChartPricingMode>('metric_local')
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1M')
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
-  const activeMode = controlledUnitBasis ?? internalUnitBasis
-  const isStatutoryLocal = activeMode === 'metric_local'
 
   const handleSymbolChange = useCallback(
     (symbol: string) => {
@@ -70,18 +60,6 @@ export default function MineralTrendChart({
       }
     },
     [onSelectSymbol],
-  )
-
-  const handleModeChange = useCallback(
-    (nextMode: ChartPricingMode) => {
-      setHoverIndex(null)
-      if (onUnitBasisChange) {
-        onUnitBasisChange(nextMode)
-      } else {
-        setInternalUnitBasis(nextMode)
-      }
-    },
-    [onUnitBasisChange],
   )
 
   const activeMineral = useMemo(() => {
@@ -113,15 +91,15 @@ export default function MineralTrendChart({
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Reset scrub index when timeframe or pricing mode changes
+  // Reset scrub index when timeframe changes
   useEffect(() => {
     setHoverIndex(null)
-  }, [timeframe, activeMode])
+  }, [timeframe])
 
   const series = useMemo(() => {
     if (!activeMineral) return null
-    return buildMineralTrendSeries(activeMineral, timeframe, activeMode)
-  }, [activeMineral, timeframe, activeMode])
+    return buildMineralTrendSeries(activeMineral, timeframe, 'metric_local')
+  }, [activeMineral, timeframe])
 
   // Format a value that is already in the active display currency for Y-axis ticks
   const formatAxisTickValue = useCallback(
@@ -362,11 +340,10 @@ export default function MineralTrendChart({
       )}
       data-currency={currency}
       data-language={language}
-      data-unit-basis={activeMode}
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
-      {/* Top Masthead Bar with Synced Bidirectional Mode Toggle */}
-      <div className="flex flex-col justify-between gap-3 border-b border-ink/10 bg-paper-2 px-5 py-4 lg:flex-row lg:items-center lg:px-6">
+      {/* Top Masthead Bar */}
+      <div className="flex flex-col justify-between gap-3 border-b border-ink/10 bg-paper-2 px-5 py-4 sm:flex-row sm:items-center lg:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
@@ -384,15 +361,6 @@ export default function MineralTrendChart({
                 `Paridad Spot Mundial (${series.unitSuffix})`,
               )}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded border border-ink/12 bg-paper/75 px-2 py-0.5 font-mono text-[10px] font-semibold text-ink">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: strokeColor }}
-                aria-hidden="true"
-              />
-              {currencyMeta.flag} {currency}
-              {series.unitSuffix}
-            </span>
           </div>
           <p className="mt-1 text-xs text-stone">
             {ui(
@@ -403,40 +371,16 @@ export default function MineralTrendChart({
           </p>
         </div>
 
-        {/* Compact Bidirectional Statutory Local / Global Spot Toggle (No Currency/Language Controls) */}
-        <div
-          role="group"
-          aria-label={ui(
-            'Chart pricing mode',
-            'Modi ya bei za chati',
-            'Modo de precios del gráfico',
-          )}
-          className="inline-flex shrink-0 self-start rounded-lg border border-ink/15 bg-paper p-0.5 lg:self-center"
-        >
-          <button
-            type="button"
-            aria-pressed={isStatutoryLocal}
-            onClick={() => handleModeChange('metric_local')}
-            className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
-              isStatutoryLocal
-                ? 'bg-ochre text-paper shadow-xs'
-                : 'text-ink-3 hover:text-ink'
-            }`}
-          >
-            {ui('Statutory Local', 'Soko la Ndani', 'Local Oficial')}
-          </button>
-          <button
-            type="button"
-            aria-pressed={!isStatutoryLocal}
-            onClick={() => handleModeChange('standard')}
-            className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold transition ${
-              !isStatutoryLocal
-                ? 'bg-ochre text-paper shadow-xs'
-                : 'text-ink-3 hover:text-ink'
-            }`}
-          >
-            {ui('Global Spot', 'Soko la Dunia', 'Spot Global')}
-          </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-semibold text-ink">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: strokeColor }}
+              aria-hidden="true"
+            />
+            {currencyMeta.flag} {currency}
+            {series.unitSuffix}
+          </span>
         </div>
       </div>
 
