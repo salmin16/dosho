@@ -1,4 +1,4 @@
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Lock, Menu, ShieldCheck, User, X } from 'lucide-react'
 import { type TranslationKey } from '../i18n'
@@ -40,7 +40,6 @@ export function Logo({ light = false }: { light?: boolean }) {
 
 export default function Header({ overlay = false }: { overlay?: boolean }) {
   const { t, ui } = useLocalization()
-  const navigate = useNavigate()
   const { session, isAdmin } = useAuthState()
   const { tierName } = useSubscription()
   const [open, setOpen] = useState(false)
@@ -54,17 +53,6 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
   }, [])
 
   const dark = overlay && !scrolled && !open
-
-  const handleListProjectClick = (e: React.MouseEvent) => {
-    setOpen(false)
-    if (!session) {
-      e.preventDefault()
-      navigate({
-        to: '/signup',
-        search: { next: '/list-a-project', reason: 'list_project' } as unknown as undefined,
-      })
-    }
-  }
 
   return (
     <header
@@ -149,15 +137,6 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               </Link>
             </>
           )}
-
-          <Link
-            to="/list-a-project"
-            onClick={handleListProjectClick}
-            className="btn-primary whitespace-nowrap !py-2.5 !px-4"
-          >
-            {!session && <Lock size={13} />}
-            {t('nav.listProject')}
-          </Link>
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
@@ -262,15 +241,6 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}
               </Link>
             )}
-
-            <Link
-              to="/list-a-project"
-              onClick={handleListProjectClick}
-              className="btn-primary mt-5 w-full"
-            >
-              {!session && <Lock size={14} />}
-              {t('nav.listProject')}
-            </Link>
           </div>
         </>
       )}
