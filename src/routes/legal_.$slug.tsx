@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -16,7 +16,12 @@ import {
   isLegalDocumentSlug,
   type LegalDocumentSlug,
 } from '../data/legalDocuments'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 import { submitComplianceComplaint, useAuthSession } from '../lib/supabaseAuth'
+import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
 import type { ComplianceComplaintCategory } from '../types/database'
 
 const COMPLAINT_CATEGORIES: ComplianceComplaintCategory[] = [
@@ -185,9 +190,13 @@ function ComplianceComplaintSection() {
     useState<ComplianceComplaintCategory>('Unverified License')
   const [referenceCode, setReferenceCode] = useState('')
   const [description, setDescription] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [trackingId, setTrackingId] = useState<string | null>(null)
+
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
 
   useEffect(() => {
     if (session?.user.email && !reporterEmail) {
@@ -198,8 +207,26 @@ function ComplianceComplaintSection() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the security verification check before submitting.')
+      return
+    }
+
     setSubmitting(true)
     try {
+      const verification = await verifyTurnstileForForm(
+        captchaToken,
+        'compliance-complaint'
+      )
+      if (!verification.ok) {
+        setError(
+          verification.error ||
+            'Security verification failed or expired. Please complete the challenge again.'
+        )
+        return
+      }
+
       const res = await submitComplianceComplaint({
         reporterEmail,
         category,
@@ -215,6 +242,8 @@ function ComplianceComplaintSection() {
       setDescription('')
     } finally {
       setSubmitting(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
@@ -361,9 +390,31 @@ function ComplianceComplaintSection() {
               />
             </div>
 
+            {turnstileEnabled && (
+              <TurnstileWidget
+                ref={turnstileRef}
+                theme="light"
+                action="compliance-complaint"
+                onVerify={(token) => {
+                  setCaptchaToken(token)
+                  setError(null)
+                }}
+                onExpire={() => setCaptchaToken('')}
+                onError={(msg) => {
+                  setCaptchaToken('')
+                  if (msg) setError(msg)
+                }}
+              />
+            )}
+
             <button
               type="submit"
-              disabled={submitting || !reporterEmail.trim() || !description.trim()}
+              disabled={
+                submitting ||
+                !reporterEmail.trim() ||
+                !description.trim() ||
+                (turnstileEnabled && !captchaToken)
+              }
               className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? (

@@ -10,6 +10,7 @@ import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
+import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -133,6 +134,16 @@ function ListProject() {
     if (step === STEP_KEYS.length - 1) {
       setSubmitting(true)
       try {
+        const verification = await verifyTurnstileForForm(captchaToken, 'list-project')
+        if (!verification.ok) {
+          setErrors((prev) => ({
+            ...prev,
+            captcha:
+              verification.error ||
+              'Security verification failed or expired. Please complete the challenge again.',
+          }))
+          return
+        }
         const rawInv = parseFloat(v('investment').replace(/[^0-9.]/g, '')) || 0
         await createGroundedProject({
           title: v('title'),
@@ -554,6 +565,7 @@ function ListProject() {
                   <TurnstileWidget
                     ref={turnstileRef}
                     theme="light"
+                    action="list-project"
                     onVerify={(token) => {
                       setCaptchaToken(token)
                       setErrors((prev) => {
@@ -563,7 +575,10 @@ function ListProject() {
                       })
                     }}
                     onExpire={() => setCaptchaToken('')}
-                    onError={(msg) => setErrors((prev) => ({ ...prev, captcha: msg }))}
+                    onError={(msg) => {
+                      setCaptchaToken('')
+                      if (msg) setErrors((prev) => ({ ...prev, captcha: msg }))
+                    }}
                   />
                   {errors.captcha && <Err>{errors.captcha}</Err>}
                 </div>
@@ -580,7 +595,8 @@ function ListProject() {
             onClick={next}
             disabled={
               submitting ||
-              (step === STEP_KEYS.length - 1 && !form.declListingAgreement)
+              (step === STEP_KEYS.length - 1 &&
+                (!form.declListingAgreement || (turnstileEnabled && !captchaToken)))
             }
             className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           >

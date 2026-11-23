@@ -1,14 +1,19 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BadgeCheck, Clock, Lock, MapPin, Star, CheckCircle2, X } from 'lucide-react'
 import { SERVICE_CATEGORIES, type ServiceProvider } from '../data/fixtures'
 import { useI18n } from '../i18n'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 import {
   createGroundedQuoteRequest,
   fetchApprovedPublicServices,
   getSession,
   useAuthSession,
 } from '../lib/supabaseAuth'
+import { verifyTurnstileForForm } from '../lib/verifyTurnstileClient'
 import { useCurrency } from '../lib/currency'
 import type { UserServiceRecord } from '../types/database'
 
@@ -262,9 +267,13 @@ function QuoteModal({
 
   const [budgetInput, setBudgetInput] = useState('25000')
   const [acceptedInvestorTerms, setAcceptedInvestorTerms] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
   const [sent, setSent] = useState(false)
   const [err, setErr] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
 
   const numericBudget = parseFloat(budgetInput) || 0
   const normalizedUsd = toUsd(numericBudget)
@@ -344,9 +353,25 @@ function QuoteModal({
                 setErr('Please acknowledge the Investor Terms and Facilitation & Success-Fee Terms before submitting.')
                 return
               }
+              if (turnstileEnabled && !captchaToken) {
+                setErr('Please complete the security verification check before submitting.')
+                return
+              }
 
               setSubmitting(true)
+              setErr('')
               try {
+                const verification = await verifyTurnstileForForm(
+                  captchaToken,
+                  'request-quote',
+                )
+                if (!verification.ok) {
+                  setErr(
+                    verification.error ||
+                      'Security verification failed or expired. Please complete the challenge again.',
+                  )
+                  return
+                }
                 const res = await createGroundedQuoteRequest({
                   providerId: provider.id,
                   providerName: provider.name,
@@ -362,6 +387,8 @@ function QuoteModal({
                 setSent(true)
               } finally {
                 setSubmitting(false)
+                setCaptchaToken('')
+                turnstileRef.current?.reset()
               }
             }}
           >
@@ -448,10 +475,30 @@ function QuoteModal({
                   (including non-circumvention).
                 </span>
               </label>
+              {turnstileEnabled && (
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  theme="light"
+                  action="request-quote"
+                  onVerify={(token) => {
+                    setCaptchaToken(token)
+                    setErr('')
+                  }}
+                  onExpire={() => setCaptchaToken('')}
+                  onError={(msg) => {
+                    setCaptchaToken('')
+                    if (msg) setErr(msg)
+                  }}
+                />
+              )}
               {err && <p className="text-xs text-danger">{err}</p>}
             </div>
             <button
-              disabled={submitting || !acceptedInvestorTerms}
+              disabled={
+                submitting ||
+                !acceptedInvestorTerms ||
+                (turnstileEnabled && !captchaToken)
+              }
               className="btn-primary mt-6 w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Submitting Quote Request...' : t('services.modal.sendRequest')}

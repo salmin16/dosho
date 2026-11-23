@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,6 +11,10 @@ import {
   Mail,
 } from 'lucide-react'
 import { Logo } from '../components/Header'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 import {
   requestPasswordResetEmail,
   signInWithEmail,
@@ -68,8 +72,12 @@ function LoginRouteComponent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
 
   // Forgot-password state + 60s anti-abuse cooldown
   const [resetSending, setResetSending] = useState(false)
@@ -84,6 +92,8 @@ function LoginRouteComponent() {
   useEffect(() => {
     if (initialMode === 'forgot') {
       setMode('forgot')
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }, [initialMode])
 
@@ -101,7 +111,14 @@ function LoginRouteComponent() {
     return () => window.clearInterval(timer)
   }, [cooldownSeconds])
 
-  const isSubmitDisabled = submitting || !email.trim() || !password
+  const isSubmitDisabled =
+    submitting || !email.trim() || !password || (turnstileEnabled && !captchaToken)
+
+  const isResetSubmitDisabled =
+    resetSending ||
+    !email.trim() ||
+    cooldownSeconds > 0 ||
+    (turnstileEnabled && !captchaToken)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -112,9 +129,18 @@ function LoginRouteComponent() {
       return
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the security verification check before logging in.')
+      return
+    }
+
     setSubmitting(true)
     try {
-      const res = await signInWithEmail({ email, password })
+      const res = await signInWithEmail({
+        email,
+        password,
+        ...(captchaToken ? { captchaToken } : {}),
+      })
       if (res.error) {
         setError(res.error)
       } else {
@@ -128,6 +154,8 @@ function LoginRouteComponent() {
       )
     } finally {
       setSubmitting(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
@@ -145,9 +173,17 @@ function LoginRouteComponent() {
       return
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the security verification check before requesting a reset link.')
+      return
+    }
+
     setResetSending(true)
     try {
-      const res = await requestPasswordResetEmail(trimmedEmail)
+      const res = await requestPasswordResetEmail(
+        trimmedEmail,
+        captchaToken || undefined
+      )
       if (!res.ok && res.error) {
         setError(res.error)
         return
@@ -162,18 +198,24 @@ function LoginRouteComponent() {
       setCooldownSeconds(RESET_COOLDOWN_SECONDS)
     } finally {
       setResetSending(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
   const switchToForgot = () => {
     setError(null)
     setResetSent(false)
+    setCaptchaToken('')
+    turnstileRef.current?.reset()
     setCooldownSeconds(readRemainingCooldownSeconds())
     setMode('forgot')
   }
 
   const switchToSignIn = () => {
     setError(null)
+    setCaptchaToken('')
+    turnstileRef.current?.reset()
     setMode('signin')
   }
 
@@ -307,6 +349,24 @@ function LoginRouteComponent() {
                   </div>
                 </div>
 
+                {turnstileEnabled && (
+                  <TurnstileWidget
+                    key="turnstile-login"
+                    ref={turnstileRef}
+                    theme="light"
+                    action="login"
+                    onVerify={(token) => {
+                      setCaptchaToken(token)
+                      setError(null)
+                    }}
+                    onExpire={() => setCaptchaToken('')}
+                    onError={(msg) => {
+                      setCaptchaToken('')
+                      if (msg) setError(msg)
+                    }}
+                  />
+                )}
+
                 <button
                   type="submit"
                   disabled={isSubmitDisabled}
@@ -387,9 +447,27 @@ function LoginRouteComponent() {
                   </div>
                 </div>
 
+                {turnstileEnabled && (
+                  <TurnstileWidget
+                    key="turnstile-forgot"
+                    ref={turnstileRef}
+                    theme="light"
+                    action="forgot-password"
+                    onVerify={(token) => {
+                      setCaptchaToken(token)
+                      setError(null)
+                    }}
+                    onExpire={() => setCaptchaToken('')}
+                    onError={(msg) => {
+                      setCaptchaToken('')
+                      if (msg) setError(msg)
+                    }}
+                  />
+                )}
+
                 <button
                   type="submit"
-                  disabled={resetSending || !email.trim() || cooldownSeconds > 0}
+                  disabled={isResetSubmitDisabled}
                   className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {resetSending ? (

@@ -30,7 +30,6 @@ function SignUpRouteComponent() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
-  const [captchaTimedOut, setCaptchaTimedOut] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -39,9 +38,14 @@ function SignUpRouteComponent() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
-  // Require explicit clickwrap consent alongside non-empty required credentials
+  // Require fresh Turnstile token (when enabled) + explicit clickwrap consent
   const isSubmitDisabled =
-    submitting || !email.trim() || !password || !confirmPassword || !acceptedTerms
+    submitting ||
+    !email.trim() ||
+    !password ||
+    !confirmPassword ||
+    !acceptedTerms ||
+    (turnstileEnabled && !captchaToken)
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -72,9 +76,13 @@ function SignUpRouteComponent() {
       return
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the security verification check before creating an account.')
+      return
+    }
+
     setSubmitting(true)
     try {
-      // Only pass captchaToken when Turnstile actually returned a valid token (fail-open on timeout/blocker)
       const res = await signUpWithEmail({
         fullName: validation.data.fullName,
         email: validation.data.email,
@@ -86,20 +94,12 @@ function SignUpRouteComponent() {
       if (res.confirmationRequired) {
         setNotice(
           res.error ||
-            'Account created! Please check your email inbox to confirm your address, then sign in.'
+            'Account created! Please check your email inbox to confirm your address, then log in.'
         )
         setPassword('')
         setConfirmPassword('')
-        setCaptchaToken('')
-        if (!captchaTimedOut) {
-          turnstileRef.current?.reset()
-        }
       } else if (res.error) {
         setError(res.error)
-        setCaptchaToken('')
-        if (!captchaTimedOut) {
-          turnstileRef.current?.reset()
-        }
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -107,12 +107,10 @@ function SignUpRouteComponent() {
       setError(
         err instanceof Error ? err.message : 'Unexpected sign-up error. Please try again.'
       )
-      setCaptchaToken('')
-      if (!captchaTimedOut) {
-        turnstileRef.current?.reset()
-      }
     } finally {
       setSubmitting(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
@@ -289,19 +287,21 @@ function SignUpRouteComponent() {
               </div>
             </div>
 
-            {turnstileEnabled && !captchaTimedOut && (
+            {turnstileEnabled && (
               <div className="pt-1">
                 <TurnstileWidget
                   ref={turnstileRef}
                   theme="light"
-                  timeoutMs={3000}
+                  action="signup"
                   onVerify={(token) => {
                     setCaptchaToken(token)
                     setError(null)
                   }}
                   onExpire={() => setCaptchaToken('')}
-                  onTimeout={() => setCaptchaTimedOut(true)}
-                  onError={() => setCaptchaTimedOut(true)}
+                  onError={(msg) => {
+                    setCaptchaToken('')
+                    if (msg) setError(msg)
+                  }}
                 />
               </div>
             )}

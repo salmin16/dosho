@@ -758,7 +758,8 @@ export async function signOutUser(): Promise<void> {
  * Always responds neutrally (anti-enumeration) so callers never reveal whether an email exists.
  */
 export async function requestPasswordResetEmail(
-  rawEmail: string
+  rawEmail: string,
+  captchaToken?: string
 ): Promise<{ ok: boolean; error?: string }> {
   const email = rawEmail.trim().toLowerCase()
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -782,11 +783,18 @@ export async function requestPasswordResetEmail(
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo,
+    ...(captchaToken ? { captchaToken } : {}),
   })
 
   if (error) {
     // Log internally for operators, but never disclose account existence to the requester
     console.warn('[MineConnect Auth] Password reset request warning:', error.message)
+    if (/captcha/i.test(error.message)) {
+      return {
+        ok: false,
+        error: 'Security verification failed or expired. Please complete the challenge again.',
+      }
+    }
     if (/rate limit|too many requests|for security purposes/i.test(error.message)) {
       return {
         ok: false,
