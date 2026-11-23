@@ -30,6 +30,7 @@ import {
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
+import BriefingReaderDrawer from '../components/BriefingReaderDrawer'
 import { useAuthState } from '../lib/supabaseAuth'
 import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
@@ -754,25 +755,48 @@ function Trust() {
 
 function Insights() {
   const { t, fixtures } = useI18n()
+  const [activeBriefing, setActiveBriefing] = useState<number | null>(null)
+
   return (
     <section className="px-5 py-24 lg:px-8 lg:py-32">
       <div className="mx-auto max-w-7xl">
         <SectionHead eyebrow={t('home.insights.eyebrow')} title={t('home.insights.title')} />
         <div className="grid gap-6 md:grid-cols-3">
           {fixtures.insights.map((a, i) => (
-            <article key={a.title} className="group flex flex-col rounded-xl border border-ink/10 p-7 transition hover:border-ink/25">
-              <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-wider text-stone">
-                <span className="text-ochre">{a.tag}</span>
+            <button
+              key={a.title}
+              type="button"
+              onClick={() => setActiveBriefing(i)}
+              className="group flex flex-col rounded-xl border border-ink/12 bg-paper p-7 text-left transition duration-200 hover:border-ochre/45 hover:bg-white/75 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre"
+            >
+              <div className="flex w-full items-center justify-between font-mono text-[11px] uppercase tracking-wider text-stone">
+                <span className="font-semibold text-ochre">{a.tag}</span>
                 <span>{t('home.insights.minRead', { minutes: a.minutes })}</span>
               </div>
-              <span className="font-display mt-10 text-6xl font-light text-ink/10">{String(i + 1).padStart(2, '0')}</span>
-              <h3 className="font-display mt-4 text-2xl leading-snug group-hover:text-ochre">{a.title}</h3>
+              <span className="font-display mt-10 text-6xl font-light text-ink/10">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <h3 className="font-display mt-4 text-2xl leading-snug text-ink transition group-hover:text-ochre">
+                {a.title}
+              </h3>
               <p className="mt-3 text-sm leading-relaxed text-stone">{a.excerpt}</p>
-              <span className="mt-auto pt-8 text-sm font-semibold">{t('home.insights.comingSoon')}</span>
-            </article>
+              <span className="mt-auto inline-flex items-center gap-1.5 pt-8 text-sm font-semibold text-ink transition group-hover:text-ochre">
+                <span>{t('home.insights.comingSoon')}</span>
+                <ArrowRight
+                  size={15}
+                  className="transition-transform duration-200 group-hover:translate-x-1"
+                />
+              </span>
+            </button>
           ))}
         </div>
       </div>
+
+      <BriefingReaderDrawer
+        activeIndex={activeBriefing}
+        onClose={() => setActiveBriefing(null)}
+        onSelectIndex={(idx) => setActiveBriefing(idx)}
+      />
     </section>
   )
 }
