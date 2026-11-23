@@ -268,7 +268,7 @@ export function GuidedOpportunityWizard({
     }
     if (turnstileEnabled && !captchaToken) {
       setError(
-        'Security Verification Required: Please complete the Cloudflare Turnstile check before publishing.'
+        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       );
       return;
     }
@@ -863,11 +863,7 @@ export function GuidedOpportunityWizard({
 
               <button
                 type="submit"
-                disabled={
-                  submitting ||
-                  !allChecksComplete ||
-                  (turnstileEnabled && !captchaToken)
-                }
+                disabled={submitting || !allChecksComplete}
                 className="btn-primary !py-3 !px-7 text-xs disabled:opacity-45"
               >
                 <ShieldCheck size={15} />
@@ -1035,7 +1031,7 @@ export function GuidedServiceWizard({
     }
     if (turnstileEnabled && !captchaToken) {
       setError(
-        'Security Verification Required: Please complete the Cloudflare Turnstile check before publishing.'
+        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       );
       return;
     }
@@ -1616,11 +1612,7 @@ export function GuidedServiceWizard({
 
               <button
                 type="submit"
-                disabled={
-                  submitting ||
-                  !allChecksComplete ||
-                  (turnstileEnabled && !captchaToken)
-                }
+                disabled={submitting || !allChecksComplete}
                 className="btn-primary !py-3 !px-7 text-xs disabled:opacity-45"
               >
                 <Briefcase size={15} />

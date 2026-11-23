@@ -2,12 +2,9 @@
 
 import React, { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Info } from 'lucide-react';
 import { signupAction } from '@/app/auth/actions';
-import {
-  evaluatePasswordRules,
-  validateSignUpPayload,
-} from '@/lib/validations/auth';
+import { validateSignUpPayload } from '@/lib/validations/auth';
 import PasswordStrengthChecklist from '@/components/PasswordStrengthChecklist';
 import TurnstileWidget, {
   isTurnstileEnabled,
@@ -22,6 +19,7 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaNotice, setCaptchaNotice] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -30,22 +28,16 @@ export default function SignUpPage() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
   const turnstileEnabled = isTurnstileEnabled();
 
-  const passwordEvaluation = evaluatePasswordRules(password);
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const passwordsMatch =
-    confirmPassword.length > 0 && password === confirmPassword;
-  const canSubmit =
-    !isPending &&
-    emailValid &&
-    passwordEvaluation.isValid &&
-    passwordsMatch &&
-    (!turnstileEnabled || Boolean(captchaToken));
+  // Never permanently disable the button while Turnstile initializes or is unconfigured
+  const isSubmitDisabled =
+    isPending || !email.trim() || !password || !confirmPassword;
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setClientError(null);
     setServerError(null);
     setSuccessMessage(null);
+    setCaptchaNotice(null);
 
     const validation = validateSignUpPayload({
       fullName,
@@ -59,8 +51,8 @@ export default function SignUpPage() {
     }
 
     if (turnstileEnabled && !captchaToken) {
-      setClientError(
-        'Please complete the Cloudflare Turnstile security check before submitting.'
+      setCaptchaNotice(
+        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       );
       return;
     }
@@ -71,16 +63,15 @@ export default function SignUpPage() {
     }
 
     startTransition(async () => {
-      try {
-        const result = await signupAction(formData);
-        if (result?.error) {
-          setServerError(result.error);
-        } else if (result?.success) {
-          setSuccessMessage(result.success);
-          setPassword('');
-          setConfirmPassword('');
-        }
-      } finally {
+      const result = await signupAction(formData);
+      if (result?.error) {
+        setServerError(result.error);
+        setCaptchaToken('');
+        turnstileRef.current?.reset();
+      } else if (result?.success) {
+        setSuccessMessage(result.success);
+        setPassword('');
+        setConfirmPassword('');
         setCaptchaToken('');
         turnstileRef.current?.reset();
       }
@@ -103,6 +94,16 @@ export default function SignUpPage() {
             Provision an isolated workspace backed by PostgreSQL Row-Level Security.
           </p>
         </div>
+
+        {captchaNotice && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-200"
+          >
+            <Info size={16} className="mt-0.5 shrink-0 text-amber-400" />
+            <span>{captchaNotice}</span>
+          </div>
+        )}
 
         {errorMessage && (
           <div
@@ -238,15 +239,16 @@ export default function SignUpPage() {
             theme="dark"
             onVerify={(token) => {
               setCaptchaToken(token);
+              setCaptchaNotice(null);
               setClientError(null);
             }}
             onExpire={() => setCaptchaToken('')}
-            onError={(msg) => setClientError(msg)}
+            onError={(msg) => setCaptchaNotice(msg)}
           />
 
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={isSubmitDisabled}
             className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPending ? 'Creating account...' : 'Create Account'}

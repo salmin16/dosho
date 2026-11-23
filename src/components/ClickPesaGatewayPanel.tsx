@@ -164,7 +164,7 @@ export default function ClickPesaGatewayPanel({
 
     if (turnstileEnabled && !captchaToken) {
       setError(
-        'Please complete the Cloudflare Turnstile security check before initiating payment.'
+        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       );
       return;
     }
@@ -725,11 +725,7 @@ export default function ClickPesaGatewayPanel({
 
           <button
             type="submit"
-            disabled={
-              txState === 'INITIATED' ||
-              txState === 'PROCESSING' ||
-              (turnstileEnabled && !captchaToken)
-            }
+            disabled={txState === 'INITIATED' || txState === 'PROCESSING'}
             style={{
               backgroundColor: activeBrandTheme.primaryHex,
             }}

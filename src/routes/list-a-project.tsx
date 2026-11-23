@@ -113,7 +113,7 @@ function ListProject() {
       if (!form.declNoGuarantee) e.declNoGuarantee = t('list.err.required')
       if (!form.declTerms) e.declTerms = t('list.err.required')
       if (turnstileEnabled && !captchaToken) {
-        e.captcha = 'Please complete the Cloudflare Turnstile security check before submitting.'
+        e.captcha = 'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       }
     }
     setErrors(e)
@@ -546,7 +546,7 @@ function ListProject() {
           </button>
           <button
             onClick={next}
-            disabled={submitting || (step === STEP_KEYS.length - 1 && turnstileEnabled && !captchaToken)}
+            disabled={submitting}
             className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting
