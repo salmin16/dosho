@@ -160,10 +160,10 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           <div
             role="dialog"
             aria-label="Mobile Navigation"
-            className="relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto border-t border-ink/10 bg-paper px-5 pb-8 pt-3 text-ink shadow-2xl lg:hidden"
+            className="relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto border-t border-ink/10 bg-paper px-4 pb-5 pt-2.5 text-ink shadow-2xl lg:hidden"
           >
-            <div className="mb-3 w-full min-w-0 rounded-xl border border-ink/10 bg-paper-2/80 p-3 sm:hidden">
-              <span className="mb-2 block font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+            <div className="mb-2 w-full min-w-0 rounded-lg border border-ink/10 bg-paper-2/80 p-2.5 sm:hidden">
+              <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
                 {ui('Currency & Language', 'Sarafu na Lugha', 'Moneda e Idioma')}
               </span>
               <div className="grid w-full min-w-0 grid-cols-2 gap-2">
@@ -179,7 +179,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             <Link
               to="/markets"
               onClick={() => setOpen(false)}
-              className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ink transition hover:text-ochre focus-visible:text-ochre"
+              className="flex items-center justify-between border-b border-ink/8 py-2.5 font-display text-[17px] leading-snug text-ink transition hover:text-ochre focus-visible:text-ochre"
               activeProps={{ className: '!text-ochre' }}
             >
               <span>
@@ -191,11 +191,11 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 key={n.to}
                 to={n.to}
                 onClick={() => setOpen(false)}
-                className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ink transition hover:text-ochre focus-visible:text-ochre"
+                className="flex items-center justify-between border-b border-ink/8 py-2.5 font-display text-[17px] leading-snug text-ink transition hover:text-ochre focus-visible:text-ochre"
                 activeProps={{ className: '!text-ochre' }}
               >
                 <span>{t(n.key)}</span>
-                {!session && <Lock size={14} className="text-stone" />}
+                {!session && <Lock size={13} className="shrink-0 text-stone" />}
               </Link>
             ))}
 
@@ -203,20 +203,20 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               <Link
                 to="/dashboard"
                 onClick={() => setOpen(false)}
-                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-ink transition hover:text-ochre focus-visible:text-ochre"
+                className="flex items-center gap-2 border-b border-ink/8 py-2.5 text-sm font-semibold text-ink transition hover:text-ochre focus-visible:text-ochre"
                 activeProps={{ className: '!text-ochre' }}
               >
-                <ShieldCheck size={16} className="shrink-0" />
+                <ShieldCheck size={15} className="shrink-0" />
                 <span className="truncate">
                   {ui('Account', 'Akaunti', 'Cuenta')} ({session.user.fullName.split(' ')[0]} · {tierName})
                 </span>
               </Link>
             ) : (
-              <div className="mt-4">
+              <div className="mt-3">
                 <Link
                   to="/login"
                   onClick={() => setOpen(false)}
-                  className="btn-primary w-full justify-center text-sm"
+                  className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-ochre px-4 py-2 text-sm font-semibold text-paper shadow-xs transition hover:bg-ochre-dark"
                 >
                   <User size={15} />
                   {ui('Login', 'Ingia', 'Iniciar sesión')}
@@ -228,9 +228,9 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               <Link
                 to="/admin"
                 onClick={() => setOpen(false)}
-                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-moss"
+                className="flex items-center gap-2 border-b border-ink/8 py-2.5 text-sm font-semibold text-moss"
               >
-                <ShieldCheck size={16} />
+                <ShieldCheck size={15} className="shrink-0" />
                 {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}
               </Link>
             )}

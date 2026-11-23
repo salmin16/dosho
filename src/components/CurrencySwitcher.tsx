@@ -138,7 +138,7 @@ export default function CurrencySwitcher({
             : `${statusMeta.label}`
         }
         className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 font-mono text-xs font-medium transition ${
-          fullWidth ? 'min-h-[38px] w-full min-w-0 justify-between' : ''
+          fullWidth ? 'h-9 w-full min-w-0 justify-between text-[11px]' : ''
         } ${
           dark
             ? 'border-paper/25 bg-paper/10 text-paper hover:bg-paper/20'

@@ -60,7 +60,7 @@ export default function LanguageSwitcher({
         aria-expanded={open}
         aria-label={`${t('nav.selectLanguage')}: ${current.label}`}
         className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre ${
-          fullWidth ? 'min-h-[38px] w-full min-w-0 justify-between' : ''
+          fullWidth ? 'h-9 w-full min-w-0 justify-between text-[11px]' : ''
         } ${
           dark
             ? 'border-paper/20 bg-paper/[0.06] text-paper hover:border-paper/40 hover:bg-paper/10'
