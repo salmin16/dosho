@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Eye, EyeOff, Info, Lock, Mail, ShieldCheck, User } from 'lucide-react'
+import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck, User } from 'lucide-react'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
@@ -29,7 +29,7 @@ function SignUpRouteComponent() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
-  const [captchaNotice, setCaptchaNotice] = useState<string | null>(null)
+  const [captchaTimedOut, setCaptchaTimedOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -37,8 +37,7 @@ function SignUpRouteComponent() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
-  // Never permanently lock the button while Turnstile is initializing or unconfigured;
-  // only disable while actively submitting or when required email/password fields are empty.
+  // Non-blocking submit: only disabled while Supabase request is in flight or required fields are empty
   const isSubmitDisabled =
     submitting || !email.trim() || !password || !confirmPassword
 
@@ -54,7 +53,6 @@ function SignUpRouteComponent() {
     e.preventDefault()
     setError(null)
     setNotice(null)
-    setCaptchaNotice(null)
 
     const validation = validateSignUpPayload({
       fullName,
@@ -67,21 +65,15 @@ function SignUpRouteComponent() {
       return
     }
 
-    if (turnstileEnabled && !captchaToken) {
-      setCaptchaNotice(
-        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
-      )
-      return
-    }
-
     setSubmitting(true)
     try {
+      // Only pass captchaToken when Turnstile actually returned a valid token (fail-open on timeout/blocker)
       const res = await signUpWithEmail({
         fullName: validation.data.fullName,
         email: validation.data.email,
         password: validation.data.password,
         confirmPassword,
-        captchaToken: captchaToken || undefined,
+        ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.confirmationRequired) {
         setNotice(
@@ -91,11 +83,15 @@ function SignUpRouteComponent() {
         setPassword('')
         setConfirmPassword('')
         setCaptchaToken('')
-        turnstileRef.current?.reset()
+        if (!captchaTimedOut) {
+          turnstileRef.current?.reset()
+        }
       } else if (res.error) {
         setError(res.error)
         setCaptchaToken('')
-        turnstileRef.current?.reset()
+        if (!captchaTimedOut) {
+          turnstileRef.current?.reset()
+        }
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -104,7 +100,9 @@ function SignUpRouteComponent() {
         err instanceof Error ? err.message : 'Unexpected sign-up error. Please try again.'
       )
       setCaptchaToken('')
-      turnstileRef.current?.reset()
+      if (!captchaTimedOut) {
+        turnstileRef.current?.reset()
+      }
     } finally {
       setSubmitting(false)
     }
@@ -157,16 +155,6 @@ function SignUpRouteComponent() {
               className="mt-5 rounded-md border border-moss/40 bg-moss-light px-4 py-3 text-xs font-medium text-moss"
             >
               {notice}
-            </div>
-          )}
-
-          {captchaNotice && (
-            <div
-              role="status"
-              className="mt-5 flex items-start gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs font-medium text-ink"
-            >
-              <Info size={16} className="mt-0.5 shrink-0 text-ochre" />
-              <span>{captchaNotice}</span>
             </div>
           )}
 
@@ -291,26 +279,36 @@ function SignUpRouteComponent() {
               </div>
             </div>
 
-            <div className="pt-1">
-              <TurnstileWidget
-                ref={turnstileRef}
-                theme="light"
-                onVerify={(token) => {
-                  setCaptchaToken(token)
-                  setCaptchaNotice(null)
-                  setError(null)
-                }}
-                onExpire={() => setCaptchaToken('')}
-                onError={(msg) => setCaptchaNotice(msg)}
-              />
-            </div>
+            {turnstileEnabled && !captchaTimedOut && (
+              <div className="pt-1">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  theme="light"
+                  timeoutMs={3000}
+                  onVerify={(token) => {
+                    setCaptchaToken(token)
+                    setError(null)
+                  }}
+                  onExpire={() => setCaptchaToken('')}
+                  onTimeout={() => setCaptchaTimedOut(true)}
+                  onError={() => setCaptchaTimedOut(true)}
+                />
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={isSubmitDisabled}
-              className="btn-primary mt-2 w-full disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-primary mt-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? 'Provisioning Vault...' : 'Create Grounded Account'}
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Creating account...
+                </>
+              ) : (
+                'Create Grounded Account'
+              )}
             </button>
           </form>
 

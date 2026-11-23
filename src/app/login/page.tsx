@@ -1,14 +1,10 @@
 'use client';
 
-import React, { useRef, useState, useTransition } from 'react';
+import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, EyeOff, Info } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { loginAction } from '@/app/auth/actions';
-import TurnstileWidget, {
-  isTurnstileEnabled,
-  type TurnstileWidgetHandle,
-} from '@/components/TurnstileWidget';
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -18,47 +14,28 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState('');
-  const [captchaNotice, setCaptchaNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(
     callbackError
   );
   const [isPending, startTransition] = useTransition();
 
-  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
-  const turnstileEnabled = isTurnstileEnabled();
-
-  // Never permanently disable the button while Turnstile initializes or is unconfigured
+  // Instant Sign-In: enabled immediately once email & password are entered
   const isSubmitDisabled = isPending || !email.trim() || !password;
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage(null);
-    setCaptchaNotice(null);
 
     if (!email.trim() || !password) {
       setErrorMessage('Please enter both your email and password.');
       return;
     }
 
-    if (turnstileEnabled && !captchaToken) {
-      setCaptchaNotice(
-        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
-      );
-      return;
-    }
-
     const formData = new FormData(e.currentTarget);
-    if (captchaToken) {
-      formData.set('captchaToken', captchaToken);
-    }
-
     startTransition(async () => {
       const result = await loginAction(formData);
       if (result?.error) {
         setErrorMessage(result.error);
-        setCaptchaToken('');
-        turnstileRef.current?.reset();
       }
     });
   };
@@ -78,16 +55,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {captchaNotice && (
-          <div
-            role="status"
-            className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-200"
-          >
-            <Info size={16} className="mt-0.5 shrink-0 text-amber-400" />
-            <span>{captchaNotice}</span>
-          </div>
-        )}
-
         {errorMessage && (
           <div
             role="alert"
@@ -99,7 +66,6 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5" noValidate>
           <input type="hidden" name="next" value={nextPath} />
-          <input type="hidden" name="captchaToken" value={captchaToken} />
 
           <div>
             <label
@@ -151,24 +117,19 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <TurnstileWidget
-            ref={turnstileRef}
-            theme="dark"
-            onVerify={(token) => {
-              setCaptchaToken(token);
-              setCaptchaNotice(null);
-              setErrorMessage(null);
-            }}
-            onExpire={() => setCaptchaToken('')}
-            onError={(msg) => setCaptchaNotice(msg)}
-          />
-
           <button
             type="submit"
             disabled={isSubmitDisabled}
-            className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPending ? 'Signing in...' : 'Sign In'}
+            {isPending ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
 

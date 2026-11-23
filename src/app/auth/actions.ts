@@ -20,24 +20,11 @@ function sanitizeRedirectPath(nextPath: string | null | undefined): string {
   return nextPath;
 }
 
-function isTurnstileConfiguredOnServer(): boolean {
-  const key = (
-    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ||
-    process.env.VITE_TURNSTILE_SITE_KEY ||
-    ''
-  ).trim();
-  return Boolean(key && !key.includes('your-turnstile-site-key'));
-}
-
 export async function loginAction(
   formData: FormData
 ): Promise<AuthActionResponse> {
   const email = (formData.get('email') as string | null)?.trim() ?? '';
   const password = (formData.get('password') as string | null) ?? '';
-  const captchaToken =
-    ((formData.get('captchaToken') as string | null) ||
-      (formData.get('cf-turnstile-response') as string | null) ||
-      '').trim();
   const nextPath = sanitizeRedirectPath(formData.get('next') as string | null);
 
   if (!email || !EMAIL_REGEX.test(email)) {
@@ -48,19 +35,12 @@ export async function loginAction(
     return { error: 'Password is required.' };
   }
 
-  if (isTurnstileConfiguredOnServer() && !captchaToken) {
-    return {
-      error:
-        '403 Forbidden: Please complete the Cloudflare Turnstile security verification.',
-    };
-  }
-
   const supabase = await createClient();
 
+  // Instant Sign-In: returning users authenticate directly via Supabase Auth
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
-    ...(captchaToken ? { options: { captchaToken } } : {}),
   });
 
   if (error || !data.user) {
@@ -108,16 +88,10 @@ export async function signupAction(
     return { error: 'Passwords do not match.' };
   }
 
-  if (isTurnstileConfiguredOnServer() && !captchaToken) {
-    return {
-      error:
-        '403 Forbidden: Please complete the Cloudflare Turnstile security verification.',
-    };
-  }
-
   const supabase = await createClient();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
+  // Only include captchaToken when Turnstile actually returned one (non-blocking fail-open)
   const { data, error } = await supabase.auth.signUp({
     email,
     password,

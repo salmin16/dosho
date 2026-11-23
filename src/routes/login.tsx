@@ -1,11 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Eye, EyeOff, Info, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { signInWithEmail, useAuthState } from '../lib/supabaseAuth'
-import TurnstileWidget, {
-  isTurnstileEnabled,
-  type TurnstileWidgetHandle,
-} from '../components/TurnstileWidget'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
@@ -22,13 +18,8 @@ function LoginRouteComponent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [captchaToken, setCaptchaToken] = useState('')
-  const [captchaNotice, setCaptchaNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-
-  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
-  const turnstileEnabled = isTurnstileEnabled()
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -38,38 +29,23 @@ function LoginRouteComponent() {
     }
   }, [authLoading, session, navigate, targetDestination])
 
-  // Never permanently lock the button while Turnstile is initializing or unconfigured;
-  // only disable while actively submitting or when required email/password fields are empty.
+  // Instant Sign-In: button is immediately enabled as soon as email and password are entered.
   const isSubmitDisabled = submitting || !email.trim() || !password
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setCaptchaNotice(null)
 
     if (!email.trim() || !password) {
       setError('Please enter both your email address and password.')
       return
     }
 
-    if (turnstileEnabled && !captchaToken) {
-      setCaptchaNotice(
-        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
-      )
-      return
-    }
-
     setSubmitting(true)
     try {
-      const res = await signInWithEmail({
-        email,
-        password,
-        captchaToken: captchaToken || undefined,
-      })
+      const res = await signInWithEmail({ email, password })
       if (res.error) {
         setError(res.error)
-        setCaptchaToken('')
-        turnstileRef.current?.reset()
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -77,8 +53,6 @@ function LoginRouteComponent() {
       setError(
         err instanceof Error ? err.message : 'Unexpected sign-in error. Please try again.'
       )
-      setCaptchaToken('')
-      turnstileRef.current?.reset()
     } finally {
       setSubmitting(false)
     }
@@ -124,16 +98,6 @@ function LoginRouteComponent() {
               className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
             >
               Supabase environment variables (`VITE_SUPABASE_URL` &amp; `VITE_SUPABASE_ANON_KEY`) are not configured. Sign-in requires an active Supabase connection.
-            </div>
-          )}
-
-          {captchaNotice && (
-            <div
-              role="status"
-              className="mt-5 flex items-start gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs font-medium text-ink"
-            >
-              <Info size={16} className="mt-0.5 shrink-0 text-ochre" />
-              <span>{captchaNotice}</span>
             </div>
           )}
 
@@ -199,24 +163,19 @@ function LoginRouteComponent() {
               </div>
             </div>
 
-            <TurnstileWidget
-              ref={turnstileRef}
-              theme="light"
-              onVerify={(token) => {
-                setCaptchaToken(token)
-                setCaptchaNotice(null)
-                setError(null)
-              }}
-              onExpire={() => setCaptchaToken('')}
-              onError={(msg) => setCaptchaNotice(msg)}
-            />
-
             <button
               type="submit"
               disabled={isSubmitDisabled}
-              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? 'Verifying session...' : 'Sign In to Workspace'}
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In to Workspace'
+              )}
             </button>
           </form>
 

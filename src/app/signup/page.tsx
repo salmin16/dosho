@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Eye, EyeOff, Info } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { signupAction } from '@/app/auth/actions';
 import { validateSignUpPayload } from '@/lib/validations/auth';
 import PasswordStrengthChecklist from '@/components/PasswordStrengthChecklist';
@@ -19,7 +19,7 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
-  const [captchaNotice, setCaptchaNotice] = useState<string | null>(null);
+  const [captchaTimedOut, setCaptchaTimedOut] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export default function SignUpPage() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
   const turnstileEnabled = isTurnstileEnabled();
 
-  // Never permanently disable the button while Turnstile initializes or is unconfigured
+  // Non-blocking submit: only disabled while request is in flight or required fields are empty
   const isSubmitDisabled =
     isPending || !email.trim() || !password || !confirmPassword;
 
@@ -37,7 +37,6 @@ export default function SignUpPage() {
     setClientError(null);
     setServerError(null);
     setSuccessMessage(null);
-    setCaptchaNotice(null);
 
     const validation = validateSignUpPayload({
       fullName,
@@ -50,16 +49,11 @@ export default function SignUpPage() {
       return;
     }
 
-    if (turnstileEnabled && !captchaToken) {
-      setCaptchaNotice(
-        'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
-      );
-      return;
-    }
-
     const formData = new FormData(e.currentTarget);
     if (captchaToken) {
       formData.set('captchaToken', captchaToken);
+    } else {
+      formData.delete('captchaToken');
     }
 
     startTransition(async () => {
@@ -67,13 +61,17 @@ export default function SignUpPage() {
       if (result?.error) {
         setServerError(result.error);
         setCaptchaToken('');
-        turnstileRef.current?.reset();
+        if (!captchaTimedOut) {
+          turnstileRef.current?.reset();
+        }
       } else if (result?.success) {
         setSuccessMessage(result.success);
         setPassword('');
         setConfirmPassword('');
         setCaptchaToken('');
-        turnstileRef.current?.reset();
+        if (!captchaTimedOut) {
+          turnstileRef.current?.reset();
+        }
       }
     });
   };
@@ -94,16 +92,6 @@ export default function SignUpPage() {
             Provision an isolated workspace backed by PostgreSQL Row-Level Security.
           </p>
         </div>
-
-        {captchaNotice && (
-          <div
-            role="status"
-            className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-200"
-          >
-            <Info size={16} className="mt-0.5 shrink-0 text-amber-400" />
-            <span>{captchaNotice}</span>
-          </div>
-        )}
 
         {errorMessage && (
           <div
@@ -234,24 +222,34 @@ export default function SignUpPage() {
             </div>
           </div>
 
-          <TurnstileWidget
-            ref={turnstileRef}
-            theme="dark"
-            onVerify={(token) => {
-              setCaptchaToken(token);
-              setCaptchaNotice(null);
-              setClientError(null);
-            }}
-            onExpire={() => setCaptchaToken('')}
-            onError={(msg) => setCaptchaNotice(msg)}
-          />
+          {turnstileEnabled && !captchaTimedOut && (
+            <TurnstileWidget
+              ref={turnstileRef}
+              theme="dark"
+              timeoutMs={3000}
+              onVerify={(token) => {
+                setCaptchaToken(token);
+                setClientError(null);
+              }}
+              onExpire={() => setCaptchaToken('')}
+              onTimeout={() => setCaptchaTimedOut(true)}
+              onError={() => setCaptchaTimedOut(true)}
+            />
+          )}
 
           <button
             type="submit"
             disabled={isSubmitDisabled}
-            className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPending ? 'Creating account...' : 'Create Account'}
+            {isPending ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Creating account...
+              </>
+            ) : (
+              'Create Account'
+            )}
           </button>
         </form>
 
