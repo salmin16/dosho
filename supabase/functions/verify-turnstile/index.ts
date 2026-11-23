@@ -18,6 +18,16 @@ interface VerifyRequestBody {
   action?: string;
 }
 
+function sanitizeIp(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  const candidate = raw.split(',')[0]?.trim() ?? '';
+  // Accept clean IPv4 or IPv6 strings only
+  if (/^[0-9a-fA-F:.]{3,45}$/.test(candidate)) {
+    return candidate;
+  }
+  return undefined;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
@@ -33,7 +43,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  const secretKey = Deno.env.get('TURNSTILE_SECRET_KEY')?.trim();
+  // Strip accidental surrounding quotes if pasted with quotes in dashboard secrets
+  const secretKey = Deno.env
+    .get('TURNSTILE_SECRET_KEY')
+    ?.trim()
+    .replace(/^["']|["']$/g, '');
+
   if (!secretKey) {
     return new Response(
       JSON.stringify({
@@ -75,29 +90,47 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const remoteIp =
-    req.headers.get('cf-connecting-ip') ||
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    '';
+    sanitizeIp(req.headers.get('cf-connecting-ip')) ??
+    sanitizeIp(req.headers.get('x-forwarded-for'));
 
   try {
-    const formBody = new URLSearchParams();
-    formBody.append('secret', secretKey);
-    formBody.append('response', token);
+    const verifyPayload: Record<string, string> = {
+      secret: secretKey,
+      response: token,
+    };
     if (remoteIp) {
-      formBody.append('remoteip', remoteIp);
+      verifyPayload.remoteip = remoteIp;
     }
 
     const upstream = await fetch(TURNSTILE_SITEVERIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody.toString(),
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(verifyPayload),
     });
 
-    if (!upstream.ok) {
+    const rawText = await upstream.text();
+    let result: {
+      success?: boolean;
+      hostname?: string;
+      action?: string;
+      'error-codes'?: string[];
+    } | null = null;
+
+    try {
+      result = JSON.parse(rawText);
+    } catch {
+      result = null;
+    }
+
+    if (!upstream.ok && !result) {
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Upstream security verification service unavailable.',
+          upstreamStatus: upstream.status,
         }),
         {
           status: 403,
@@ -106,20 +139,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    const result = (await upstream.json()) as {
-      success?: boolean;
-      hostname?: string;
-      action?: string;
-      'error-codes'?: string[];
-    };
-
-    if (!result.success) {
+    if (!result?.success) {
       return new Response(
         JSON.stringify({
           success: false,
           error:
             'Security verification failed or expired. Please complete the challenge again.',
-          errorCodes: result['error-codes'] ?? [],
+          errorCodes: result?.['error-codes'] ?? [],
         }),
         {
           status: 403,
