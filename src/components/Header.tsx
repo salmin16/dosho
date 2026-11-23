@@ -162,13 +162,17 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             aria-label="Mobile Navigation"
             className="relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto border-t border-ink/10 bg-paper px-5 pb-8 pt-3 text-ink shadow-2xl lg:hidden"
           >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink/10 bg-paper-2/80 p-3 sm:hidden">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+            <div className="mb-3 w-full min-w-0 rounded-xl border border-ink/10 bg-paper-2/80 p-3 sm:hidden">
+              <span className="mb-2 block font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
                 {ui('Currency & Language', 'Sarafu na Lugha', 'Moneda e Idioma')}
               </span>
-              <div className="flex items-center gap-2">
-                <CurrencySwitcher dark={false} />
-                <LanguageSwitcher dark={false} />
+              <div className="grid w-full min-w-0 grid-cols-2 gap-2">
+                <div className="min-w-0">
+                  <CurrencySwitcher dark={false} align="left" fullWidth />
+                </div>
+                <div className="min-w-0">
+                  <LanguageSwitcher dark={false} align="right" fullWidth />
+                </div>
               </div>
             </div>
 

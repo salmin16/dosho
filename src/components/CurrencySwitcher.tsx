@@ -3,7 +3,17 @@ import { ChevronDown, Coins, RefreshCw } from 'lucide-react';
 import { CURRENCY_LIST, useCurrency } from '../lib/currency';
 import { updatePreferredCurrency } from '../lib/supabaseAuth';
 
-export default function CurrencySwitcher({ dark = false }: { dark?: boolean }) {
+export interface CurrencySwitcherProps {
+  dark?: boolean;
+  align?: 'left' | 'right';
+  fullWidth?: boolean;
+}
+
+export default function CurrencySwitcher({
+  dark = false,
+  align = 'right',
+  fullWidth = false,
+}: CurrencySwitcherProps) {
   const {
     currency,
     currencyMeta,
@@ -26,8 +36,17 @@ export default function CurrencySwitcher({ dark = false }: { dark?: boolean }) {
         setOpen(false);
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+      }
+    };
     document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 
   const handleSelect = async (code: typeof currency) => {
@@ -107,7 +126,7 @@ export default function CurrencySwitcher({ dark = false }: { dark?: boolean }) {
   }, [currency, convertPair]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${fullWidth ? 'w-full min-w-0' : ''}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -118,23 +137,34 @@ export default function CurrencySwitcher({ dark = false }: { dark?: boolean }) {
             ? `${statusMeta.label} (${ratesProvider}) · Synced ${formattedSyncTime}`
             : `${statusMeta.label}`
         }
-        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-xs font-medium transition ${
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 font-mono text-xs font-medium transition ${
+          fullWidth ? 'min-h-[38px] w-full min-w-0 justify-between' : ''
+        } ${
           dark
             ? 'border-paper/25 bg-paper/10 text-paper hover:bg-paper/20'
             : 'border-ink/15 bg-paper-2/80 text-ink hover:border-ink/35'
         }`}
       >
-        <Coins size={13} className="text-gold" />
-        <span>{currencyMeta.flag}</span>
-        <span>{currency}</span>
-        <ChevronDown size={12} className="opacity-70" />
+        <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+          <Coins size={13} className="shrink-0 text-gold" />
+          <span className="shrink-0">{currencyMeta.flag}</span>
+          <span className="truncate">{currency}</span>
+        </span>
+        <ChevronDown
+          size={12}
+          className={`shrink-0 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
         <div
           role="listbox"
           aria-label="Supported world currencies"
-          className="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-ink/15 bg-paper p-2 text-ink shadow-2xl"
+          className={`absolute top-full z-50 mt-2 w-72 rounded-xl border border-ink/15 bg-paper p-2 text-ink shadow-2xl ${
+            align === 'left'
+              ? 'left-0 max-w-[calc(100vw-4rem)]'
+              : 'right-0 max-w-[calc(100vw-2rem)]'
+          }`}
         >
           <div className="flex items-start justify-between gap-2 border-b border-ink/10 px-2.5 pb-2.5 pt-1">
             <div className="min-w-0">

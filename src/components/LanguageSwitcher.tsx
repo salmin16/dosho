@@ -2,7 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Globe } from 'lucide-react'
 import { LANGUAGES, useI18n, type LanguageCode } from '../i18n'
 
-export default function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
+export interface LanguageSwitcherProps {
+  dark?: boolean
+  align?: 'left' | 'right'
+  fullWidth?: boolean
+}
+
+export default function LanguageSwitcher({
+  dark = false,
+  align = 'right',
+  fullWidth = false,
+}: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -41,7 +51,7 @@ export default function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative ${fullWidth ? 'w-full min-w-0' : ''}`}>
       <button
         ref={buttonRef}
         type="button"
@@ -49,17 +59,21 @@ export default function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${t('nav.selectLanguage')}: ${current.label}`}
-        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre ${
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre ${
+          fullWidth ? 'min-h-[38px] w-full min-w-0 justify-between' : ''
+        } ${
           dark
             ? 'border-paper/20 bg-paper/[0.06] text-paper hover:border-paper/40 hover:bg-paper/10'
             : 'border-ink/15 bg-white/60 text-ink hover:border-ink/35 hover:bg-white'
         }`}
       >
-        <Globe size={14} className={dark ? 'text-gold' : 'text-ochre'} aria-hidden />
-        <span>{current.label}</span>
+        <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+          <Globe size={14} className={`shrink-0 ${dark ? 'text-gold' : 'text-ochre'}`} aria-hidden />
+          <span className="truncate">{current.label}</span>
+        </span>
         <ChevronDown
           size={13}
-          className={` opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
       </button>
@@ -68,7 +82,11 @@ export default function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
         <ul
           role="listbox"
           aria-label={t('nav.selectLanguage')}
-          className="absolute right-0 top-full z-50 mt-2 min-w-[150px] overflow-hidden rounded-lg border border-ink/15 bg-paper py-1 text-ink shadow-xl"
+          className={`absolute top-full z-50 mt-2 max-h-64 min-w-[156px] overflow-y-auto rounded-lg border border-ink/15 bg-paper py-1 text-ink shadow-xl ${
+            align === 'left'
+              ? 'left-0 max-w-[calc(100vw-4rem)]'
+              : 'right-0 max-w-[calc(100vw-2rem)]'
+          }`}
         >
           {LANGUAGES.map((l) => {
             const active = l.code === lang
