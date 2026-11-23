@@ -87,14 +87,14 @@ function loadTurnstileApi(
     };
 
     const pollForApi = () => {
-      if (window.turnstile) {
+      if (typeof window.turnstile?.render === 'function') {
         finishResolve(window.turnstile);
         return;
       }
       let attempts = 0;
       const poll = window.setInterval(() => {
         attempts += 1;
-        if (window.turnstile) {
+        if (typeof window.turnstile?.render === 'function') {
           window.clearInterval(poll);
           finishResolve(window.turnstile);
         } else if (attempts >= 80) {
@@ -130,7 +130,8 @@ function loadTurnstileApi(
 
     const script = document.createElement('script');
     script.src = TURNSTILE_SCRIPT_SRC;
-    script.async = true;
+    script.async = false;
+    script.defer = false;
     script.dataset.mineconnectTurnstile = 'true';
     script.addEventListener('load', pollForApi, { once: true });
     script.addEventListener(
@@ -383,11 +384,7 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
       void loadTurnstileApi({ forceReload: shouldForceReload })
         .then((api) => {
           if (cancelled) return;
-          if (typeof api.ready === 'function') {
-            api.ready(() => mountWidget(api));
-          } else {
-            mountWidget(api);
-          }
+          mountWidget(api);
         })
         .catch((err) => {
           if (cancelled) return;
