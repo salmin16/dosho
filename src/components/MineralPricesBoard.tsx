@@ -9,7 +9,6 @@ import {
   Calculator,
   Coins,
   Globe,
-  MapPin,
   Scale,
   ShieldCheck,
   SlidersHorizontal,
@@ -296,98 +295,7 @@ export default function MineralPricesBoard({
           unitBasis={unitBasis}
         />
 
-        {/* 2. Priority Commodity Spotlight Cards (Gold, Silver, Copper, Tanzanite) */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {minerals.slice(0, 4).map((m) => {
-            const positive = m.trend_percentage >= 0
-            const isChartFocused = chartSymbol === m.symbol
-            const worldLocal = formatStatutoryPrice(
-              m.world_market_price_usd,
-              m.unit,
-              'metric_local',
-            )
-            const sokoLocal = formatStatutoryPrice(
-              m.local_market_price_usd,
-              m.unit,
-              unitBasis,
-            )
-            const buyingLocal = formatStatutoryPrice(
-              m.buying_centre_price_usd,
-              m.unit,
-              unitBasis,
-            )
-            const intUnit = m.unit.replace(/^USD\//i, '')
-
-            return (
-              <article
-                key={m.id}
-                onClick={() => setChartSymbol(m.symbol)}
-                className={`flex cursor-pointer flex-col justify-between rounded-xl border bg-ink-2 p-5 shadow-sm transition duration-150 ${
-                  isChartFocused
-                    ? 'border-gold/55'
-                    : 'border-paper/12 hover:border-gold/40'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-mono text-[10px] uppercase tracking-widest text-gold">
-                        {translateCategory(m.category)}
-                      </span>
-                      <h3 className="font-display mt-0.5 text-xl font-medium text-paper">
-                        {m.mineral_name}
-                      </h3>
-                    </div>
-                    <span className="rounded border border-gold/35 bg-ochre/20 px-2 py-0.5 font-mono text-xs font-bold text-gold">
-                      {m.symbol}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex items-end justify-between gap-2">
-                    <div>
-                      <span className="block font-mono text-[10px] uppercase text-paper/55">
-                        {ui('World Spot', 'Soko la Dunia', 'Mercado Mundial')} ({currency}/{intUnit})
-                      </span>
-                      <span className="font-mono text-2xl font-bold text-paper">
-                        <PriceDisplay amountInUSD={m.world_market_price_usd} />
-                      </span>
-                      <span className="block font-mono text-[11px] text-gold">
-                        {ui('Local Metric', 'Bei kwa Kipimo', 'Base Local')}: {worldLocal.formatted}
-                        {worldLocal.unitSuffix}
-                      </span>
-                    </div>
-                    <SparklineSvg points={m.sparkline_points} positive={positive} />
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-1.5 border-t border-paper/10 pt-3 font-mono text-[11px]">
-                  <div className="flex items-center justify-between text-paper/75">
-                    <span>{ui('Soko la Madini (Market):', 'Soko la Madini:', 'Mercado Mineral:') }</span>
-                    <span className="font-semibold text-[#9de4b4]">
-                      {sokoLocal.formatted}
-                      {sokoLocal.unitSuffix}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-paper/75">
-                    <span>{ui('Buying Centre (Floor):', 'Kituo cha Ununuzi:', 'Centro de Compra:')}</span>
-                    <span className="font-semibold text-gold">
-                      {buyingLocal.formatted}
-                      {buyingLocal.unitSuffix}
-                    </span>
-                  </div>
-                  {m.producing_regions && (
-                    <div className="flex items-center gap-1 pt-1 text-[10px] text-paper/55">
-                      <MapPin size={10} className="shrink-0 text-ochre" />
-                      <span className="truncate">{m.producing_regions}</span>
-                    </div>
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </div>
-
-        {/* 3. Detailed Breakdown Matrix Table */}
+        {/* 2. Detailed Breakdown Matrix Table */}
         <div className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm">
           {/* Matrix Filter Bar */}
           <div className="flex flex-col justify-between gap-4 border-b border-ink/10 bg-paper-2 px-6 py-5 sm:flex-row sm:items-center">
