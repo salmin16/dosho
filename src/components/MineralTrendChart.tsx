@@ -10,6 +10,7 @@ import {
   convertToChartUnitUsd,
   formatChartAxisDate,
   formatChartTooltipDate,
+  type ChartPricingMode,
   type ChartTimeframe,
 } from '../lib/mineralHistory'
 import type { MineralPriceRecord } from '../types/database'
@@ -18,6 +19,8 @@ export interface MineralTrendChartProps {
   minerals: MineralPriceRecord[]
   selectedSymbol?: string
   onSelectSymbol?: (symbol: string) => void
+  /** Master unit mode controlled exclusively by the /markets dashboard header */
+  unitBasis?: ChartPricingMode
 }
 
 function getShortMineralLabel(mineralName: string): string {
@@ -29,6 +32,7 @@ export default function MineralTrendChart({
   minerals,
   selectedSymbol: controlledSymbol,
   onSelectSymbol,
+  unitBasis = 'metric_local',
 }: MineralTrendChartProps) {
   const {
     currency,
@@ -91,15 +95,15 @@ export default function MineralTrendChart({
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Reset scrub index when timeframe changes
+  // Reset scrub index when timeframe or master unit mode changes
   useEffect(() => {
     setHoverIndex(null)
-  }, [timeframe])
+  }, [timeframe, unitBasis])
 
   const series = useMemo(() => {
     if (!activeMineral) return null
-    return buildMineralTrendSeries(activeMineral, timeframe, 'metric_local')
-  }, [activeMineral, timeframe])
+    return buildMineralTrendSeries(activeMineral, timeframe, unitBasis)
+  }, [activeMineral, timeframe, unitBasis])
 
   // Format a value that is already in the active display currency for Y-axis ticks
   const formatAxisTickValue = useCallback(
@@ -316,16 +320,20 @@ export default function MineralTrendChart({
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.2 : 0.18
 
-  // Reference statutory benchmarks strictly expressed in local unit rates (/g, /kg, /ct)
+  // Reference statutory benchmarks matched to the active /markets master unit mode
   const sokoTier = convertToChartUnitUsd(
     activeMineral.local_market_price_usd,
     activeMineral.unit,
+    unitBasis,
   )
 
   const buyingTier = convertToChartUnitUsd(
     activeMineral.buying_centre_price_usd,
     activeMineral.unit,
+    unitBasis,
   )
+
+  const isLocalUnits = unitBasis === 'metric_local'
 
   // Tooltip horizontal alignment so it never clips off left or right edge
   const tooltipAlignRight =
@@ -340,6 +348,7 @@ export default function MineralTrendChart({
       )}
       data-currency={currency}
       data-language={language}
+      data-unit-basis={unitBasis}
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
       {/* Top Masthead Bar */}
@@ -363,11 +372,17 @@ export default function MineralTrendChart({
             </span>
           </div>
           <p className="mt-1 text-xs text-stone">
-            {ui(
-              `Plotting World Spot Parity benchmarks in local units (${currency}${series.unitSuffix}). Currency and language controlled globally by the top navigation bar.`,
-              `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha ndani (${currency}${series.unitSuffix}). Sarafu na lugha zinasimamiwa kwenye upau mkuu wa juu.`,
-              `Graficando referencias de Paridad Spot Mundial en unidades locales (${currency}${series.unitSuffix}). Moneda e idioma controlados desde la barra superior.`,
-            )}
+            {isLocalUnits
+              ? ui(
+                  `Plotting World Spot Parity benchmarks in local units (${currency}${series.unitSuffix}), synced with the Markets header unit mode and top navbar.`,
+                  `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na upau wa Soko na upau mkuu wa juu.`,
+                  `Graficando referencias de Paridad Spot Mundial en unidades locales (${currency}${series.unitSuffix}), sincronizado con la cabecera de Mercados.`,
+                )
+              : ui(
+                  `Plotting World Spot Parity benchmarks in global spot units (${currency}${series.unitSuffix}), synced with the Markets header unit mode and top navbar.`,
+                  `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha kimataifa (${currency}${series.unitSuffix}), ikioana na upau wa Soko na upau mkuu wa juu.`,
+                  `Graficando referencias de Paridad Spot Mundial en unidades internacionales (${currency}${series.unitSuffix}), sincronizado con la cabecera de Mercados.`,
+                )}
           </p>
         </div>
 

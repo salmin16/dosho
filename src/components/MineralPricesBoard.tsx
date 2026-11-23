@@ -288,11 +288,12 @@ export default function MineralPricesBoard({
         {/* 1. Real-Time Market Status & Trading-Floor Ticker */}
         <LiveMarketTicker unitBasis={unitBasis} />
 
-        {/* 1B. Interactive Mineral Trend Chart (World Spot Parity in Local Units) */}
+        {/* 1B. Interactive Mineral Trend Chart (Governed by Master /markets Unit Toggle) */}
         <MineralTrendChart
           minerals={minerals}
           selectedSymbol={chartSymbol}
           onSelectSymbol={setChartSymbol}
+          unitBasis={unitBasis}
         />
 
         {/* 2. Priority Commodity Spotlight Cards (Gold, Silver, Copper, Tanzanite) */}

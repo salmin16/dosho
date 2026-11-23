@@ -20,11 +20,12 @@ export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
 ] as const
 
 export type LocalUnitSuffix = '/g' | '/kg' | '/ct'
-export type ChartUnitSuffix = LocalUnitSuffix
+export type GlobalUnitSuffix = '/toz' | '/lb' | '/t' | '/carat'
+export type ChartUnitSuffix = LocalUnitSuffix | GlobalUnitSuffix
 
 export interface UnitPriceConversion {
   unitUsd: number
-  unitSuffix: LocalUnitSuffix
+  unitSuffix: ChartUnitSuffix
   unitSingular: string
 }
 
@@ -37,7 +38,7 @@ export interface MineralTrendSeries {
   mode: ChartPricingMode
   timeframe: ChartTimeframe
   points: MineralTrendPoint[]
-  unitSuffix: LocalUnitSuffix
+  unitSuffix: ChartUnitSuffix
   unitSingular: string
   startUnitUsd: number
   currentUnitUsd: number
@@ -48,16 +49,37 @@ export interface MineralTrendSeries {
 }
 
 /**
- * Strictly converts any USD benchmark value into Tanzania local metric units
- * (/g, /kg, or /ct) across both Statutory Local and Global Spot chart modes.
- * Never returns troy ounces (/toz), pounds (/lb), or tonnes (/t).
+ * Converts a World Spot Parity or statutory USD benchmark into the active
+ * `/markets` master unit mode:
+ * - `metric_local`: Tanzania local metric units (/g, /kg, /ct)
+ * - `standard`: Global Spot international units (/toz, /lb, /t, /carat)
  */
 export function convertToChartUnitUsd(
   usdAmount: number,
   rawUnit: string,
+  mode: ChartPricingMode = 'metric_local',
 ): UnitPriceConversion {
   const safeUsd = Number.isFinite(usdAmount) && usdAmount > 0 ? usdAmount : 0
   const baseUnit = rawUnit.replace(/^USD\//i, '').trim().toLowerCase()
+
+  if (mode === 'standard') {
+    if (baseUnit === 'toz' || baseUnit === 'oz') {
+      return { unitUsd: safeUsd, unitSuffix: '/toz', unitSingular: 'troy oz' }
+    }
+    if (baseUnit === 'lb' || baseUnit === 'lbs') {
+      return { unitUsd: safeUsd, unitSuffix: '/lb', unitSingular: 'lb' }
+    }
+    if (baseUnit === 'carat' || baseUnit === 'ct') {
+      return { unitUsd: safeUsd, unitSuffix: '/carat', unitSingular: 'carat' }
+    }
+    if (baseUnit === 'g' || baseUnit === 'gram') {
+      return { unitUsd: safeUsd, unitSuffix: '/g', unitSingular: 'gram' }
+    }
+    if (baseUnit === 'kg') {
+      return { unitUsd: safeUsd, unitSuffix: '/kg', unitSingular: 'kg' }
+    }
+    return { unitUsd: safeUsd, unitSuffix: '/t', unitSingular: 'tonne' }
+  }
 
   if (baseUnit === 'toz' || baseUnit === 'oz') {
     return {
@@ -222,9 +244,9 @@ function sampleNormalizedArray(values: number[], t: number): number {
 
 /**
  * Generates a deterministic, realistic historical + live trend series for a mineral
- * anchored to its World Spot Parity benchmark (`world_market_price_usd`), ALWAYS
- * expressed in local metric units (/g, /kg, or /ct) at every point including the
- * live terminal marker.
+ * anchored to its World Spot Parity benchmark (`world_market_price_usd`), scaled
+ * dynamically to match the `/markets` master unit toggle (`metric_local` -> /g, /kg, /ct;
+ * `standard` -> /toz, /lb, /t, /carat).
  */
 export function buildMineralTrendSeries(
   mineral: MineralPriceRecord,
@@ -233,7 +255,7 @@ export function buildMineralTrendSeries(
   anchorNowMs?: number,
 ): MineralTrendSeries {
   const { unitUsd: currentUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit)
+    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
 
   const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
   const { count, spanMs } = TIMEFRAME_CONFIG[timeframe]
@@ -253,6 +275,7 @@ export function buildMineralTrendSeries(
       startUnitUsd = convertToChartUnitUsd(
         mineral.day_open_usd,
         mineral.unit,
+        mode,
       ).unitUsd
     } else {
       const denom = 1 + (mineral.trend_percentage || 0) / 100
@@ -293,17 +316,17 @@ export function buildMineralTrendSeries(
   const sparkConverted =
     mineral.sparkline_points && mineral.sparkline_points.length >= 2
       ? mineral.sparkline_points.map(
-          (p) => convertToChartUnitUsd(p, mineral.unit).unitUsd,
+          (p) => convertToChartUnitUsd(p, mineral.unit, mode).unitUsd,
         )
       : null
 
   const dayLowUnit =
     mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToChartUnitUsd(mineral.day_low_usd, mineral.unit).unitUsd
+      ? convertToChartUnitUsd(mineral.day_low_usd, mineral.unit, mode).unitUsd
       : null
   const dayHighUnit =
     mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToChartUnitUsd(mineral.day_high_usd, mineral.unit).unitUsd
+      ? convertToChartUnitUsd(mineral.day_high_usd, mineral.unit, mode).unitUsd
       : null
 
   const points: MineralTrendPoint[] = []
