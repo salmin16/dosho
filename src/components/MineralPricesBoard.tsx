@@ -19,8 +19,6 @@ import {
   subscribeMineralPrices,
 } from '../data/mineralPrices'
 import { useLocalization } from '../context/LocalizationContext'
-import CurrencySwitcher from './CurrencySwitcher'
-import LanguageSwitcher from './LanguageSwitcher'
 import LiveMarketTicker from './LiveMarketTicker'
 import PriceDisplay from './PriceDisplay'
 import type { MineralCategory, MineralPriceRecord } from '../types/database'
@@ -248,9 +246,6 @@ export default function MineralPricesBoard({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <CurrencySwitcher dark />
-            <LanguageSwitcher dark />
-
             <div className="inline-flex rounded-lg border border-paper/15 bg-ink-2 p-1 text-xs">
               <button
                 type="button"
