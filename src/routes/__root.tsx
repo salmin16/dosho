@@ -8,6 +8,7 @@ import {
 import { useEffect } from 'react'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import CookieConsentBanner from '../components/CookieConsentBanner'
 import { LocalizationProvider, useLocalization } from '../context/LocalizationContext'
 import { useAuthState } from '../lib/supabaseAuth'
 
@@ -94,6 +95,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
       <Header overlay={isHome} key={isHome ? `home-${currency}-${lang}` : `page-${currency}-${lang}`} />
       <main key={`${currency}-${rateForSelected}-${lang}`}>{children}</main>
       <Footer key={`footer-${currency}-${lang}`} />
+      <CookieConsentBanner />
     </div>
   )
 }

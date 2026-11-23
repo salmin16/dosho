@@ -30,7 +30,6 @@ import {
 import { useSavedProjects } from '../lib/saved'
 import { fetchApprovedPublicOpportunities } from '../lib/supabaseAuth'
 import { useI18n } from '../i18n'
-import LiveMarketTicker from '../components/LiveMarketTicker'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
 import VerificationBadge from '../components/VerificationBadge'
@@ -184,11 +183,6 @@ function Opportunities() {
                 className="field !h-12 !pl-10"
               />
             </label>
-          </div>
-
-          {/* Live Commodity Spot & Buying Centre Ticker Strip */}
-          <div className="mt-8">
-            <LiveMarketTicker compact showFullMarketsLink />
           </div>
         </div>
       </section>

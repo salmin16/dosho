@@ -402,6 +402,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
   chargedCurrency: SupportedCurrency;
   chargedAmount: number;
   idempotencyKey?: string;
+  turnstileToken?: string;
   onStateChange?: (tx: PaymentTransactionRecord) => void;
 }): Promise<{
   success: boolean;
@@ -510,6 +511,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
         providerCode: params.providerCode,
         accountOrPhoneMasked: params.accountOrPhoneMasked,
         idempotencyKey,
+        turnstileToken: params.turnstileToken,
       }),
     });
   } catch {

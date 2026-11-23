@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
+import { Cookie } from 'lucide-react'
 import { Logo } from './Header'
+import { openCookieSettings } from './CookieConsentBanner'
 import { useI18n, type TranslationKey } from '../i18n'
 
 const COLS: {
@@ -73,6 +75,16 @@ export default function Footer() {
                   {t(k)}
                 </li>
               ))}
+              <li className="pt-1">
+                <button
+                  type="button"
+                  onClick={openCookieSettings}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-gold transition hover:text-paper"
+                >
+                  <Cookie size={14} />
+                  Cookie Settings
+                </button>
+              </li>
             </ul>
           </div>
         </div>
@@ -81,9 +93,19 @@ export default function Footer() {
           <strong className="text-paper/70">{t('footer.noticeTitle')}</strong> {t('footer.noticeBody')}
         </div>
 
-        <div className="mt-8 flex flex-col justify-between gap-3 border-t border-paper/10 pt-6 text-xs text-paper/40 sm:flex-row">
+        <div className="mt-8 flex flex-col items-start justify-between gap-3 border-t border-paper/10 pt-6 text-xs text-paper/40 sm:flex-row sm:items-center">
           <span>{t('footer.copyright')}</span>
-          <span className="font-mono">{t('footer.pilotBadge')}</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={openCookieSettings}
+              className="inline-flex min-h-[44px] items-center gap-1.5 font-medium text-paper/70 transition hover:text-gold"
+            >
+              <Cookie size={13} />
+              Cookie Settings
+            </button>
+            <span className="font-mono">{t('footer.pilotBadge')}</span>
+          </div>
         </div>
       </div>
     </footer>

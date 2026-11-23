@@ -1,5 +1,6 @@
 import React from 'react'
 import { LocalizationProvider } from '@/context/LocalizationContext'
+import CookieConsentBanner from '@/components/CookieConsentBanner'
 import '../styles.css'
 
 export const metadata = {
@@ -12,7 +13,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="min-h-screen bg-paper text-ink antialiased">
-        <LocalizationProvider>{children}</LocalizationProvider>
+        <LocalizationProvider>
+          {children}
+          <CookieConsentBanner />
+        </LocalizationProvider>
       </body>
     </html>
   )

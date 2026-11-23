@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 import { logActivity } from '@/utils/audit-logger';
+import { validateStrongPassword } from '@/lib/validations/auth';
 
 export interface AuthActionResponse {
   error?: string;
@@ -12,10 +13,6 @@ export interface AuthActionResponse {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Validates that a post-login redirect path is strictly a relative internal path
- * to prevent Open Redirect vulnerabilities.
- */
 function sanitizeRedirectPath(nextPath: string | null | undefined): string {
   if (!nextPath || !nextPath.startsWith('/') || nextPath.startsWith('//')) {
     return '/dashboard';
@@ -23,11 +20,24 @@ function sanitizeRedirectPath(nextPath: string | null | undefined): string {
   return nextPath;
 }
 
+function isTurnstileConfiguredOnServer(): boolean {
+  const key = (
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ||
+    process.env.VITE_TURNSTILE_SITE_KEY ||
+    ''
+  ).trim();
+  return Boolean(key && !key.includes('your-turnstile-site-key'));
+}
+
 export async function loginAction(
   formData: FormData
 ): Promise<AuthActionResponse> {
   const email = (formData.get('email') as string | null)?.trim() ?? '';
   const password = (formData.get('password') as string | null) ?? '';
+  const captchaToken =
+    ((formData.get('captchaToken') as string | null) ||
+      (formData.get('cf-turnstile-response') as string | null) ||
+      '').trim();
   const nextPath = sanitizeRedirectPath(formData.get('next') as string | null);
 
   if (!email || !EMAIL_REGEX.test(email)) {
@@ -38,11 +48,19 @@ export async function loginAction(
     return { error: 'Password is required.' };
   }
 
+  if (isTurnstileConfiguredOnServer() && !captchaToken) {
+    return {
+      error:
+        '403 Forbidden: Please complete the Cloudflare Turnstile security verification.',
+    };
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
+    ...(captchaToken ? { options: { captchaToken } } : {}),
   });
 
   if (error || !data.user) {
@@ -50,7 +68,7 @@ export async function loginAction(
       action: 'LOGIN_FAILED',
       metadata: { email, reason: error?.message ?? 'Invalid credentials' },
     });
-    return { error: 'Invalid email or password. Please try again.' };
+    return { error: error?.message || 'Invalid email or password. Please try again.' };
   }
 
   logActivity({
@@ -70,28 +88,31 @@ export async function signupAction(
   const password = (formData.get('password') as string | null) ?? '';
   const confirmPassword =
     (formData.get('confirmPassword') as string | null) ?? '';
+  const fullName =
+    (formData.get('fullName') as string | null)?.trim() || email.split('@')[0];
+  const captchaToken =
+    ((formData.get('captchaToken') as string | null) ||
+      (formData.get('cf-turnstile-response') as string | null) ||
+      '').trim();
 
   if (!email || !EMAIL_REGEX.test(email)) {
     return { error: 'Please enter a valid email address.' };
   }
 
-  if (password.length < 8) {
-    return { error: 'Password must be at least 8 characters long.' };
-  }
-
-  if (
-    !/[A-Z]/.test(password) ||
-    !/[a-z]/.test(password) ||
-    !/[0-9]/.test(password)
-  ) {
-    return {
-      error:
-        'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
-    };
+  const passwordError = validateStrongPassword(password);
+  if (passwordError) {
+    return { error: passwordError };
   }
 
   if (password !== confirmPassword) {
     return { error: 'Passwords do not match.' };
+  }
+
+  if (isTurnstileConfiguredOnServer() && !captchaToken) {
+    return {
+      error:
+        '403 Forbidden: Please complete the Cloudflare Turnstile security verification.',
+    };
   }
 
   const supabase = await createClient();
@@ -102,6 +123,10 @@ export async function signupAction(
     password,
     options: {
       emailRedirectTo: `${siteUrl}/auth/callback?next=/dashboard`,
+      ...(captchaToken ? { captchaToken } : {}),
+      data: {
+        full_name: fullName,
+      },
     },
   });
 

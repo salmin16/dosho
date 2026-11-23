@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import type { SupportedCurrency } from '../types/database';
+import { hasPreferencesConsent } from '../components/CookieConsentBanner';
 
 export interface CurrencyMetadata {
   code: SupportedCurrency;
@@ -257,9 +258,11 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     setCurrencyState(code);
     if (typeof window !== 'undefined') {
       try {
-        window.localStorage.setItem(CURRENCY_STORAGE_KEY, code);
-        window.localStorage.setItem('dosho_preferred_currency', code);
-        document.cookie = `${CURRENCY_COOKIE_NAME}=${code}; path=/; max-age=31536000; SameSite=Lax`;
+        if (hasPreferencesConsent()) {
+          window.localStorage.setItem(CURRENCY_STORAGE_KEY, code);
+          window.localStorage.setItem('dosho_preferred_currency', code);
+          document.cookie = `${CURRENCY_COOKIE_NAME}=${code}; path=/; max-age=31536000; SameSite=Lax`;
+        }
         const currentLang = window.localStorage.getItem('mc:lang') || 'en';
         window.dispatchEvent(new CustomEvent(CURRENCY_CHANGE_EVENT, { detail: code }));
         window.dispatchEvent(

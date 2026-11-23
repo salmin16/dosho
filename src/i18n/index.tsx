@@ -4,6 +4,7 @@ import sw from './locales/sw.json'
 import es from './locales/es.json'
 import { getLocalizedFixtures, localizeProject, translateValue } from './fixtures-translations'
 import { useCurrency } from '../lib/currency'
+import { hasPreferencesConsent } from '../components/CookieConsentBanner'
 import type { Project } from '../data/fixtures'
 
 export const LANGUAGES = [
@@ -120,7 +121,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     if (!isValidLang(next)) return
     setLangState(next)
     try {
-      localStorage.setItem(STORAGE_KEY, next)
+      if (hasPreferencesConsent()) {
+        localStorage.setItem(STORAGE_KEY, next)
+      }
       if (typeof window !== 'undefined') {
         const currentCurrency =
           window.localStorage.getItem('mineconnect.currency.v1') || 'USD'

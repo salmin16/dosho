@@ -56,10 +56,12 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
   @apply m-0 bg-paper text-ink font-sans;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
@@ -108,7 +110,7 @@ body {
 }
 
 .field {
-  @apply w-full rounded-md border border-sand bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20;
+  @apply min-h-[44px] w-full rounded-md border border-sand bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20;
 }
 
 .label {
@@ -116,11 +118,11 @@ body {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_8px_24px_-12px_rgba(192,97,43,0.8)] transition hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_8px_24px_-12px_rgba(192,97,43,0.8)] transition hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
 }
 
 .btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition hover:border-current/60 hover:bg-current/5 active:translate-y-px;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition hover:border-current/60 hover:bg-current/5 active:translate-y-px;
 }
 
 .eyebrow {

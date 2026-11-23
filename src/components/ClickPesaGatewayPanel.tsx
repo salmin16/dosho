@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   KeyRound,
@@ -31,6 +31,10 @@ import {
   PaymentMethodSelector,
   type PaymentMethod,
 } from './PaymentMethodSelector';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from './TurnstileWidget';
 import type {
   BillingCycle,
   ClickPesaProviderCode,
@@ -90,6 +94,9 @@ export default function ClickPesaGatewayPanel({
   const [cardCvc, setCardCvc] = useState('842');
 
   const [pdpaConsent, setPdpaConsent] = useState(true);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+  const turnstileEnabled = isTurnstileEnabled();
   const [txState, setTxState] = useState<ClickPesaTransactionState | 'IDLE'>(
     'IDLE'
   );
@@ -155,6 +162,13 @@ export default function ClickPesaGatewayPanel({
       return;
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        'Please complete the Cloudflare Turnstile security check before initiating payment.'
+      );
+      return;
+    }
+
     let maskedIdentifier = 'Explorer Free Tier';
 
     if (verifiedPricing.verifiedAmountTzs > 0) {
@@ -192,24 +206,31 @@ export default function ClickPesaGatewayPanel({
     setTxState('PROCESSING');
     await new Promise((r) => setTimeout(r, 420));
 
-    const res = await executeClickPesaSubscriptionPayment({
-      userId,
-      tierName,
-      billingCycle,
-      providerCode:
-        verifiedPricing.verifiedAmountTzs === 0 ? 'FREE' : selectedProvider,
-      accountOrPhoneMasked: maskedIdentifier,
-      chargedCurrency: currency,
-      chargedAmount:
-        currency === 'TZS'
-          ? verifiedPricing.verifiedAmountTzs
-          : verifiedPricing.verifiedAmountUsd,
-      idempotencyKey: idempotencyPreview,
-      onStateChange: (tx) => {
-        setLiveTx(tx);
-        setTxState(tx.state);
-      },
-    });
+    let res;
+    try {
+      res = await executeClickPesaSubscriptionPayment({
+        userId,
+        tierName,
+        billingCycle,
+        providerCode:
+          verifiedPricing.verifiedAmountTzs === 0 ? 'FREE' : selectedProvider,
+        accountOrPhoneMasked: maskedIdentifier,
+        chargedCurrency: currency,
+        chargedAmount:
+          currency === 'TZS'
+            ? verifiedPricing.verifiedAmountTzs
+            : verifiedPricing.verifiedAmountUsd,
+        idempotencyKey: idempotencyPreview,
+        turnstileToken: captchaToken || undefined,
+        onStateChange: (tx) => {
+          setLiveTx(tx);
+          setTxState(tx.state);
+        },
+      });
+    } finally {
+      setCaptchaToken('');
+      turnstileRef.current?.reset();
+    }
 
     if (!res.success || !res.subscription || !res.transaction) {
       setTxState('FAILED');
@@ -671,6 +692,17 @@ export default function ClickPesaGatewayPanel({
           </span>
         </label>
 
+        <TurnstileWidget
+          ref={turnstileRef}
+          theme="light"
+          onVerify={(token) => {
+            setCaptchaToken(token);
+            setError(null);
+          }}
+          onExpire={() => setCaptchaToken('')}
+          onError={(msg) => setError(msg)}
+        />
+
         {error && (
           <div className="rounded-xl border border-danger/30 bg-danger/10 p-3.5 text-xs font-medium text-danger">
             {error}
@@ -693,11 +725,15 @@ export default function ClickPesaGatewayPanel({
 
           <button
             type="submit"
-            disabled={txState === 'INITIATED' || txState === 'PROCESSING'}
+            disabled={
+              txState === 'INITIATED' ||
+              txState === 'PROCESSING' ||
+              (turnstileEnabled && !captchaToken)
+            }
             style={{
               backgroundColor: activeBrandTheme.primaryHex,
             }}
-            className="btn-primary min-w-[280px] justify-center !py-3.5 !px-6 text-sm text-white shadow-lg transition hover:brightness-110 disabled:opacity-60"
+            className="btn-primary w-full justify-center !py-3.5 !px-6 text-sm text-white shadow-lg transition hover:brightness-110 disabled:opacity-60 sm:w-auto sm:min-w-[280px]"
           >
             {txState === 'INITIATED' || txState === 'PROCESSING' ? (
               <>

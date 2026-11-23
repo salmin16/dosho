@@ -12,6 +12,7 @@ import {
   resolveVerifiedTierPricing,
 } from '../../../../lib/subscriptions';
 import { sanitizeText } from '../../../../lib/securityValidators';
+import { verifyTurnstileToken } from '../../../../lib/security/turnstile';
 import type { ClickPesaProviderCode } from '../../../../types/database';
 
 // Server-side idempotency memory store for deduplicating rapid concurrent requests
@@ -47,6 +48,26 @@ const VALID_PROVIDER_CODES = new Set<string>([
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
+
+    // Server-side Cloudflare Turnstile bot protection (rejects invalid/missing tokens with 403 Forbidden)
+    const turnstileToken =
+      (typeof body.turnstileToken === 'string' && body.turnstileToken) ||
+      (typeof body.captchaToken === 'string' && body.captchaToken) ||
+      request.headers.get('x-turnstile-token') ||
+      '';
+    const remoteIp =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const turnstileCheck = await verifyTurnstileToken(turnstileToken, remoteIp);
+    if (!turnstileCheck.success) {
+      return NextResponse.json(
+        {
+          error:
+            turnstileCheck.error ||
+            '403 Forbidden: Cloudflare Turnstile security verification failed.',
+        },
+        { status: turnstileCheck.status }
+      );
+    }
 
     const userId = sanitizeText(String(body.userId ?? 'guest-user'), 64);
     const tierName = normalizeSubscriptionTier(String(body.tierName ?? 'Miner'));

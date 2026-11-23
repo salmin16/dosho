@@ -1,9 +1,13 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Coins, Lock, Mail, ShieldCheck, User } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Eye, EyeOff, Lock, Mail, ShieldCheck, User } from 'lucide-react'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
-import { CURRENCY_LIST, useCurrency } from '../lib/currency'
-import type { SupportedCurrency } from '../types/database'
+import { evaluatePasswordRules, validateSignUpPayload } from '../lib/validations/auth'
+import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 
 export const Route = createFileRoute('/signup')({
   validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
@@ -17,15 +21,30 @@ function SignUpRouteComponent() {
   const navigate = useNavigate()
   const { session, loading: authLoading, configured } = useAuthState()
   const { next, reason } = Route.useSearch()
-  const { currency, setCurrency } = useCurrency()
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
+
+  const passwordEvaluation = evaluatePasswordRules(password)
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword
+  const canSubmit =
+    !submitting &&
+    emailValid &&
+    passwordEvaluation.isValid &&
+    passwordsMatch &&
+    (!turnstileEnabled || Boolean(captchaToken))
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -39,20 +58,39 @@ function SignUpRouteComponent() {
     e.preventDefault()
     setError(null)
     setNotice(null)
+
+    const validation = validateSignUpPayload({
+      fullName,
+      email,
+      password,
+      confirmPassword,
+    })
+    if (!validation.success) {
+      setError(validation.error)
+      return
+    }
+
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the Cloudflare Turnstile security check before continuing.')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await signUpWithEmail({
-        fullName,
-        email,
-        password,
+        fullName: validation.data.fullName,
+        email: validation.data.email,
+        password: validation.data.password,
         confirmPassword,
-        preferredCurrency: currency,
+        captchaToken: captchaToken || undefined,
       })
       if (res.confirmationRequired) {
         setNotice(
           res.error ||
             'Account created! Please check your email inbox to confirm your address, then sign in.'
         )
+        setPassword('')
+        setConfirmPassword('')
       } else if (res.error) {
         setError(res.error)
       } else {
@@ -64,6 +102,8 @@ function SignUpRouteComponent() {
       )
     } finally {
       setSubmitting(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
@@ -77,9 +117,9 @@ function SignUpRouteComponent() {
           : null
 
   return (
-    <div className="min-h-screen bg-paper pb-20 pt-28 text-ink">
-      <div className="mx-auto max-w-md px-5">
-        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-8 shadow-sm">
+    <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
+      <div className="mx-auto max-w-md px-4 sm:px-5">
+        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-6 shadow-sm sm:p-8">
           <div className="inline-flex items-center gap-2 rounded-full bg-moss/15 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-moss">
             <ShieldCheck size={14} />
             PostgreSQL RLS Provisioning
@@ -171,30 +211,6 @@ function SignUpRouteComponent() {
             </div>
 
             <div>
-              <label htmlFor="signup-currency" className="label">
-                Preferred Global Display Currency
-              </label>
-              <div className="relative">
-                <Coins
-                  size={16}
-                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone"
-                />
-                <select
-                  id="signup-currency"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
-                  className="field !pl-10"
-                >
-                  {CURRENCY_LIST.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.code} — {c.name} ({c.symbol.trim()})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
               <label htmlFor="signup-password" className="label">
                 Password
               </label>
@@ -205,15 +221,27 @@ function SignUpRouteComponent() {
                 />
                 <input
                   id="signup-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 8 chars (A-Z, a-z, 0-9)"
-                  className="field !pl-10"
+                  placeholder="8–64 chars (A-Z, a-z, 0-9, !@#$)"
+                  className="field !pl-10 !pr-12"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
               </div>
+              <PasswordStrengthChecklist
+                password={password}
+                confirmPassword={confirmPassword}
+              />
             </div>
 
             <div>
@@ -227,21 +255,46 @@ function SignUpRouteComponent() {
                 />
                 <input
                   id="signup-confirm"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   required
                   autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                  className="field !pl-10"
+                  placeholder="Re-enter your strong password"
+                  className="field !pl-10 !pr-12"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={
+                    showConfirmPassword
+                      ? 'Hide confirm password'
+                      : 'Show confirm password'
+                  }
+                  className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
+                >
+                  {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
               </div>
+            </div>
+
+            <div className="pt-1">
+              <TurnstileWidget
+                ref={turnstileRef}
+                theme="light"
+                onVerify={(token) => {
+                  setCaptchaToken(token)
+                  setError(null)
+                }}
+                onExpire={() => setCaptchaToken('')}
+                onError={(msg) => setError(msg)}
+              />
             </div>
 
             <button
               type="submit"
-              disabled={submitting}
-              className="btn-primary mt-2 w-full disabled:opacity-50"
+              disabled={!canSubmit}
+              className="btn-primary mt-2 w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Provisioning Vault...' : 'Create Grounded Account'}
             </button>

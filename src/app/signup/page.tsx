@@ -1,34 +1,45 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 import { signupAction } from '@/app/auth/actions';
+import {
+  evaluatePasswordRules,
+  validateSignUpPayload,
+} from '@/lib/validations/auth';
+import PasswordStrengthChecklist from '@/components/PasswordStrengthChecklist';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '@/components/TurnstileWidget';
 
 export default function SignUpPage() {
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
   const [clientError, setClientError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const validateForm = (): string | null => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      return 'Please enter a valid email address.';
-    }
-    if (password.length < 8) {
-      return 'Password must be at least 8 characters long.';
-    }
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      return 'Password must contain at least one uppercase letter, one lowercase letter, and one number.';
-    }
-    if (password !== confirmPassword) {
-      return 'Passwords do not match.';
-    }
-    return null;
-  };
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+  const turnstileEnabled = isTurnstileEnabled();
+
+  const passwordEvaluation = evaluatePasswordRules(password);
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const passwordsMatch =
+    confirmPassword.length > 0 && password === confirmPassword;
+  const canSubmit =
+    !isPending &&
+    emailValid &&
+    passwordEvaluation.isValid &&
+    passwordsMatch &&
+    (!turnstileEnabled || Boolean(captchaToken));
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -36,21 +47,42 @@ export default function SignUpPage() {
     setServerError(null);
     setSuccessMessage(null);
 
-    const validationError = validateForm();
-    if (validationError) {
-      setClientError(validationError);
+    const validation = validateSignUpPayload({
+      fullName,
+      email,
+      password,
+      confirmPassword,
+    });
+    if (!validation.success) {
+      setClientError(validation.error);
+      return;
+    }
+
+    if (turnstileEnabled && !captchaToken) {
+      setClientError(
+        'Please complete the Cloudflare Turnstile security check before submitting.'
+      );
       return;
     }
 
     const formData = new FormData(e.currentTarget);
+    if (captchaToken) {
+      formData.set('captchaToken', captchaToken);
+    }
+
     startTransition(async () => {
-      const result = await signupAction(formData);
-      if (result?.error) {
-        setServerError(result.error);
-      } else if (result?.success) {
-        setSuccessMessage(result.success);
-        setPassword('');
-        setConfirmPassword('');
+      try {
+        const result = await signupAction(formData);
+        if (result?.error) {
+          setServerError(result.error);
+        } else if (result?.success) {
+          setSuccessMessage(result.success);
+          setPassword('');
+          setConfirmPassword('');
+        }
+      } finally {
+        setCaptchaToken('');
+        turnstileRef.current?.reset();
       }
     });
   };
@@ -59,9 +91,9 @@ export default function SignUpPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-950 px-4 py-12 text-slate-100">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl backdrop-blur">
+      <div className="w-full max-w-md space-y-7 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur sm:p-8">
         <div>
-          <span className="inline-flex items-center rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-medium text-indigo-400 ring-1 ring-inset ring-indigo-500/20">
+          <span className="inline-flex items-center rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20">
             Enterprise Security
           </span>
           <h1 className="mt-4 text-2xl font-bold tracking-tight text-white">
@@ -90,7 +122,28 @@ export default function SignUpPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <input type="hidden" name="captchaToken" value={captchaToken} />
+
+          <div>
+            <label
+              htmlFor="fullName"
+              className="block text-sm font-medium text-slate-300"
+            >
+              Full Name / Organization
+            </label>
+            <input
+              id="fullName"
+              name="fullName"
+              type="text"
+              autoComplete="name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Salmin Mwenesi — Geita Holdings"
+              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+            />
+          </div>
+
           <div>
             <label
               htmlFor="email"
@@ -107,7 +160,7 @@ export default function SignUpPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
-              className="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
             />
           </div>
 
@@ -118,16 +171,31 @@ export default function SignUpPage() {
             >
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minimum 8 chars (A-Z, a-z, 0-9)"
-              className="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            <div className="relative mt-1.5">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="8–64 chars (A-Z, a-z, 0-9, !@#$)"
+                className="block min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 pr-12 text-sm text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:text-white"
+              >
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
+            <PasswordStrengthChecklist
+              password={password}
+              confirmPassword={confirmPassword}
+              dark
             />
           </div>
 
@@ -138,23 +206,48 @@ export default function SignUpPage() {
             >
               Confirm Password
             </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter your password"
-              className="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
+            <div className="relative mt-1.5">
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your strong password"
+                className="block min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 pr-12 text-sm text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                aria-label={
+                  showConfirmPassword
+                    ? 'Hide confirm password'
+                    : 'Show confirm password'
+                }
+                className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:text-white"
+              >
+                {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
+
+          <TurnstileWidget
+            ref={turnstileRef}
+            theme="dark"
+            onVerify={(token) => {
+              setCaptchaToken(token);
+              setClientError(null);
+            }}
+            onExpire={() => setCaptchaToken('')}
+            onError={(msg) => setClientError(msg)}
+          />
 
           <button
             type="submit"
-            disabled={isPending}
-            className="flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canSubmit}
+            className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[#d97706] px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPending ? 'Creating account...' : 'Create Account'}
           </button>
@@ -164,7 +257,7 @@ export default function SignUpPage() {
           Already have an account?{' '}
           <Link
             href="/login"
-            className="font-medium text-indigo-400 hover:text-indigo-300"
+            className="font-medium text-amber-400 hover:text-amber-300"
           >
             Sign in
           </Link>

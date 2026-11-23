@@ -7,6 +7,7 @@ import {
   OpportunitySubmissionSchema,
   ServiceSubmissionSchema,
 } from '../../lib/securityValidators';
+import { verifyTurnstileToken } from '../../lib/security/turnstile';
 import type {
   OpportunitySubmissionCategory,
   ServiceExpertiseArea,
@@ -24,6 +25,7 @@ export interface SubmitOpportunityPayload {
   description: string;
   requirements: string[];
   verifiedComplianceChecklist: boolean;
+  turnstileToken?: string;
 }
 
 export interface SubmitServicePayload {
@@ -37,6 +39,7 @@ export interface SubmitServicePayload {
   portfolioLinks: string;
   certifications: string;
   verifiedComplianceChecklist: boolean;
+  turnstileToken?: string;
 }
 
 /**
@@ -50,6 +53,16 @@ export async function submitOpportunityAction(
   opportunity?: UserOpportunityRecord;
   error?: string;
 }> {
+  const turnstileCheck = await verifyTurnstileToken(payload.turnstileToken);
+  if (!turnstileCheck.success) {
+    return {
+      success: false,
+      error:
+        turnstileCheck.error ||
+        '403 Forbidden: Security verification failed. Please retry the challenge.',
+    };
+  }
+
   const parsed = OpportunitySubmissionSchema.safeParse(payload);
   if (!parsed.success) {
     return {
@@ -139,6 +152,16 @@ export async function submitServiceAction(
   service?: UserServiceRecord;
   error?: string;
 }> {
+  const turnstileCheck = await verifyTurnstileToken(payload.turnstileToken);
+  if (!turnstileCheck.success) {
+    return {
+      success: false,
+      error:
+        turnstileCheck.error ||
+        '403 Forbidden: Security verification failed. Please retry the challenge.',
+    };
+  }
+
   const parsed = ServiceSubmissionSchema.safeParse({
     ...payload,
     regionalCoverage:

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -23,6 +23,10 @@ import {
 } from '../lib/supabaseAuth';
 import { useCurrency } from '../lib/currency';
 import { TANZANIA_REGIONS_META } from '../data/tanzaniaRegionsGeoJson';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from './TurnstileWidget';
 import type {
   OpportunitySubmissionCategory,
   ServiceExpertiseArea,
@@ -152,6 +156,9 @@ export function GuidedOpportunityWizard({
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMsg, setDraftSavedMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+  const turnstileEnabled = isTurnstileEnabled();
   const [submittedRecord, setSubmittedRecord] =
     useState<UserOpportunityRecord | null>(null);
 
@@ -259,6 +266,12 @@ export function GuidedOpportunityWizard({
       );
       return;
     }
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        'Security Verification Required: Please complete the Cloudflare Turnstile check before publishing.'
+      );
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -291,6 +304,8 @@ export function GuidedOpportunityWizard({
       onSubmitted?.(res.opportunity);
     } finally {
       setSubmitting(false);
+      setCaptchaToken('');
+      turnstileRef.current?.reset();
     }
   };
 
@@ -825,11 +840,22 @@ export function GuidedOpportunityWizard({
               </div>
             </div>
 
+            <TurnstileWidget
+              ref={turnstileRef}
+              theme="dark"
+              onVerify={(token) => {
+                setCaptchaToken(token);
+                setError(null);
+              }}
+              onExpire={() => setCaptchaToken('')}
+              onError={(msg) => setError(msg)}
+            />
+
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-paper/12 pt-5">
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-paper/20 bg-paper/5 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/15"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-paper/20 bg-paper/5 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/15"
               >
                 <ArrowLeft size={14} />
                 Back to Step 02
@@ -837,7 +863,11 @@ export function GuidedOpportunityWizard({
 
               <button
                 type="submit"
-                disabled={submitting || !allChecksComplete}
+                disabled={
+                  submitting ||
+                  !allChecksComplete ||
+                  (turnstileEnabled && !captchaToken)
+                }
                 className="btn-primary !py-3 !px-7 text-xs disabled:opacity-45"
               >
                 <ShieldCheck size={15} />
@@ -894,6 +924,9 @@ export function GuidedServiceWizard({
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMsg, setDraftSavedMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
+  const turnstileEnabled = isTurnstileEnabled();
   const [submittedRecord, setSubmittedRecord] =
     useState<UserServiceRecord | null>(null);
 
@@ -1000,6 +1033,12 @@ export function GuidedServiceWizard({
       );
       return;
     }
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        'Security Verification Required: Please complete the Cloudflare Turnstile check before publishing.'
+      );
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -1028,6 +1067,8 @@ export function GuidedServiceWizard({
       onSubmitted?.(res.service);
     } finally {
       setSubmitting(false);
+      setCaptchaToken('');
+      turnstileRef.current?.reset();
     }
   };
 
@@ -1552,11 +1593,22 @@ export function GuidedServiceWizard({
               </div>
             </div>
 
+            <TurnstileWidget
+              ref={turnstileRef}
+              theme="dark"
+              onVerify={(token) => {
+                setCaptchaToken(token);
+                setError(null);
+              }}
+              onExpire={() => setCaptchaToken('')}
+              onError={(msg) => setError(msg)}
+            />
+
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-paper/12 pt-5">
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-paper/20 bg-paper/5 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/15"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-paper/20 bg-paper/5 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/15"
               >
                 <ArrowLeft size={14} />
                 Back to Step 02
@@ -1564,7 +1616,11 @@ export function GuidedServiceWizard({
 
               <button
                 type="submit"
-                disabled={submitting || !allChecksComplete}
+                disabled={
+                  submitting ||
+                  !allChecksComplete ||
+                  (turnstileEnabled && !captchaToken)
+                }
                 className="btn-primary !py-3 !px-7 text-xs disabled:opacity-45"
               >
                 <Briefcase size={15} />

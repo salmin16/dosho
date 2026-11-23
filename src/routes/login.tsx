@@ -1,7 +1,11 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { signInWithEmail, useAuthState } from '../lib/supabaseAuth'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (s: Record<string, unknown>): { next?: string; reason?: string } => ({
@@ -17,8 +21,13 @@ function LoginRouteComponent() {
   const { next, reason } = Route.useSearch()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -28,12 +37,28 @@ function LoginRouteComponent() {
     }
   }, [authLoading, session, navigate, targetDestination])
 
+  const canSubmit =
+    !submitting &&
+    email.trim().length > 0 &&
+    password.length > 0 &&
+    (!turnstileEnabled || Boolean(captchaToken))
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (turnstileEnabled && !captchaToken) {
+      setError('Please complete the Cloudflare Turnstile security check before signing in.')
+      return
+    }
+
     setSubmitting(true)
     try {
-      const res = await signInWithEmail({ email, password })
+      const res = await signInWithEmail({
+        email,
+        password,
+        captchaToken: captchaToken || undefined,
+      })
       if (res.error) {
         setError(res.error)
       } else {
@@ -45,6 +70,8 @@ function LoginRouteComponent() {
       )
     } finally {
       setSubmitting(false)
+      setCaptchaToken('')
+      turnstileRef.current?.reset()
     }
   }
 
@@ -60,9 +87,9 @@ function LoginRouteComponent() {
             : null
 
   return (
-    <div className="min-h-screen bg-paper pb-20 pt-28 text-ink">
-      <div className="mx-auto max-w-md px-5">
-        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-8 shadow-sm">
+    <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
+      <div className="mx-auto max-w-md px-4 sm:px-5">
+        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-6 shadow-sm sm:p-8">
           <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
             <ShieldCheck size={14} />
             RLS-Grounded Portal
@@ -134,21 +161,40 @@ function LoginRouteComponent() {
                 />
                 <input
                   id="login-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="field !pl-10"
+                  className="field !pl-10 !pr-12"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
               </div>
             </div>
 
+            <TurnstileWidget
+              ref={turnstileRef}
+              theme="light"
+              onVerify={(token) => {
+                setCaptchaToken(token)
+                setError(null)
+              }}
+              onExpire={() => setCaptchaToken('')}
+              onError={(msg) => setError(msg)}
+            />
+
             <button
               type="submit"
-              disabled={submitting}
-              className="btn-primary w-full disabled:opacity-50"
+              disabled={!canSubmit}
+              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Verifying session...' : 'Sign In to Workspace'}
             </button>

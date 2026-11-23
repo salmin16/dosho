@@ -10,6 +10,7 @@ import {
   ServiceSubmissionSchema,
   sanitizeString,
 } from './securityValidators'
+import { validateStrongPassword } from './validations/auth'
 import type {
   AdminAuditLogRecord,
   AuditAction,
@@ -569,6 +570,7 @@ export async function signUpWithEmail(params: {
   confirmPassword: string
   fullName?: string
   preferredCurrency?: SupportedCurrency
+  captchaToken?: string
 }): Promise<{ session?: AuthSession; confirmationRequired?: boolean; error?: string }> {
   const email = params.email.trim().toLowerCase()
   const { password, confirmPassword } = params
@@ -578,14 +580,9 @@ export async function signUpWithEmail(params: {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: 'Please enter a valid email address.' }
   }
-  if (password.length < 8) {
-    return { error: 'Password must be at least 8 characters long.' }
-  }
-  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-    return {
-      error:
-        'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
-    }
+  const passwordError = validateStrongPassword(password)
+  if (passwordError) {
+    return { error: passwordError }
   }
   if (password !== confirmPassword) {
     return { error: 'Passwords do not match.' }
@@ -603,6 +600,7 @@ export async function signUpWithEmail(params: {
     email,
     password,
     options: {
+      ...(params.captchaToken ? { captchaToken: params.captchaToken } : {}),
       data: {
         full_name: fullName,
         preferred_currency: preferredCurrency,
@@ -639,6 +637,7 @@ export async function signUpWithEmail(params: {
 export async function signInWithEmail(params: {
   email: string
   password: string
+  captchaToken?: string
 }): Promise<{ session?: AuthSession; error?: string }> {
   const email = params.email.trim().toLowerCase()
   const { password } = params
@@ -660,6 +659,9 @@ export async function signInWithEmail(params: {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
+    ...(params.captchaToken
+      ? { options: { captchaToken: params.captchaToken } }
+      : {}),
   })
 
   if (error || !data.session) {

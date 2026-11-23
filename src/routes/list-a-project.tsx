@@ -1,11 +1,15 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Crown, UploadCloud, FileText, X } from 'lucide-react'
 import { MINERALS, OPPORTUNITY_TYPES, REGIONS, STAGES } from '../data/fixtures'
 import { useI18n, type TranslationKey } from '../i18n'
 import { createGroundedProject, fetchGroundedUserData, getSession, useAuthState } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import { useSubscription } from '../lib/subscriptions'
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '../components/TurnstileWidget'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -54,6 +58,10 @@ function ListProject() {
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
+  const turnstileEnabled = isTurnstileEnabled()
 
   useEffect(() => {
     if (authLoading) return
@@ -104,6 +112,9 @@ function ListProject() {
       if (!form.declTrue) e.declTrue = t('list.err.required')
       if (!form.declNoGuarantee) e.declNoGuarantee = t('list.err.required')
       if (!form.declTerms) e.declTerms = t('list.err.required')
+      if (turnstileEnabled && !captchaToken) {
+        e.captcha = 'Please complete the Cloudflare Turnstile security check before submitting.'
+      }
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -119,19 +130,26 @@ function ListProject() {
     }
     if (!validate()) return
     if (step === STEP_KEYS.length - 1) {
-      const rawInv = parseFloat(v('investment').replace(/[^0-9.]/g, '')) || 0
-      await createGroundedProject({
-        title: v('title'),
-        mineral: arr('minerals')[0] || 'Gold',
-        region: v('region'),
-        licenceType: v('licenceType'),
-        licenceReference: v('licenceRef'),
-        investmentUsd: toUsd(rawInv),
-        submittedCurrency: currency,
-        summary: v('summary'),
-      })
-      setSubmitted(`MC-SUB-${Math.floor(10000 + Math.random() * 89999)}`)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      setSubmitting(true)
+      try {
+        const rawInv = parseFloat(v('investment').replace(/[^0-9.]/g, '')) || 0
+        await createGroundedProject({
+          title: v('title'),
+          mineral: arr('minerals')[0] || 'Gold',
+          region: v('region'),
+          licenceType: v('licenceType'),
+          licenceReference: v('licenceRef'),
+          investmentUsd: toUsd(rawInv),
+          submittedCurrency: currency,
+          summary: v('summary'),
+        })
+        setSubmitted(`MC-SUB-${Math.floor(10000 + Math.random() * 89999)}`)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } finally {
+        setSubmitting(false)
+        setCaptchaToken('')
+        turnstileRef.current?.reset()
+      }
       return
     }
     setStep((s) => s + 1)
@@ -500,17 +518,43 @@ function ListProject() {
                     </span>
                   </label>
                 ))}
+                <div className="pt-2">
+                  <TurnstileWidget
+                    ref={turnstileRef}
+                    theme="light"
+                    onVerify={(token) => {
+                      setCaptchaToken(token)
+                      setErrors((prev) => {
+                        const copy = { ...prev }
+                        delete copy.captcha
+                        return copy
+                      })
+                    }}
+                    onExpire={() => setCaptchaToken('')}
+                    onError={(msg) => setErrors((prev) => ({ ...prev, captcha: msg }))}
+                  />
+                  {errors.captcha && <Err>{errors.captcha}</Err>}
+                </div>
               </div>
             </div>
           )}
         </div>
 
         <div className="mt-12 flex items-center justify-between border-t border-ink/10 pt-6">
-          <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="btn-ghost disabled:opacity-30">
+          <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0 || submitting} className="btn-ghost disabled:opacity-30">
             <ArrowLeft size={16} /> {t('list.back')}
           </button>
-          <button onClick={next} className="btn-primary">
-            {step === STEP_KEYS.length - 1 ? t('list.submitModeration') : t('list.continue')} <ArrowRight size={16} />
+          <button
+            onClick={next}
+            disabled={submitting || (step === STEP_KEYS.length - 1 && turnstileEnabled && !captchaToken)}
+            className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting
+              ? 'Submitting...'
+              : step === STEP_KEYS.length - 1
+                ? t('list.submitModeration')
+                : t('list.continue')}{' '}
+            <ArrowRight size={16} />
           </button>
         </div>
       </div>

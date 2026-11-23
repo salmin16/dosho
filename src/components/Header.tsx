@@ -161,10 +161,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <CurrencySwitcher dark={dark} />
-          <LanguageSwitcher dark={dark} />
+          <div className="hidden items-center gap-2 sm:flex">
+            <CurrencySwitcher dark={dark} />
+            <LanguageSwitcher dark={dark} />
+          </div>
           <button
-            className="rounded-md p-2"
+            type="button"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md p-2 transition hover:bg-current/10"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? t('nav.closeMenu') : t('nav.openMenu')}
             aria-expanded={open}
@@ -175,52 +178,101 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
       </div>
 
       {open && (
-        <div className="border-t border-ink/10 bg-paper px-5 pb-6 pt-2 text-ink lg:hidden">
-          <Link
-            to="/markets"
+        <>
+          <div
+            className="fixed inset-0 top-[72px] z-40 bg-ink/50 backdrop-blur-[2px] lg:hidden"
             onClick={() => setOpen(false)}
-            className="flex items-center justify-between border-b border-ink/5 py-3.5 font-display text-xl text-ochre"
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-label="Mobile Navigation"
+            className="relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto border-t border-ink/10 bg-paper px-5 pb-8 pt-3 text-ink shadow-2xl lg:hidden"
           >
-            <span>
-              {ui('Indicative Mineral Markets', 'Bei Elekezi za Madini', 'Mercados de Minerales')}
-            </span>
-          </Link>
-          {NAV.map((n) => (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink/10 bg-paper-2/80 p-3 sm:hidden">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+                {ui('Currency & Language', 'Sarafu na Lugha', 'Moneda e Idioma')}
+              </span>
+              <div className="flex items-center gap-2">
+                <CurrencySwitcher dark={false} />
+                <LanguageSwitcher dark={false} />
+              </div>
+            </div>
+
             <Link
-              key={n.to}
-              to={n.to}
+              to="/markets"
               onClick={() => setOpen(false)}
-              className="flex items-center justify-between border-b border-ink/5 py-3.5 font-display text-xl"
+              className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl text-ochre"
             >
-              <span>{t(n.key)}</span>
-              {!session && <Lock size={14} className="text-stone" />}
+              <span>
+                {ui('Indicative Mineral Markets', 'Bei Elekezi za Madini', 'Mercados de Minerales')}
+              </span>
             </Link>
-          ))}
-          <Link
-            to={session ? '/dashboard' : '/login'}
-            onClick={() => setOpen(false)}
-            className="block border-b border-ink/5 py-3.5 text-sm font-semibold text-ochre"
-          >
-            {session ? `Grounded Vault (${session.user.email})` : 'Sign In / Create Account'}
-          </Link>
-          {isAdmin && (
+            {NAV.map((n) => (
+              <Link
+                key={n.to}
+                to={n.to}
+                onClick={() => setOpen(false)}
+                className="flex min-h-[48px] items-center justify-between border-b border-ink/5 py-3 font-display text-xl"
+              >
+                <span>{t(n.key)}</span>
+                {!session && <Lock size={14} className="text-stone" />}
+              </Link>
+            ))}
+
+            {session ? (
+              <Link
+                to="/dashboard"
+                onClick={() => setOpen(false)}
+                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-ochre"
+              >
+                <ShieldCheck size={16} />
+                <span className="truncate">
+                  {ui('Grounded Vault', 'Hifadhi Salama', 'Bóveda')} ({session.user.email})
+                </span>
+              </Link>
+            ) : (
+              <div className="mt-4 grid grid-cols-2 gap-2.5">
+                <Link
+                  to="/login"
+                  onClick={() => setOpen(false)}
+                  className="btn-ghost w-full justify-center text-xs"
+                >
+                  <User size={14} />
+                  {ui('Sign In', 'Ingia', 'Entrar')}
+                </Link>
+                <Link
+                  to="/signup"
+                  onClick={() => setOpen(false)}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md border border-ochre bg-ochre/15 px-3 py-2 text-xs font-semibold text-ochre transition hover:bg-ochre/25"
+                >
+                  <ShieldCheck size={14} />
+                  {ui('Sign Up', 'Jisajili', 'Registrarse')}
+                </Link>
+              </div>
+            )}
+
+            {isAdmin && (
+              <Link
+                to="/admin"
+                onClick={() => setOpen(false)}
+                className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-moss"
+              >
+                <ShieldCheck size={16} />
+                {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}
+              </Link>
+            )}
+
             <Link
-              to="/admin"
-              onClick={() => setOpen(false)}
-              className="block border-b border-ink/5 py-3.5 text-sm font-semibold text-moss"
+              to="/list-a-project"
+              onClick={handleListProjectClick}
+              className="btn-primary mt-5 w-full"
             >
-              {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}
+              {!session && <Lock size={14} />}
+              {t('nav.listProject')}
             </Link>
-          )}
-          <Link
-            to="/list-a-project"
-            onClick={handleListProjectClick}
-            className="btn-primary mt-5 w-full"
-          >
-            {!session && <Lock size={14} />}
-            {t('nav.listProject')}
-          </Link>
-        </div>
+          </div>
+        </>
       )}
     </header>
   )
