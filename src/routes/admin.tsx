@@ -228,16 +228,16 @@ export function MasterAdminDashboard({
         fetchAdminGovernanceData(),
         fetchAdminComplianceComplaints(),
       ])
-      setAuthorized(data.authorized)
-      setUsers(data.users)
-      setServices(data.servicesList)
-      setOpportunities(data.opportunitiesList)
-      setProjects(data.projectsList)
-      setQuotes(data.quotesList)
-      setAuditLogs(data.adminAuditLogs)
-      setDbLatencyMs(data.dbLatencyMs)
-      setComplaints(complaintsRes.complaints)
-      setComplaintsWarning(complaintsRes.error ?? null)
+      setAuthorized(Boolean(data?.authorized))
+      setUsers(data?.users ?? [])
+      setServices(data?.servicesList ?? [])
+      setOpportunities(data?.opportunitiesList ?? [])
+      setProjects(data?.projectsList ?? [])
+      setQuotes(data?.quotesList ?? [])
+      setAuditLogs(data?.adminAuditLogs ?? [])
+      setDbLatencyMs(data?.dbLatencyMs ?? 0)
+      setComplaints(complaintsRes?.complaints ?? [])
+      setComplaintsWarning(complaintsRes?.error ?? null)
       if (data.dbError) {
         setFeedback({
           type: 'error',
@@ -406,17 +406,31 @@ export function MasterAdminDashboard({
 
   const filteredAuditLogs = useMemo(() => {
     const q = auditSearch.trim().toLowerCase()
-    return auditLogs.filter((l) => {
+    return (auditLogs ?? []).filter((l) => {
       if (auditActionFilter !== 'ALL' && l.action_type !== auditActionFilter) return false
       if (!q) return true
       return (
-        l.action_type.toLowerCase().includes(q) ||
+        (l.action_type || '').toLowerCase().includes(q) ||
         (l.actor_email || '').toLowerCase().includes(q) ||
         (l.target_summary || '').toLowerCase().includes(q) ||
-        l.target_table.toLowerCase().includes(q)
+        (l.target_table || '').toLowerCase().includes(q)
       )
     })
   }, [auditLogs, auditSearch, auditActionFilter])
+
+  const openComplaintsCount = useMemo(
+    () =>
+      (complaints ?? []).filter(
+        (c) => c?.status === 'open' || c?.status === 'investigating'
+      ).length,
+    [complaints]
+  )
+
+  const filteredComplaints = useMemo(() => {
+    const list = complaints ?? []
+    if (complaintStatusFilter === 'ALL') return list
+    return list.filter((c) => c?.status === complaintStatusFilter)
+  }, [complaints, complaintStatusFilter])
 
   // Action handlers
   const handleVerifyUser = async (
@@ -563,6 +577,32 @@ export function MasterAdminDashboard({
     setFeedback({ type: 'success', message: `Synchronized ${res.records.length} mineral benchmarks.` })
   }
 
+  const handleUpdateComplaint = async (
+    c: ComplianceComplaintRecord,
+    nextStatus: ComplianceComplaintStatus
+  ) => {
+    setBusyId(c.id)
+    try {
+      const res = await adminUpdateComplaintStatus({
+        id: c.id,
+        status: nextStatus,
+        resolutionNotes: complaintNotesMap[c.id] ?? c.resolution_notes ?? undefined,
+        summary: `${c.category} (${c.reference_code || c.reporter_email})`,
+      })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({
+        type: 'success',
+        message: `Complaint status updated to ${nextStatus.toUpperCase()}.`,
+      })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (authLoading || profileLoading || loadingGovernance) {
     return (
       <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
@@ -625,42 +665,6 @@ export function MasterAdminDashboard({
       </div>
     )
   }
-
-  const handleUpdateComplaint = async (
-    c: ComplianceComplaintRecord,
-    nextStatus: ComplianceComplaintStatus
-  ) => {
-    setBusyId(c.id)
-    try {
-      const res = await adminUpdateComplaintStatus({
-        id: c.id,
-        status: nextStatus,
-        resolutionNotes: complaintNotesMap[c.id] ?? c.resolution_notes ?? undefined,
-        summary: `${c.category} (${c.reference_code || c.reporter_email})`,
-      })
-      if (res.error) {
-        setFeedback({ type: 'error', message: res.error })
-        return
-      }
-      setFeedback({
-        type: 'success',
-        message: `Complaint status updated to ${nextStatus.toUpperCase()}.`,
-      })
-      await loadGovernanceTelemetry()
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const openComplaintsCount = useMemo(
-    () => complaints.filter((c) => c.status === 'open' || c.status === 'investigating').length,
-    [complaints]
-  )
-
-  const filteredComplaints = useMemo(() => {
-    if (complaintStatusFilter === 'ALL') return complaints
-    return complaints.filter((c) => c.status === complaintStatusFilter)
-  }, [complaints, complaintStatusFilter])
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview & Telemetry', icon: LayoutDashboard, badge: 0 },
