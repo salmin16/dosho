@@ -42,6 +42,10 @@ export default function LiveMarketTicker({
     currency,
     currencyMeta,
     rateForSelected,
+    ratesSource,
+    ratesProvider,
+    fetchedAt: fxFetchedAt,
+    refreshRates,
     formatStatutoryPrice,
     language,
     ui,
@@ -64,14 +68,17 @@ export default function LiveMarketTicker({
   const handleManualSync = useCallback(async (force = true) => {
     setSyncing(true)
     try {
-      const result = await executeLiveMarketSync({ force })
+      const [result] = await Promise.all([
+        executeLiveMarketSync({ force }),
+        force ? refreshRates() : Promise.resolve(),
+      ])
       setMinerals(result.records)
       setTelemetry(result.telemetry)
       setSecondsToNextSync(45)
     } finally {
       setSyncing(false)
     }
-  }, [])
+  }, [refreshRates])
 
   // Subscribe to store updates + trigger initial live sync on mount
   useEffect(() => {
@@ -147,16 +154,41 @@ export default function LiveMarketTicker({
                 )}
           </span>
 
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-paper/12 bg-paper/[0.05] px-2.5 py-1 font-mono text-[11px] text-paper/75">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-paper/12 bg-paper/[0.05] px-2.5 py-1 font-mono text-[11px] text-paper/75 tabular-nums"
+            title={
+              fxFetchedAt
+                ? `${ratesSource === 'live' ? 'Live FX' : 'Cached FX'} (${ratesProvider}) · ${fxFetchedAt.toLocaleTimeString()}`
+                : 'Offline Fallback FX'
+            }
+          >
             <Globe size={11} className="text-gold" />
             1 USD ={' '}
             <strong className="text-gold">
               {rateForSelected.toLocaleString('en-US', {
-                maximumFractionDigits: currency === 'TZS' ? 0 : 4,
+                minimumFractionDigits:
+                  currency === 'USD' || rateForSelected >= 100 ? 2 : 4,
+                maximumFractionDigits:
+                  currency === 'USD' || rateForSelected >= 100 ? 2 : 4,
               })}{' '}
               {currency}
             </strong>{' '}
             ({currencyMeta.flag})
+            <span
+              className={`ml-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
+                ratesSource === 'live'
+                  ? 'bg-moss/35 text-[#9de4b4]'
+                  : ratesSource === 'cached'
+                    ? 'bg-ochre/30 text-gold'
+                    : 'bg-danger/30 text-[#f59c8a]'
+              }`}
+            >
+              {ratesSource === 'live'
+                ? ui('LIVE FX', 'FX HAI', 'FX VIVO')
+                : ratesSource === 'cached'
+                  ? ui('CACHED FX', 'FX HIFADHI', 'FX CACHÉ')
+                  : ui('FALLBACK', 'AKIBA', 'RESPALDO')}
+            </span>
           </span>
 
           {/* Trading Desk Sessions */}

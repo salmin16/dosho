@@ -7,6 +7,7 @@ import {
   CurrencyProvider,
   useCurrency,
   type CurrencyMetadata,
+  type FxRatesSource,
 } from '../lib/currency'
 import {
   LANGUAGES,
@@ -53,13 +54,21 @@ export interface LocalizationContextValue {
   rates: Record<SupportedCurrency, number>
   exchangeRates: Record<SupportedCurrency, number>
   rateForSelected: number
-  ratesSource: 'live' | 'fallback'
+  ratesSource: FxRatesSource
+  ratesProvider: string
+  fetchedAt: Date | null
   lastUpdated: Date | null
+  isRefreshingRates: boolean
   setCurrency: (code: SupportedCurrency) => void
   refreshRates: () => Promise<void>
 
   // Native Intl.NumberFormat & Conversion Helpers
   convertPrice: (usdAmount: number, currencyOverride?: SupportedCurrency) => number
+  convertPair: (
+    amount: number,
+    fromCurrency: SupportedCurrency,
+    toCurrency?: SupportedCurrency,
+  ) => number
   formatPrice: (usdAmount: number, options?: FormatCurrencyOptions) => string
   formatCurrency: (usdAmount: number, options?: FormatCurrencyOptions) => string
   formatUsd: (usdAmount: number) => string
@@ -108,9 +117,13 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
     rates,
     rateForSelected,
     ratesSource,
+    ratesProvider,
+    fetchedAt,
     lastUpdated,
+    isRefreshingRates,
     setCurrency,
     refreshRates,
+    convertPair,
     formatUsd,
     formatExactUsd,
     convertText,
@@ -238,10 +251,14 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
       exchangeRates: rates,
       rateForSelected,
       ratesSource,
+      ratesProvider,
+      fetchedAt,
       lastUpdated,
+      isRefreshingRates,
       setCurrency,
       refreshRates,
       convertPrice,
+      convertPair,
       formatPrice: formatCurrency,
       formatCurrency,
       formatUsd,
@@ -267,10 +284,14 @@ function LocalizationBridge({ children }: { children: React.ReactNode }) {
       rates,
       rateForSelected,
       ratesSource,
+      ratesProvider,
+      fetchedAt,
       lastUpdated,
+      isRefreshingRates,
       setCurrency,
       refreshRates,
       convertPrice,
+      convertPair,
       formatCurrency,
       formatUsd,
       formatExactUsd,
