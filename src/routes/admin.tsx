@@ -596,7 +596,7 @@ export function MasterAdminDashboard({
             403 Forbidden — Administrative Clearance Required
           </h1>
           <p className="mt-2 text-sm text-stone">
-            Your Supabase account (`role = {session.user.role}`) does not hold `public.is_admin()` clearance.
+            Your account does not have administrator clearance to access this governance console.
           </p>
           {profileError && (
             <p className="mt-3 rounded border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
