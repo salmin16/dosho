@@ -2,7 +2,6 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Briefcase,
-  Coins,
   Compass,
   FileText,
   Lock,
@@ -24,8 +23,6 @@ import {
 import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
 import { useLocalization } from '../context/LocalizationContext'
-import CurrencySwitcher from '../components/CurrencySwitcher'
-import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
 import type {
@@ -49,8 +46,6 @@ export function DashboardRouteComponent() {
   const {
     currency,
     language,
-    currencyMeta,
-    rateForSelected,
     convertText,
     localizeProject,
     ui,
@@ -171,17 +166,7 @@ export function DashboardRouteComponent() {
         {/* Clean Workspace Welcome Header */}
         <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/85">
-                <Coins size={13} className="text-gold" />
-                {currencyMeta.flag} {currency} (1 USD ={' '}
-                {rateForSelected.toLocaleString('en-US', {
-                  maximumFractionDigits: 2,
-                })}{' '}
-                {currency})
-              </span>
-            </div>
-            <h1 className="mt-3 font-display text-3xl font-semibold">
+            <h1 className="font-display text-3xl font-semibold">
               {ui('Welcome,', 'Karibu,', 'Bienvenido,')}{' '}
               {profile?.full_name || session.user.fullName}
             </h1>
@@ -191,8 +176,6 @@ export function DashboardRouteComponent() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-            <CurrencySwitcher dark />
-            <LanguageSwitcher dark />
             {isAdmin && (
               <Link
                 to="/admin"

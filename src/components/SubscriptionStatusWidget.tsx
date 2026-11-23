@@ -15,7 +15,6 @@ import {
   SUBSCRIPTION_TIERS,
   useSubscription,
 } from '../lib/subscriptions';
-import CurrencySwitcher from './CurrencySwitcher';
 import type { SubscriptionTierName } from '../types/database';
 
 export interface SubscriptionStatusWidgetProps {
@@ -141,8 +140,6 @@ export default function SubscriptionStatusWidget({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <CurrencySwitcher dark />
-
           {tierName !== 'Corporate' && (
             <Link
               to="/checkout"
@@ -204,9 +201,9 @@ export default function SubscriptionStatusWidget({
             {projectQuota.limit === 0 ? (
               <span className="text-[#f59c8a]">
                 {ui(
-                  'Explorer tier cannot list projects. View Miner (TSh 50,000/mo) for 3 listings.',
-                  'Mpango wa Explorer hauruhusu kusajili miradi. Tazama Miner (TSh 50,000/mwezi).',
-                  'El nivel Explorer no permite listar proyectos. Consulte Miner.'
+                  `Explorer tier cannot list projects. View Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mo) for 3 listings.`,
+                  `Mpango wa Explorer hauruhusu kusajili miradi. Tazama Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mwezi).`,
+                  `El nivel Explorer no permite listar proyectos. Consulte Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mes).`
                 )}
               </span>
             ) : projectQuota.allowed ? (
