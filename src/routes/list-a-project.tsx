@@ -112,6 +112,7 @@ function ListProject() {
       if (!form.declTrue) e.declTrue = t('list.err.required')
       if (!form.declNoGuarantee) e.declNoGuarantee = t('list.err.required')
       if (!form.declTerms) e.declTerms = t('list.err.required')
+      if (!form.declListingAgreement) e.declListingAgreement = t('list.err.required')
       if (turnstileEnabled && !captchaToken) {
         e.captcha = 'Completing security check — please wait a moment or refresh if blocked by an ad blocker.'
       }
@@ -518,6 +519,37 @@ function ListProject() {
                     </span>
                   </label>
                 ))}
+                <label className="flex cursor-pointer gap-3 rounded-lg border border-ochre/30 bg-white p-4 text-sm leading-relaxed">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={!!form.declListingAgreement}
+                    onChange={(e) => set('declListingAgreement', e.target.checked)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-ochre"
+                  />
+                  <span>
+                    I confirm I hold legal authority for this listing and agree to the{' '}
+                    <a
+                      href="/legal/listing-agreement"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-ochre underline hover:text-ochre-dark"
+                    >
+                      Listing Agreement
+                    </a>{' '}
+                    and{' '}
+                    <a
+                      href="/legal/prohibited-claims-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-ochre underline hover:text-ochre-dark"
+                    >
+                      Prohibited Claims Policy
+                    </a>
+                    .
+                    {errors.declListingAgreement && <Err>{t('list.confirmContinue')}</Err>}
+                  </span>
+                </label>
                 <div className="pt-2">
                   <TurnstileWidget
                     ref={turnstileRef}
@@ -546,7 +578,10 @@ function ListProject() {
           </button>
           <button
             onClick={next}
-            disabled={submitting}
+            disabled={
+              submitting ||
+              (step === STEP_KEYS.length - 1 && !form.declListingAgreement)
+            }
             className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting

@@ -62,6 +62,8 @@ function Chrome({ children }: { children: React.ReactNode }) {
     normalizedPath === '/markets' || normalizedPath.startsWith('/markets/')
   const isMapPage =
     normalizedPath === '/map' || normalizedPath.startsWith('/map/')
+  const isLegalPage =
+    normalizedPath === '/legal' || normalizedPath.startsWith('/legal/')
   const isAdminPage =
     normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')
   const isResetPasswordPage =
@@ -100,7 +102,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
   // Wait for Supabase Auth hydration before enforcing redirect so authenticated users never bounce.
   useEffect(() => {
     if (authLoading) return
-    if (!isHome && !isMarketsPage && !isMapPage && !isAuthPage && !isAdminPage && !session) {
+    if (!isHome && !isMarketsPage && !isMapPage && !isLegalPage && !isAuthPage && !isAdminPage && !session) {
       navigate({
         to: '/signup',
         search: {
@@ -114,7 +116,7 @@ function Chrome({ children }: { children: React.ReactNode }) {
         } as unknown as undefined,
       })
     }
-  }, [authLoading, isHome, isMarketsPage, isMapPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
+  }, [authLoading, isHome, isMarketsPage, isMapPage, isLegalPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
     <div data-currency={currency} data-fx-rate={rateForSelected} data-lang={lang}>

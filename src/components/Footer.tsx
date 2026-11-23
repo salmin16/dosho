@@ -28,14 +28,16 @@ const COLS: {
   },
 ]
 
-const LEGAL_KEYS: TranslationKey[] = [
-  'footer.termsOfUse',
-  'footer.privacyPolicy',
-  'footer.listingAgreement',
-  'footer.investorTerms',
-  'footer.facilitationTerms',
-  'footer.prohibitedClaims',
-  'footer.complaintsProcedure',
+import type { LegalDocumentSlug } from '../data/legalDocuments'
+
+const LEGAL_LINKS: { slug: LegalDocumentSlug; labelKey: TranslationKey }[] = [
+  { slug: 'terms-of-use', labelKey: 'footer.termsOfUse' },
+  { slug: 'privacy-policy', labelKey: 'footer.privacyPolicy' },
+  { slug: 'listing-agreement', labelKey: 'footer.listingAgreement' },
+  { slug: 'investor-terms', labelKey: 'footer.investorTerms' },
+  { slug: 'facilitation-success-fee-terms', labelKey: 'footer.facilitationTerms' },
+  { slug: 'prohibited-claims-policy', labelKey: 'footer.prohibitedClaims' },
+  { slug: 'complaints-procedure', labelKey: 'footer.complaintsProcedure' },
 ]
 
 export default function Footer() {
@@ -70,9 +72,16 @@ export default function Footer() {
           <div>
             <h3 className="eyebrow mb-5 text-paper/40">{t('footer.legalPolicies')}</h3>
             <ul className="space-y-2.5 text-sm">
-              {LEGAL_KEYS.map((k) => (
-                <li key={k} className="text-paper/60">
-                  {t(k)}
+              {LEGAL_LINKS.map((item) => (
+                <li key={item.slug}>
+                  <Link
+                    to="/legal/$slug"
+                    params={{ slug: item.slug }}
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="link-underline text-paper/70 transition hover:text-paper"
+                  >
+                    {t(item.labelKey)}
+                  </Link>
                 </li>
               ))}
               <li className="pt-1">

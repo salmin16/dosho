@@ -15,6 +15,9 @@ import type {
   AdminAuditLogRecord,
   AuditAction,
   AuditLog,
+  ComplianceComplaintCategory,
+  ComplianceComplaintRecord,
+  ComplianceComplaintStatus,
   ContentStatus,
   DocumentClassification,
   Json,
@@ -602,11 +605,13 @@ export async function signUpWithEmail(params: {
   fullName?: string
   preferredCurrency?: SupportedCurrency
   captchaToken?: string
+  termsAcceptedAt?: string
 }): Promise<{ session?: AuthSession; confirmationRequired?: boolean; error?: string }> {
   const email = params.email.trim().toLowerCase()
   const { password, confirmPassword } = params
   const fullName = params.fullName?.trim() || email.split('@')[0]
   const preferredCurrency = params.preferredCurrency || 'USD'
+  const termsAcceptedAt = params.termsAcceptedAt || new Date().toISOString()
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: 'Please enter a valid email address.' }
@@ -635,6 +640,7 @@ export async function signUpWithEmail(params: {
       data: {
         full_name: fullName,
         preferred_currency: preferredCurrency,
+        terms_accepted_at: termsAcceptedAt,
       },
     },
   })
@@ -649,6 +655,16 @@ export async function signUpWithEmail(params: {
       error:
         'Account created! Please check your email inbox to confirm your address before signing in.',
     }
+  }
+
+  // Persist explicit clickwrap consent timestamp on `public.profiles` (best-effort if column exists)
+  try {
+    await supabase
+      .from('profiles')
+      .update({ terms_accepted_at: termsAcceptedAt })
+      .eq('id', data.session.user.id)
+  } catch {
+    // Non-blocking if migration is pending; timestamp is also recorded in user_metadata
   }
 
   const hydrated = await hydrateFromSupabaseSession(data.session)
@@ -2504,4 +2520,148 @@ export async function fetchApprovedPublicOpportunities(): Promise<{
     opportunities: oppsRes.data ?? [],
     projects: projectsRes.data ?? [],
   }
+}
+
+/**
+ * Public / Member Compliance Complaint Submission (`public.compliance_complaints`).
+ */
+export async function submitComplianceComplaint(params: {
+  reporterEmail: string
+  category: ComplianceComplaintCategory
+  referenceCode?: string
+  description: string
+}): Promise<{ ok: boolean; trackingId?: string; error?: string }> {
+  const reporterEmail = params.reporterEmail.trim().toLowerCase()
+  const referenceCode = sanitizeString(params.referenceCode?.trim() || '', 160)
+  const description = sanitizeString(params.description.trim(), 4000)
+
+  if (!reporterEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reporterEmail)) {
+    return { ok: false, error: 'Please enter a valid reporter email address.' }
+  }
+  if (description.length < 15) {
+    return {
+      ok: false,
+      error: 'Please provide at least 15 characters describing the compliance or listing issue.',
+    }
+  }
+
+  let supabase
+  try {
+    supabase = requireSupabaseClient()
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Supabase is not configured.',
+    }
+  }
+
+  const reporterUserId = currentSession?.user.id ?? null
+
+  const { error } = await supabase.from('compliance_complaints').insert({
+    reporter_user_id: reporterUserId,
+    reporter_email: reporterEmail,
+    category: params.category,
+    reference_code: referenceCode || null,
+    description,
+    status: 'open',
+  })
+
+  if (error) {
+    console.error('[MineConnect Compliance] Failed submitting complaint:', error)
+    return {
+      ok: false,
+      error: isMissingRelationError(error)
+        ? 'Compliance complaints table is awaiting database migration. Please run the latest SQL migration in Supabase.'
+        : error.message,
+    }
+  }
+
+  const trackingId = `CMP-${Math.floor(100000 + Math.random() * 899999)}`
+  return { ok: true, trackingId }
+}
+
+/**
+ * Admin Governance: Fetches all rows from `public.compliance_complaints`.
+ */
+export async function fetchAdminComplianceComplaints(): Promise<{
+  complaints: ComplianceComplaintRecord[]
+  error?: string
+}> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { complaints: [], error: adminCheck.error }
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) return { complaints: [] }
+
+  const { data, error } = await supabase
+    .from('compliance_complaints')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (error) {
+    if (isMissingRelationError(error)) {
+      return {
+        complaints: [],
+        error:
+          'Compliance complaints table not yet created. Run supabase/migrations/202611230002_legal_compliance_complaints.sql in Supabase SQL Editor.',
+      }
+    }
+    return { complaints: [], error: error.message }
+  }
+
+  return { complaints: (data ?? []) as ComplianceComplaintRecord[] }
+}
+
+/**
+ * Admin Governance: Updates status & resolution notes on a compliance complaint
+ * and records an immutable audit event.
+ */
+export async function adminUpdateComplaintStatus(params: {
+  id: string
+  status: ComplianceComplaintStatus
+  resolutionNotes?: string
+  summary?: string
+}): Promise<{ success?: boolean; error?: string }> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) return { error: 'Supabase client is not configured.' }
+
+  const nowIso = new Date().toISOString()
+  const { error } = await supabase
+    .from('compliance_complaints')
+    .update({
+      status: params.status,
+      resolution_notes: params.resolutionNotes?.trim() || null,
+      reviewed_by: adminCheck.userId,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('id', params.id)
+
+  if (error) {
+    console.error('[MineConnect Admin] Failed updating compliance complaint:', error)
+    return { error: error.message }
+  }
+
+  recordAdminAuditEvent({
+    actorId: adminCheck.userId,
+    actorEmail: currentSession?.user.email ?? null,
+    actionType: `COMPLAINT_MARKED_${params.status.toUpperCase()}`,
+    targetTable: 'public.compliance_complaints',
+    targetId: params.id,
+    targetSummary: params.summary || params.id,
+    metadata: {
+      status: params.status,
+      resolutionNotes: params.resolutionNotes?.trim() || null,
+    },
+  })
+
+  return { success: true }
 }

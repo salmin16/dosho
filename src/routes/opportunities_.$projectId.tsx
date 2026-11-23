@@ -371,6 +371,8 @@ function ActionModal({ kind, project, onClose }: { kind: Exclude<Modal, null>; p
   const { t } = useI18n()
   const [done, setDone] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false)
 
   const copy = {
     enquiry: {
@@ -500,16 +502,57 @@ function ActionModal({ kind, project, onClose }: { kind: Exclude<Modal, null>; p
               </label>
 
               {kind !== 'report' && (
-                <Check2 name="terms" error={errors.terms}>
-                  {t('modal.termsConsent')}
+                <Check2
+                  name="terms"
+                  checked={acceptedTerms}
+                  onChange={setAcceptedTerms}
+                  error={errors.terms}
+                >
+                  I acknowledge the{' '}
+                  <a
+                    href="/legal/investor-terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-ochre underline hover:text-ochre-dark"
+                  >
+                    Investor Terms
+                  </a>{' '}
+                  and agree to the{' '}
+                  <a
+                    href="/legal/facilitation-success-fee-terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-ochre underline hover:text-ochre-dark"
+                  >
+                    Facilitation &amp; Success-Fee Terms
+                  </a>{' '}
+                  (including non-circumvention).
                 </Check2>
               )}
-              <Check2 name="privacy" error={errors.privacy}>
-                {t('modal.privacyConsent')}
+              <Check2
+                name="privacy"
+                checked={acceptedPrivacy}
+                onChange={setAcceptedPrivacy}
+                error={errors.privacy}
+              >
+                I agree to the processing of my enquiry under the{' '}
+                <a
+                  href="/legal/privacy-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-ochre underline hover:text-ochre-dark"
+                >
+                  Privacy Policy
+                </a>
+                .
               </Check2>
             </div>
 
-            <button type="submit" className="btn-primary mt-6 w-full">
+            <button
+              type="submit"
+              disabled={(kind !== 'report' && !acceptedTerms) || !acceptedPrivacy}
+              className="btn-primary mt-6 w-full disabled:cursor-not-allowed disabled:opacity-50"
+            >
               {copy.cta}
             </button>
           </form>
@@ -529,10 +572,28 @@ function Field({ label, name, type = 'text', error }: { label: string; name: str
   )
 }
 
-function Check2({ name, error, children }: { name: string; error?: string; children: React.ReactNode }) {
+function Check2({
+  name,
+  checked,
+  onChange,
+  error,
+  children,
+}: {
+  name: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  error?: string
+  children: React.ReactNode
+}) {
   return (
     <label className="flex cursor-pointer gap-3 text-xs leading-relaxed text-ink/80">
-      <input type="checkbox" name={name} className="mt-0.5 h-4 w-4 shrink-0 accent-ochre" />
+      <input
+        type="checkbox"
+        name={name}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-ochre"
+      />
       <span>
         {children}
         {error && <span className="mt-1 block text-danger">{error}</span>}

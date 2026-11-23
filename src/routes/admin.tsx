@@ -27,8 +27,10 @@ import {
   adminDeleteUserProfile,
   adminModerateEntity,
   adminPurgeContentItem,
+  adminUpdateComplaintStatus,
   adminUpdateUserProfile,
   adminVerifyUserProfile,
+  fetchAdminComplianceComplaints,
   fetchAdminGovernanceData,
   useAuthState,
 } from '../lib/supabaseAuth'
@@ -44,6 +46,8 @@ import {
 } from '../data/mineralPrices'
 import type {
   AdminAuditLogRecord,
+  ComplianceComplaintRecord,
+  ComplianceComplaintStatus,
   MineralPriceRecord,
   QuoteRequestRecord,
   UserListedProject,
@@ -62,6 +66,7 @@ export type MasterAdminSection =
   | 'services'
   | 'opportunities'
   | 'quotes_audit'
+  | 'complaints'
   | 'minerals'
 
 export const Route = createFileRoute('/admin')({
@@ -70,7 +75,7 @@ export const Route = createFileRoute('/admin')({
 
 function mapInitialTab(
   section: MasterAdminSection
-): 'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'minerals' {
+): 'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'minerals' {
   if (section === 'approvals') return 'opportunities'
   if (section === 'content') return 'services'
   if (
@@ -79,6 +84,7 @@ function mapInitialTab(
     section === 'services' ||
     section === 'opportunities' ||
     section === 'quotes_audit' ||
+    section === 'complaints' ||
     section === 'minerals'
   ) {
     return section
@@ -162,7 +168,7 @@ export function MasterAdminDashboard({
   const [authorized, setAuthorized] = useState(false)
   const [loadingGovernance, setLoadingGovernance] = useState(true)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'minerals'
+    'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'minerals'
   >(() => mapInitialTab(initialSection))
 
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -206,6 +212,10 @@ export function MasterAdminDashboard({
     type: 'success' | 'error'
     message: string
   } | null>(null)
+  const [complaints, setComplaints] = useState<ComplianceComplaintRecord[]>([])
+  const [complaintStatusFilter, setComplaintStatusFilter] = useState<'ALL' | ComplianceComplaintStatus>('ALL')
+  const [complaintNotesMap, setComplaintNotesMap] = useState<Record<string, string>>({})
+  const [complaintsWarning, setComplaintsWarning] = useState<string | null>(null)
 
   useEffect(() => {
     setActiveTab(mapInitialTab(initialSection))
@@ -214,7 +224,10 @@ export function MasterAdminDashboard({
   const loadGovernanceTelemetry = useCallback(async () => {
     setLoadingGovernance(true)
     try {
-      const data = await fetchAdminGovernanceData()
+      const [data, complaintsRes] = await Promise.all([
+        fetchAdminGovernanceData(),
+        fetchAdminComplianceComplaints(),
+      ])
       setAuthorized(data.authorized)
       setUsers(data.users)
       setServices(data.servicesList)
@@ -223,6 +236,8 @@ export function MasterAdminDashboard({
       setQuotes(data.quotesList)
       setAuditLogs(data.adminAuditLogs)
       setDbLatencyMs(data.dbLatencyMs)
+      setComplaints(complaintsRes.complaints)
+      setComplaintsWarning(complaintsRes.error ?? null)
       if (data.dbError) {
         setFeedback({
           type: 'error',
@@ -611,6 +626,42 @@ export function MasterAdminDashboard({
     )
   }
 
+  const handleUpdateComplaint = async (
+    c: ComplianceComplaintRecord,
+    nextStatus: ComplianceComplaintStatus
+  ) => {
+    setBusyId(c.id)
+    try {
+      const res = await adminUpdateComplaintStatus({
+        id: c.id,
+        status: nextStatus,
+        resolutionNotes: complaintNotesMap[c.id] ?? c.resolution_notes ?? undefined,
+        summary: `${c.category} (${c.reference_code || c.reporter_email})`,
+      })
+      if (res.error) {
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      setFeedback({
+        type: 'success',
+        message: `Complaint status updated to ${nextStatus.toUpperCase()}.`,
+      })
+      await loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const openComplaintsCount = useMemo(
+    () => complaints.filter((c) => c.status === 'open' || c.status === 'investigating').length,
+    [complaints]
+  )
+
+  const filteredComplaints = useMemo(() => {
+    if (complaintStatusFilter === 'ALL') return complaints
+    return complaints.filter((c) => c.status === complaintStatusFilter)
+  }, [complaints, complaintStatusFilter])
+
   const tabs = [
     { id: 'overview' as const, label: 'Overview & Telemetry', icon: LayoutDashboard, badge: 0 },
     { id: 'users' as const, label: 'Users & Verification', icon: Users, badge: kpis.pendingVerifications },
@@ -622,6 +673,7 @@ export function MasterAdminDashboard({
       badge: kpis.pendingOpportunities + kpis.pendingProjects,
     },
     { id: 'quotes_audit' as const, label: 'Quotes & Audit Trail', icon: Activity, badge: kpis.pendingQuotes },
+    { id: 'complaints' as const, label: 'Complaints & Compliance', icon: ShieldAlert, badge: openComplaintsCount },
     { id: 'minerals' as const, label: 'Mineral Prices', icon: Coins, badge: 0 },
   ]
 
@@ -1501,7 +1553,133 @@ export function MasterAdminDashboard({
           </div>
         )}
 
-        {/* TAB 6: MINERAL PRICES BENCHMARK GOVERNANCE */}
+        {/* TAB 6: COMPLAINTS & COMPLIANCE DESK */}
+        {activeTab === 'complaints' && (
+          <section className="rounded-xl border border-ink/12 bg-white p-6 shadow-xs space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-2xl font-semibold text-ink">
+                  Complaints &amp; Compliance Desk ({filteredComplaints.length})
+                </h2>
+                <p className="text-xs text-stone">
+                  Review and resolve reported licence discrepancies, prohibited claims, fee circumvention, and privacy complaints.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(['ALL', 'open', 'investigating', 'resolved', 'dismissed'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setComplaintStatusFilter(st)}
+                    className={`rounded-md border px-3 py-1.5 font-mono text-[11px] uppercase transition ${
+                      complaintStatusFilter === st
+                        ? 'border-ink bg-ink text-gold'
+                        : 'border-ink/15 bg-paper text-stone hover:text-ink'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {complaintsWarning && (
+              <div className="rounded-lg border border-ochre/35 bg-ochre/10 px-4 py-3 text-xs text-ink">
+                {complaintsWarning}
+              </div>
+            )}
+
+            {filteredComplaints.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-ink/15 bg-paper/50 p-10 text-center text-sm text-stone">
+                No compliance complaints matching this filter.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredComplaints.map((c) => {
+                  const statusTone =
+                    c.status === 'resolved'
+                      ? 'border-moss/40 bg-moss-light text-moss'
+                      : c.status === 'investigating'
+                        ? 'border-gold/50 bg-gold/20 text-ochre'
+                        : c.status === 'dismissed'
+                          ? 'border-ink/20 bg-ink/10 text-stone'
+                          : 'border-danger/40 bg-danger/10 text-danger'
+
+                  return (
+                    <article
+                      key={c.id}
+                      className="rounded-xl border border-ink/12 bg-paper/50 p-5 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${statusTone}`}>
+                              {c.status}
+                            </span>
+                            <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
+                              {c.category}
+                            </span>
+                            {c.reference_code && (
+                              <span className="font-mono text-xs font-semibold text-ochre">
+                                Ref: {c.reference_code}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs text-stone">
+                            Reporter: <strong className="font-mono text-ink">{c.reporter_email}</strong> · Submitted{' '}
+                            {new Date(c.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-3">
+                        {c.description}
+                      </p>
+
+                      <div className="flex flex-col gap-3 border-t border-ink/10 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                        <input
+                          type="text"
+                          value={complaintNotesMap[c.id] ?? c.resolution_notes ?? ''}
+                          onChange={(e) =>
+                            setComplaintNotesMap((prev) => ({
+                              ...prev,
+                              [c.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Add internal compliance / resolution notes..."
+                          className="field !min-h-[38px] !py-1.5 !text-xs sm:max-w-md"
+                        />
+                        <div className="flex flex-wrap gap-1.5">
+                          {(['open', 'investigating', 'resolved', 'dismissed'] as const).map((nextSt) => (
+                            <button
+                              key={nextSt}
+                              type="button"
+                              disabled={busyId === c.id || c.status === nextSt}
+                              onClick={() => void handleUpdateComplaint(c, nextSt)}
+                              className={`rounded-md border px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase transition disabled:opacity-45 ${
+                                nextSt === 'resolved'
+                                  ? 'border-moss/40 bg-moss-light text-moss hover:bg-moss hover:text-paper'
+                                  : nextSt === 'investigating'
+                                    ? 'border-gold/50 bg-gold/20 text-ochre hover:bg-gold hover:text-ink'
+                                    : nextSt === 'dismissed'
+                                      ? 'border-ink/20 bg-white text-stone hover:border-ink'
+                                      : 'border-danger/35 bg-danger/10 text-danger hover:bg-danger hover:text-paper'
+                              }`}
+                            >
+                              {nextSt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB 7: MINERAL PRICES BENCHMARK GOVERNANCE */}
         {activeTab === 'minerals' && (
           <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">

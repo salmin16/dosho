@@ -126,6 +126,35 @@ export interface UserProfile {
   verified_at?: string | null;
   verified_by?: string | null;
   preferred_currency?: SupportedCurrency;
+  terms_accepted_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ComplianceComplaintCategory =
+  | 'Unverified License'
+  | 'Misleading Claim'
+  | 'Fee Circumvention'
+  | 'Privacy'
+  | 'Other';
+
+export type ComplianceComplaintStatus =
+  | 'open'
+  | 'investigating'
+  | 'resolved'
+  | 'dismissed';
+
+export interface ComplianceComplaintRecord {
+  id: string;
+  reporter_user_id: string | null;
+  reporter_email: string;
+  category: ComplianceComplaintCategory;
+  reference_code: string | null;
+  description: string;
+  status: ComplianceComplaintStatus;
+  resolution_notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -418,6 +447,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -432,6 +462,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -504,6 +535,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -518,6 +550,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -770,6 +803,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -784,6 +818,7 @@ export type Database = {
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
+          terms_accepted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -850,6 +885,31 @@ export type Database = {
         Update: TableRow<
           Partial<Omit<PaymentTransactionRecord, 'id' | 'user_id' | 'created_at'>>
         >;
+        Relationships: [];
+      };
+      compliance_complaints: {
+        Row: TableRow<ComplianceComplaintRecord>;
+        Insert: {
+          id?: string;
+          reporter_user_id?: string | null;
+          reporter_email: string;
+          category: ComplianceComplaintCategory;
+          reference_code?: string | null;
+          description: string;
+          status?: ComplianceComplaintStatus;
+          resolution_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: ComplianceComplaintStatus;
+          resolution_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          updated_at?: string;
+        };
         Relationships: [];
       };
     };

@@ -261,6 +261,7 @@ function QuoteModal({
   const { currency, currencyMeta, toUsd, formatExactUsd } = useCurrency()
 
   const [budgetInput, setBudgetInput] = useState('25000')
+  const [acceptedInvestorTerms, setAcceptedInvestorTerms] = useState(false)
   const [sent, setSent] = useState(false)
   const [err, setErr] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -339,6 +340,10 @@ function QuoteModal({
                 setErr(t('services.modal.err'))
                 return
               }
+              if (!acceptedInvestorTerms) {
+                setErr('Please acknowledge the Investor Terms and Facilitation & Success-Fee Terms before submitting.')
+                return
+              }
 
               setSubmitting(true)
               try {
@@ -413,10 +418,43 @@ function QuoteModal({
                   placeholder={t('services.modal.scopePlaceholder')}
                 />
               </label>
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/12 bg-white p-3 text-xs leading-relaxed text-ink-3">
+                <input
+                  type="checkbox"
+                  required
+                  checked={acceptedInvestorTerms}
+                  onChange={(e) => setAcceptedInvestorTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-ochre"
+                />
+                <span>
+                  I acknowledge the{' '}
+                  <a
+                    href="/legal/investor-terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-ochre underline hover:text-ochre-dark"
+                  >
+                    Investor Terms
+                  </a>{' '}
+                  and agree to the{' '}
+                  <a
+                    href="/legal/facilitation-success-fee-terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-ochre underline hover:text-ochre-dark"
+                  >
+                    Facilitation &amp; Success-Fee Terms
+                  </a>{' '}
+                  (including non-circumvention).
+                </span>
+              </label>
               {err && <p className="text-xs text-danger">{err}</p>}
             </div>
-            <button disabled={submitting} className="btn-primary mt-6 w-full">
-              {submitting ? 'Submitting Grounded Quote...' : t('services.modal.sendRequest')}
+            <button
+              disabled={submitting || !acceptedInvestorTerms}
+              className="btn-primary mt-6 w-full disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? 'Submitting Quote Request...' : t('services.modal.sendRequest')}
             </button>
           </form>
         )}

@@ -19,6 +19,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DashboardOpportunitiesRouteImport } from './routes/dashboard_.opportunities'
 import { Route as DashboardServicesRouteImport } from './routes/dashboard_.services'
 import { Route as FaqRouteImport } from './routes/faq'
+import { Route as LegalSlugRouteImport } from './routes/legal_.$slug'
 import { Route as ListAProjectRouteImport } from './routes/list-a-project'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MapRouteImport } from './routes/map'
@@ -80,6 +81,11 @@ const DashboardServicesRoute = DashboardServicesRouteImport.update({
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalSlugRoute = LegalSlugRouteImport.update({
+  id: '/legal_/$slug',
+  path: '/legal/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ListAProjectRoute = ListAProjectRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
+  '/legal/$slug': typeof LegalSlugRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/dashboard/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
+  '/legal/$slug': typeof LegalSlugRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/dashboard_/opportunities': typeof DashboardOpportunitiesRoute
   '/dashboard_/services': typeof DashboardServicesRoute
   '/faq': typeof FaqRoute
+  '/legal_/$slug': typeof LegalSlugRoute
   '/list-a-project': typeof ListAProjectRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/dashboard/opportunities'
     | '/dashboard/services'
     | '/faq'
+    | '/legal/$slug'
     | '/list-a-project'
     | '/login'
     | '/map'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/dashboard/opportunities'
     | '/dashboard/services'
     | '/faq'
+    | '/legal/$slug'
     | '/list-a-project'
     | '/login'
     | '/map'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/dashboard_/opportunities'
     | '/dashboard_/services'
     | '/faq'
+    | '/legal_/$slug'
     | '/list-a-project'
     | '/login'
     | '/map'
@@ -302,6 +314,7 @@ export interface RootRouteChildren {
   DashboardOpportunitiesRoute: typeof DashboardOpportunitiesRoute
   DashboardServicesRoute: typeof DashboardServicesRoute
   FaqRoute: typeof FaqRoute
+  LegalSlugRoute: typeof LegalSlugRoute
   ListAProjectRoute: typeof ListAProjectRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
@@ -386,6 +399,13 @@ declare module '@tanstack/react-router' {
       path: '/faq'
       fullPath: '/faq'
       preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal_/$slug': {
+      id: '/legal_/$slug'
+      path: '/legal/$slug'
+      fullPath: '/legal/$slug'
+      preLoaderRoute: typeof LegalSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/list-a-project': {
@@ -486,6 +506,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardOpportunitiesRoute: DashboardOpportunitiesRoute,
   DashboardServicesRoute: DashboardServicesRoute,
   FaqRoute: FaqRoute,
+  LegalSlugRoute: LegalSlugRoute,
   ListAProjectRoute: ListAProjectRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,

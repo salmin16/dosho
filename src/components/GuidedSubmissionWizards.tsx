@@ -151,6 +151,7 @@ export function GuidedOpportunityWizard({
   const [checkNoUpfrontFee, setCheckNoUpfrontFee] = useState(false);
   const [checkDisclaimer, setCheckDisclaimer] = useState(false);
   const [checkPdpaConsent, setCheckPdpaConsent] = useState(false);
+  const [checkListingAgreement, setCheckListingAgreement] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMsg, setDraftSavedMsg] = useState<string | null>(null);
@@ -254,7 +255,11 @@ export function GuidedOpportunityWizard({
   };
 
   const allChecksComplete =
-    checkAuthority && checkNoUpfrontFee && checkDisclaimer && checkPdpaConsent;
+    checkAuthority &&
+    checkNoUpfrontFee &&
+    checkDisclaimer &&
+    checkPdpaConsent &&
+    checkListingAgreement;
 
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -778,6 +783,38 @@ export function GuidedOpportunityWizard({
                     I consent to recording this submission under my verified member account and logging it in the platform compliance audit trail.
                   </span>
                 </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gold/40 bg-ink/85 p-3 text-xs transition hover:border-gold">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={checkListingAgreement}
+                    onChange={(e) => setCheckListingAgreement(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-ochre"
+                  />
+                  <span>
+                    <strong className="text-gold">5. Binding Legal Agreement:</strong>{' '}
+                    I confirm I hold legal authority for this listing and agree to the{' '}
+                    <a
+                      href="/legal/listing-agreement"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-gold underline"
+                    >
+                      Listing Agreement
+                    </a>{' '}
+                    and{' '}
+                    <a
+                      href="/legal/prohibited-claims-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-gold underline"
+                    >
+                      Prohibited Claims Policy
+                    </a>
+                    .
+                  </span>
+                </label>
               </div>
 
               {/* Right: Live Formatted Parchment Preview Dossier */}
@@ -910,6 +947,7 @@ export function GuidedServiceWizard({
   const [checkFeeSeparation, setCheckFeeSeparation] = useState(false);
   const [checkNoGuarantee, setCheckNoGuarantee] = useState(false);
   const [checkPdpa, setCheckPdpa] = useState(false);
+  const [checkServiceListingAgreement, setCheckServiceListingAgreement] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMsg, setDraftSavedMsg] = useState<string | null>(null);
@@ -1012,7 +1050,11 @@ export function GuidedServiceWizard({
   };
 
   const allChecksComplete =
-    checkAccreditation && checkFeeSeparation && checkNoGuarantee && checkPdpa;
+    checkAccreditation &&
+    checkFeeSeparation &&
+    checkNoGuarantee &&
+    checkPdpa &&
+    checkServiceListingAgreement;
 
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1534,6 +1576,38 @@ export function GuidedServiceWizard({
                       4. PDPA 2022 &amp; Audit Trail Consent:
                     </strong>{' '}
                     I consent to linking this service profile to my verified member account and recording a compliance audit event.
+                  </span>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gold/40 bg-ink/85 p-3 text-xs transition hover:border-gold">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={checkServiceListingAgreement}
+                    onChange={(e) => setCheckServiceListingAgreement(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-ochre"
+                  />
+                  <span>
+                    <strong className="text-gold">5. Binding Legal Agreement:</strong>{' '}
+                    I confirm I hold legal authority for this listing and agree to the{' '}
+                    <a
+                      href="/legal/listing-agreement"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-gold underline"
+                    >
+                      Listing Agreement
+                    </a>{' '}
+                    and{' '}
+                    <a
+                      href="/legal/prohibited-claims-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-gold underline"
+                    >
+                      Prohibited Claims Policy
+                    </a>
+                    .
                   </span>
                 </label>
               </div>

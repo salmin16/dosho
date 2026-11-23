@@ -30,6 +30,7 @@ function SignUpRouteComponent() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaTimedOut, setCaptchaTimedOut] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -37,9 +38,9 @@ function SignUpRouteComponent() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
-  // Non-blocking submit: only disabled while Supabase request is in flight or required fields are empty
+  // Require explicit clickwrap consent alongside non-empty required credentials
   const isSubmitDisabled =
-    submitting || !email.trim() || !password || !confirmPassword
+    submitting || !email.trim() || !password || !confirmPassword || !acceptedTerms
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -65,6 +66,11 @@ function SignUpRouteComponent() {
       return
     }
 
+    if (!acceptedTerms) {
+      setError('You must agree to the Mine Connect Terms of Use and Privacy Policy to create an account.')
+      return
+    }
+
     setSubmitting(true)
     try {
       // Only pass captchaToken when Turnstile actually returned a valid token (fail-open on timeout/blocker)
@@ -73,6 +79,7 @@ function SignUpRouteComponent() {
         email: validation.data.email,
         password: validation.data.password,
         confirmPassword,
+        termsAcceptedAt: new Date().toISOString(),
         ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.confirmationRequired) {
@@ -295,6 +302,37 @@ function SignUpRouteComponent() {
                 />
               </div>
             )}
+
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/12 bg-white/80 p-3 text-xs leading-relaxed text-ink-3">
+              <input
+                type="checkbox"
+                required
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-ochre"
+              />
+              <span>
+                I agree to the Mine Connect{' '}
+                <a
+                  href="/legal/terms-of-use"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-ochre underline hover:text-ochre-dark"
+                >
+                  Terms of Use
+                </a>{' '}
+                and{' '}
+                <a
+                  href="/legal/privacy-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-ochre underline hover:text-ochre-dark"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </span>
+            </label>
 
             <button
               type="submit"
