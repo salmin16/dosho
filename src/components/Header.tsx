@@ -104,10 +104,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             <>
               <Link
                 to="/dashboard"
-                className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30"
+                title={`${ui('Account', 'Akaunti', 'Cuenta')} (${session.user.fullName.split(' ')[0]} · ${tierName})`}
+                className="inline-flex max-w-[210px] items-center gap-1.5 whitespace-nowrap rounded-md border border-gold/50 bg-ochre/20 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-ochre/30 xl:max-w-none"
               >
-                <ShieldCheck size={14} />
-                {ui('Vault', 'Hifadhi', 'Bóveda')} ({session.user.fullName.split(' ')[0]} · {tierName})
+                <ShieldCheck size={14} className="shrink-0" />
+                <span className="truncate">
+                  {ui('Account', 'Akaunti', 'Cuenta')} ({session.user.fullName.split(' ')[0]} · {tierName})
+                </span>
               </Link>
               {isAdmin && (
                 <Link
@@ -205,9 +208,9 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 onClick={() => setOpen(false)}
                 className="flex min-h-[48px] items-center gap-2 border-b border-ink/5 py-3 text-sm font-semibold text-ochre"
               >
-                <ShieldCheck size={16} />
+                <ShieldCheck size={16} className="shrink-0" />
                 <span className="truncate">
-                  {ui('Grounded Vault', 'Hifadhi Salama', 'Bóveda')} ({session.user.email})
+                  {ui('Account', 'Akaunti', 'Cuenta')} ({session.user.fullName.split(' ')[0]} · {tierName})
                 </span>
               </Link>
             ) : (
