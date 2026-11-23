@@ -168,8 +168,8 @@ function Opportunities() {
 
   return (
     <div className="pt-[72px]">
-      <section className="surface-texture-light section-divider bg-[#F0EEE8]">
-        <div className="mx-auto max-w-7xl px-5 pb-12 pt-14 lg:px-8">
+      <section className="border-b border-ink/10 bg-paper-2">
+        <div className="mx-auto max-w-7xl px-5 pb-10 pt-14 lg:px-8">
           <p className="eyebrow mb-3 text-ochre">{t('opp.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('opp.title')}</h1>
@@ -194,7 +194,7 @@ function Opportunities() {
           <div className="rounded-2xl border border-moss/30 bg-white/90 p-6 shadow-xs">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-moss">
+                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-moss">
                   <CheckCircle2 size={13} /> Live Verified Marketplace
                 </span>
                 <h2 className="mt-0.5 font-display text-2xl font-semibold text-ink">

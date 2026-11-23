@@ -633,27 +633,27 @@ export function MasterAdminDashboard({
     >
       <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
         {/* Executive Command Header */}
-        <header className="surface-texture-dark rounded-xl border border-white/[0.09] bg-[#11161D] p-6 text-[#F1F5F9] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_36px_-18px_rgba(15,23,42,0.5)] lg:p-8">
+        <header className="rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-xl lg:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#059669]/40 bg-[#059669]/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.06em] text-[#34D399]">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
                   <ShieldCheck size={14} />
                   Zero-Trust Admin Command Center
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-[#18202A] px-3 py-1 font-mono text-[11px] tabular-nums text-[#94A3B8]">
-                  Latency: {dbLatencyMs}ms · {currencyMeta.flag} {currency} ({rateForSelected.toFixed(2)})
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
+                  DB Latency: {dbLatencyMs}ms · {currencyMeta.flag} {currency} ({rateForSelected.toFixed(2)})
                 </span>
               </div>
-              <h1 className="mt-3 font-display text-3xl font-semibold text-[#F1F5F9]">
+              <h1 className="mt-3 font-display text-3xl font-semibold">
                 {ui(
                   'MineConnect Platform Governance & Moderation',
                   'Kituo cha Udhibiti na Uhakiki cha MineConnect',
                   'Centro de Gobernanza y Moderación MineConnect'
                 )}
               </h1>
-              <p className="mt-1 text-sm text-[#94A3B8]">
-                Signed in as <span className="font-mono text-[#D4A52E]">{session.user.email}</span> · Full real-time oversight over user verification, marketplace approvals, quotes, and audit logs.
+              <p className="mt-1 text-sm text-paper/75">
+                Signed in as <span className="font-mono text-gold">{session.user.email}</span> · Full real-time oversight over user verification, marketplace approvals, quotes, and immutable audit logs.
               </p>
             </div>
 
@@ -746,12 +746,12 @@ export function MasterAdminDashboard({
                   key={card.label}
                   type="button"
                   onClick={() => setActiveTab(card.tab)}
-                  className="card-elevated-interactive p-5 text-left"
+                  className="rounded-xl border border-ink/12 bg-white/80 p-4 text-left transition hover:border-ochre/50 hover:shadow-sm"
                 >
-                  <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-stone">
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
                     {card.label}
                   </div>
-                  <div className={`mt-2 font-display text-3xl font-semibold tabular-nums ${card.accent}`}>
+                  <div className={`mt-2 font-display text-3xl font-semibold ${card.accent}`}>
                     {card.value}
                   </div>
                 </button>

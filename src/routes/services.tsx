@@ -51,8 +51,8 @@ function Services() {
 
   return (
     <div className="pt-[72px]">
-      <section className="surface-texture-light section-divider bg-[#F0EEE8]">
-        <div className="mx-auto max-w-7xl px-5 pb-12 pt-14 lg:px-8">
+      <section className="border-b border-ink/10 bg-paper-2">
+        <div className="mx-auto max-w-7xl px-5 pb-10 pt-14 lg:px-8">
           <p className="eyebrow mb-3 text-ochre">{t('services.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display max-w-3xl text-5xl font-light leading-none md:text-6xl">
@@ -90,7 +90,7 @@ function Services() {
           <section className="mb-10">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-moss">
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-moss">
                   Live Verified Services Directory
                 </span>
                 <h2 className="font-display text-2xl font-semibold text-ink">

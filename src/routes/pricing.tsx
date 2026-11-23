@@ -66,7 +66,7 @@ function Pricing() {
 
   return (
     <div className="pt-[72px]">
-      <section className="surface-texture-light section-divider px-5 pb-14 pt-16 text-center lg:px-8">
+      <section className="px-5 pb-12 pt-16 text-center lg:px-8">
         <p className="eyebrow mb-4 text-ochre">{t('pricing.eyebrow')}</p>
         <h1 className="font-display mx-auto max-w-3xl text-5xl font-light leading-[1] md:text-6xl">
           {t('pricing.titlePre')}
@@ -147,12 +147,12 @@ function Pricing() {
               <article
                 key={p.id}
                 id={p.id}
-                className={`relative flex flex-col p-6 transition-all duration-150 ${
+                className={`relative flex flex-col rounded-2xl border p-6 transition ${
                   hl
-                    ? 'panel-dark bg-[#11161D] text-[#F1F5F9] shadow-xl hover:-translate-y-0.5'
+                    ? 'border-ink bg-ink text-paper shadow-xl'
                     : isSelectedForCheckout
-                      ? 'card-elevated border-[#C69214] ring-2 ring-[#C69214]/35'
-                      : 'card-elevated-interactive'
+                      ? 'border-ochre bg-white shadow-lg ring-2 ring-ochre'
+                      : 'border-ink/10 bg-white/60 hover:border-ochre/40'
                 }`}
               >
                 {hl && (

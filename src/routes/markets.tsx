@@ -21,7 +21,7 @@ function MarketsPageComponent() {
       <IndicativeMineralPrices showHeaderCta={false} />
 
       {/* Market Structure & Tier Methodology Explainer */}
-      <section className="section-divider bg-[#F0EEE8] px-5 py-16 lg:px-8 lg:py-20">
+      <section className="border-b border-ink/10 bg-paper-2 px-5 py-20 lg:px-8 lg:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="mb-10 max-w-2xl">
             <p className="eyebrow mb-3 text-ochre">
@@ -54,7 +54,7 @@ function MarketsPageComponent() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <article className="card-elevated-interactive p-6">
+            <article className="rounded-2xl border border-ink/12 bg-white/85 p-7 transition hover:-translate-y-0.5 hover:border-ochre/40 hover:bg-white">
               <span className="inline-flex rounded-full bg-ink px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
                 {ui('Tier 01 · International Spot', 'Ngazi 01 · Soko la Dunia', 'Nivel 01 · Spot Internacional')}
               </span>
@@ -70,7 +70,7 @@ function MarketsPageComponent() {
               </p>
             </article>
 
-            <article className="card-elevated-interactive p-6">
+            <article className="rounded-2xl border border-ink/12 bg-white/85 p-7 transition hover:-translate-y-0.5 hover:border-moss/40 hover:bg-white">
               <span className="inline-flex rounded-full border border-moss/30 bg-moss-light px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-moss">
                 {ui('Tier 02 · Soko la Madini', 'Ngazi 02 · Soko la Madini', 'Nivel 02 · Soko la Madini')}
               </span>
@@ -86,7 +86,7 @@ function MarketsPageComponent() {
               </p>
             </article>
 
-            <article className="card-elevated-interactive p-6">
+            <article className="rounded-2xl border border-ink/12 bg-white/85 p-7 transition hover:-translate-y-0.5 hover:border-ochre/40 hover:bg-white">
               <span className="inline-flex rounded-full border border-ochre/30 bg-ochre/10 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-ochre">
                 {ui('Tier 03 · Kituo cha Ununuzi', 'Ngazi 03 · Kituo cha Ununuzi', 'Nivel 03 · Kituo cha Ununuzi')}
               </span>
@@ -103,7 +103,7 @@ function MarketsPageComponent() {
             </article>
           </div>
 
-          <div className="surface-texture-dark grain relative mt-10 flex flex-col items-start justify-between gap-6 overflow-hidden rounded-xl border border-white/[0.09] bg-[#11161D] p-6 text-[#F1F5F9] shadow-xl sm:flex-row sm:items-center lg:p-8">
+          <div className="grain relative mt-10 flex flex-col items-start justify-between gap-6 overflow-hidden rounded-2xl border border-ink/15 bg-ink p-7 text-paper sm:flex-row sm:items-center lg:p-9">
             <div className="contours absolute inset-0" aria-hidden="true" />
             <div className="relative flex items-start gap-4">
               <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-ochre/20 text-gold">

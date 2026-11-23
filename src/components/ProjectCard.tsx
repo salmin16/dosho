@@ -22,7 +22,7 @@ export default function ProjectCard({
 
   return (
     <article
-      className={`card-elevated-interactive group relative overflow-hidden ${
+      className={`group relative overflow-hidden rounded-xl border border-ink/10 bg-white/60 transition duration-300 hover:-translate-y-0.5 hover:border-ink/20 hover:bg-white hover:shadow-[0_24px_48px_-28px_rgba(21,18,15,0.45)] ${
         layout === 'row' ? 'grid sm:grid-cols-[240px_1fr]' : 'flex flex-col'
       }`}
     >
@@ -66,22 +66,22 @@ export default function ProjectCard({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col p-6">
+      <div className="flex flex-1 flex-col p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-stone">{p.id}</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-stone">{p.id}</span>
           <VerificationBadge level={p.verification.level} />
         </div>
-        <h3 className="font-display text-xl font-medium leading-snug text-[#14181F]">
+        <h3 className="font-display text-xl font-medium leading-snug">
           <Link to="/opportunities/$projectId" params={{ projectId: p.id }} className="after:absolute after:inset-0">
             {p.title}
           </Link>
         </h3>
-        <p className="mt-1.5 text-sm text-[#334155]">{tv(p.type)}</p>
+        <p className="mt-1.5 text-sm text-stone">{tv(p.type)}</p>
 
-        <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-[#E5E2D9] pt-4 text-sm">
+        <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-ink/10 pt-4 text-sm mt-5">
           <div className="min-w-0">
-            <dt className="truncate font-mono text-[10px] uppercase tracking-[0.06em] text-stone">{t('card.seeking')}</dt>
-            <dd className="mt-0.5 font-semibold tabular-nums text-[#14181F]">{formatUsd(p.investmentUsd)}</dd>
+            <dt className="truncate font-mono text-[10px] uppercase tracking-wider text-stone">{t('card.seeking')}</dt>
+            <dd className="mt-0.5 font-semibold">{formatUsd(p.investmentUsd)}</dd>
           </div>
           <div className="min-w-0">
             <dt className="truncate font-mono text-[10px] uppercase tracking-wider text-stone">{t('card.stage')}</dt>
