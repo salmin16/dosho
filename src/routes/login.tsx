@@ -6,12 +6,11 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
-  KeyRound,
   Loader2,
   Lock,
   Mail,
-  ShieldCheck,
 } from 'lucide-react'
+import { Logo } from '../components/Header'
 import {
   requestPasswordResetEmail,
   signInWithEmail,
@@ -192,19 +191,21 @@ function LoginRouteComponent() {
   return (
     <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
-        <div className="rounded-xl border border-ink/12 bg-paper-2/75 p-6 shadow-sm sm:p-8">
+        <div className="rounded-xl border border-ink/12 bg-white p-6 shadow-sm sm:p-8">
+          {/* Crisp Brand-Anchored MineConnect Logo Header */}
+          <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
+            <Link to="/" aria-label="MineConnect Home" className="inline-flex">
+              <Logo light={false} />
+            </Link>
+          </div>
+
           {mode === 'signin' ? (
             <>
-              <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
-                <ShieldCheck size={14} />
-                Member Portal
-              </div>
-
-              <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
-                Sign in to MineConnect
+              <h1 className="font-display text-3xl font-semibold text-ink">
+                Login
               </h1>
               <p className="mt-1.5 text-sm text-stone">
-                Access your private investor &amp; operator due-diligence vault.
+                Access your MineConnect investor &amp; operator workspace.
               </p>
 
               {reset === 'success' && (
@@ -214,7 +215,7 @@ function LoginRouteComponent() {
                 >
                   <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
                   <span>
-                    Your password has been updated successfully. Sign in below with your new password.
+                    Your password has been updated successfully. Log in below with your new password.
                   </span>
                 </div>
               )}
@@ -231,7 +232,7 @@ function LoginRouteComponent() {
                   role="alert"
                   className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-xs font-medium text-danger"
                 >
-                  Supabase environment variables are not configured. Sign-in requires an active Supabase connection.
+                  Supabase environment variables are not configured. Login requires an active Supabase connection.
                 </div>
               )}
 
@@ -247,7 +248,7 @@ function LoginRouteComponent() {
               <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
                 <div>
                   <label htmlFor="login-email" className="label">
-                    Work Email
+                    Email
                   </label>
                   <div className="relative">
                     <Mail
@@ -262,24 +263,15 @@ function LoginRouteComponent() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="operator@miningcorp.co.tz"
-                      className="field !pl-10"
+                      className="field !bg-paper/45 !pl-10"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <label htmlFor="login-password" className="label !mb-0">
-                      Password
-                    </label>
-                    <button
-                      type="button"
-                      onClick={switchToForgot}
-                      className="text-xs font-medium text-ochre transition hover:text-ochre-dark hover:underline"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
+                  <label htmlFor="login-password" className="label">
+                    Password
+                  </label>
                   <div className="relative">
                     <Lock
                       size={16}
@@ -293,7 +285,7 @@ function LoginRouteComponent() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="field !pl-10 !pr-12"
+                      className="field !bg-paper/45 !pl-10 !pr-12"
                     />
                     <button
                       type="button"
@@ -302,6 +294,15 @@ function LoginRouteComponent() {
                       className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-stone transition hover:text-ink"
                     >
                       {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={switchToForgot}
+                      className="text-xs font-medium text-ochre transition hover:text-ochre-dark hover:underline"
+                    >
+                      Forgot password
                     </button>
                   </div>
                 </div>
@@ -314,20 +315,20 @@ function LoginRouteComponent() {
                   {submitting ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      Signing in...
+                      Logging in...
                     </>
                   ) : (
-                    'Sign In to Workspace'
+                    'Log in'
                   )}
                 </button>
               </form>
 
               <p className="mt-6 text-center text-sm text-stone">
-                New to MineConnect?{' '}
+                Don&apos;t have an account yet?{' '}
                 <Link
                   to="/signup"
                   search={{ next, reason } as unknown as undefined}
-                  className="font-semibold text-ochre hover:underline"
+                  className="font-semibold text-ochre hover:text-ochre-dark hover:underline"
                 >
                   Create an account
                 </Link>
@@ -335,16 +336,11 @@ function LoginRouteComponent() {
             </>
           ) : (
             <>
-              <div className="inline-flex items-center gap-2 rounded-full bg-ochre/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-ochre">
-                <KeyRound size={14} />
-                Account Recovery
-              </div>
-
-              <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
+              <h1 className="font-display text-3xl font-semibold text-ink">
                 Reset Your Password
               </h1>
               <p className="mt-1.5 text-sm text-stone">
-                Enter your work email and we will send a single-use password recovery link.
+                Enter your email address and we will send a single-use password recovery link.
               </p>
 
               {error && (
@@ -371,7 +367,7 @@ function LoginRouteComponent() {
               <form onSubmit={handleRequestReset} className="mt-6 space-y-5" noValidate>
                 <div>
                   <label htmlFor="reset-email" className="label">
-                    Work Email
+                    Email
                   </label>
                   <div className="relative">
                     <Mail
@@ -386,7 +382,7 @@ function LoginRouteComponent() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="operator@miningcorp.co.tz"
-                      className="field !pl-10"
+                      className="field !bg-paper/45 !pl-10"
                     />
                   </div>
                 </div>
@@ -416,7 +412,7 @@ function LoginRouteComponent() {
                   className="inline-flex min-h-[44px] items-center justify-center gap-1.5 text-sm font-semibold text-ochre transition hover:text-ochre-dark hover:underline"
                 >
                   <ArrowLeft size={15} />
-                  Back to Sign In
+                  Back to Login
                 </button>
               </div>
             </>

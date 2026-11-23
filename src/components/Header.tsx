@@ -123,22 +123,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               )}
             </>
           ) : (
-            <>
-              <Link
-                to="/login"
-                className="inline-flex items-center gap-1.5 rounded-md border border-current/25 px-3 py-2 text-xs font-semibold transition hover:border-current/60 hover:bg-current/10"
-              >
-                <User size={14} />
-                {ui('Sign In', 'Ingia', 'Entrar')}
-              </Link>
-              <Link
-                to="/signup"
-                className="inline-flex items-center gap-1.5 rounded-md border border-ochre bg-ochre/15 px-3 py-2 text-xs font-semibold text-ochre transition hover:bg-ochre/25"
-              >
-                <ShieldCheck size={14} />
-                {ui('Sign Up', 'Jisajili', 'Registrarse')}
-              </Link>
-            </>
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-1.5 rounded-md bg-ochre px-3.5 py-2 text-xs font-semibold text-paper shadow-xs transition hover:bg-ochre-dark"
+            >
+              <User size={14} />
+              {ui('Login', 'Ingia', 'Iniciar sesión')}
+            </Link>
           )}
         </div>
 
@@ -217,22 +208,14 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 </span>
               </Link>
             ) : (
-              <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <div className="mt-4">
                 <Link
                   to="/login"
                   onClick={() => setOpen(false)}
-                  className="btn-ghost w-full justify-center text-xs"
+                  className="btn-primary w-full justify-center text-sm"
                 >
-                  <User size={14} />
-                  {ui('Sign In', 'Ingia', 'Entrar')}
-                </Link>
-                <Link
-                  to="/signup"
-                  onClick={() => setOpen(false)}
-                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md border border-ochre bg-ochre/15 px-3 py-2 text-xs font-semibold text-ochre transition hover:bg-ochre/25"
-                >
-                  <ShieldCheck size={14} />
-                  {ui('Sign Up', 'Jisajili', 'Registrarse')}
+                  <User size={15} />
+                  {ui('Login', 'Ingia', 'Iniciar sesión')}
                 </Link>
               </div>
             )}

@@ -1,6 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck, User } from 'lucide-react'
+import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
+import { Logo } from '../components/Header'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
@@ -127,14 +128,16 @@ function SignUpRouteComponent() {
   return (
     <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
-        <div className="rounded-xl border border-ink/10 bg-paper-2/70 p-6 shadow-sm sm:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-moss/15 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-moss">
-            <ShieldCheck size={14} />
-            Verified Member Portal
+        <div className="rounded-xl border border-ink/12 bg-white p-6 shadow-sm sm:p-8">
+          {/* Crisp Brand-Anchored MineConnect Logo Header */}
+          <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
+            <Link to="/" aria-label="MineConnect Home" className="inline-flex">
+              <Logo light={false} />
+            </Link>
           </div>
 
-          <h1 className="mt-4 font-display text-3xl font-semibold text-ink">
-            Create your account
+          <h1 className="font-display text-3xl font-semibold text-ink">
+            Create an account
           </h1>
           <p className="mt-1.5 text-sm text-stone">
             Create your private mining &amp; investment due-diligence workspace.
@@ -191,14 +194,14 @@ function SignUpRouteComponent() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Salmin Mwenesi — Geita Holdings"
-                  className="field !pl-10"
+                  className="field !bg-paper/45 !pl-10"
                 />
               </div>
             </div>
 
             <div>
               <label htmlFor="signup-email" className="label">
-                Work Email
+                Email
               </label>
               <div className="relative">
                 <Mail
@@ -213,7 +216,7 @@ function SignUpRouteComponent() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@miningcorp.co.tz"
-                  className="field !pl-10"
+                  className="field !bg-paper/45 !pl-10"
                 />
               </div>
             </div>
@@ -235,7 +238,7 @@ function SignUpRouteComponent() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="8–64 chars (A-Z, a-z, 0-9, !@#$)"
-                  className="field !pl-10 !pr-12"
+                  className="field !bg-paper/45 !pl-10 !pr-12"
                 />
                 <button
                   type="button"
@@ -269,7 +272,7 @@ function SignUpRouteComponent() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter your strong password"
-                  className="field !pl-10 !pr-12"
+                  className="field !bg-paper/45 !pl-10 !pr-12"
                 />
                 <button
                   type="button"
@@ -303,7 +306,7 @@ function SignUpRouteComponent() {
               </div>
             )}
 
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/12 bg-white/80 p-3 text-xs leading-relaxed text-ink-3">
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/12 bg-paper/60 p-3 text-xs leading-relaxed text-ink-3">
               <input
                 type="checkbox"
                 required
@@ -345,19 +348,19 @@ function SignUpRouteComponent() {
                   Creating account...
                 </>
               ) : (
-                'Create Grounded Account'
+                'Create an account'
               )}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-stone">
-            Already registered?{' '}
+            Already have an account?{' '}
             <Link
               to="/login"
               search={{ next, reason } as unknown as undefined}
-              className="font-semibold text-ochre hover:underline"
+              className="font-semibold text-ochre hover:text-ochre-dark hover:underline"
             >
-              Sign in
+              Login
             </Link>
           </p>
         </div>
