@@ -190,7 +190,7 @@ export default function MineralPricesBoard({
       aria-label="Indicative Mineral Prices Board"
       data-currency={currency}
       data-language={language}
-      className="grain relative isolate overflow-hidden border-b border-ink/15 bg-ink py-20 text-paper lg:py-24"
+      className="surface-texture-dark grain relative isolate overflow-hidden border-b border-white/[0.09] bg-[#11161D] py-16 text-[#F1F5F9] lg:py-20"
     >
       {/* Signature MineConnect Topographic Contour Texture */}
       <div className="contours absolute inset-0 -z-10" aria-hidden="true" />
@@ -320,7 +320,7 @@ export default function MineralPricesBoard({
             return (
               <article
                 key={m.id}
-                className="flex flex-col justify-between rounded-xl border border-paper/12 bg-gradient-to-b from-ink-2 to-ink p-5 shadow-xl transition hover:border-gold/40"
+                className="panel-dark flex flex-col justify-between p-6 transition-all duration-150 hover:-translate-y-0.5 hover:border-[#C69214]/45"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
@@ -382,9 +382,9 @@ export default function MineralPricesBoard({
         </div>
 
         {/* 3. Detailed Breakdown Matrix Table */}
-        <div className="overflow-hidden rounded-2xl border border-ink/15 bg-paper text-ink shadow-2xl">
+        <div className="card-elevated overflow-hidden text-[#14181F]">
           {/* Matrix Filter Bar */}
-          <div className="flex flex-col justify-between gap-4 border-b border-ink/10 bg-paper-2 px-6 py-5 sm:flex-row sm:items-center">
+          <div className="flex flex-col justify-between gap-4 border-b border-[#E5E2D9] bg-[#F0EEE8]/70 px-6 py-5 sm:flex-row sm:items-center">
             <div>
               <div className="flex items-center gap-2">
                 <Scale size={16} className="text-ochre" />

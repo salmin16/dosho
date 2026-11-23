@@ -153,7 +153,7 @@ export default function CookieConsentBanner() {
       aria-label="Privacy and Cookie Consent"
       className="fixed inset-x-0 bottom-0 z-[70] p-3 sm:p-5"
     >
-      <div className="mx-auto max-w-5xl rounded-2xl border border-[#d97706]/35 bg-slate-950/95 text-slate-100 shadow-2xl backdrop-blur-md">
+      <div className="surface-texture-dark mx-auto max-w-5xl rounded-xl border border-white/[0.09] bg-[#11161D]/96 text-[#F1F5F9] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_20px_48px_-16px_rgba(0,0,0,0.65)] backdrop-blur-md">
         {!showPreferences ? (
           <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-3.5">
@@ -195,7 +195,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={handleAcceptAll}
-                className="min-h-[44px] rounded-lg bg-[#d97706] px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-amber-500"
+                className="min-h-[44px] rounded-lg bg-[#C69214] px-4 py-2.5 text-xs font-semibold text-[#11161D] transition duration-150 hover:bg-[#A8790D] hover:text-white"
               >
                 Accept All
               </button>

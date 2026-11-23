@@ -169,11 +169,11 @@ export function DashboardRouteComponent() {
     >
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
         {/* Clean Workspace Welcome Header */}
-        <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
+        <div className="surface-texture-dark flex flex-col justify-between gap-6 rounded-xl border border-white/[0.09] bg-[#11161D] p-6 text-[#F1F5F9] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_36px_-18px_rgba(15,23,42,0.45)] sm:flex-row sm:items-center lg:p-8">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/85">
-                <Coins size={13} className="text-gold" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-[#18202A] px-3 py-1 font-mono text-[11px] tabular-nums text-[#F1F5F9]/90">
+                <Coins size={13} className="text-[#D4A52E]" />
                 {currencyMeta.flag} {currency} (1 USD ={' '}
                 {rateForSelected.toLocaleString('en-US', {
                   maximumFractionDigits: 2,
@@ -181,11 +181,11 @@ export function DashboardRouteComponent() {
                 {currency})
               </span>
             </div>
-            <h1 className="mt-3 font-display text-3xl font-semibold">
+            <h1 className="mt-3 font-display text-3xl font-semibold text-[#F1F5F9]">
               {ui('Welcome,', 'Karibu,', 'Bienvenido,')}{' '}
               {profile?.full_name || session.user.fullName}
             </h1>
-            <p className="mt-1 text-sm text-paper/75">
+            <p className="mt-1 text-sm text-[#94A3B8]">
               {session.user.email}
             </p>
           </div>
@@ -217,7 +217,7 @@ export function DashboardRouteComponent() {
         </div>
 
         {/* Member Identity Verification Status & Request Panel */}
-        <section className="mt-6 rounded-xl border border-ink/12 bg-white/80 p-5">
+        <section className="card-elevated mt-6 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -380,7 +380,7 @@ export function DashboardRouteComponent() {
         {/* Main Vault Grid */}
         <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* Create Grounded Record */}
-          <section className="rounded-xl border border-ink/10 bg-paper-2/70 p-6">
+          <section className="card-elevated p-6">
             <div className="flex items-center gap-2 text-ochre">
               <PlusCircle size={18} />
               <h2 className="font-display text-xl font-semibold text-ink">
@@ -481,7 +481,7 @@ export function DashboardRouteComponent() {
           {/* Grounded Documents, Listed Projects & Quote Requests */}
           <section className="space-y-6 lg:col-span-2">
             {/* Grounded Documents List */}
-            <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
+            <div className="card-elevated p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <FileText size={18} className="text-ochre" />

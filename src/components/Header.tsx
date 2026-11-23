@@ -68,10 +68,10 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-colors duration-300 ${
+      className={`fixed inset-x-0 top-0 z-50 transition-colors duration-200 ${
         dark
-          ? 'bg-transparent text-paper'
-          : 'border-b border-ink/10 bg-paper/90 text-ink backdrop-blur-md'
+          ? 'bg-[#11161D]/45 text-[#F1F5F9] backdrop-blur-sm border-b border-white/[0.08]'
+          : 'border-b border-[#E5E2D9] bg-[#F7F6F2]/92 text-[#14181F] backdrop-blur-md shadow-[0_1px_3px_rgba(15,23,42,0.04)]'
       }`}
     >
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-5 lg:px-8">

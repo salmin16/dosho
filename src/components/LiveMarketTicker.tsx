@@ -127,7 +127,7 @@ export default function LiveMarketTicker({
     <div
       data-currency={currency}
       data-language={language}
-      className="rounded-2xl border border-paper/15 bg-ink-2/95 p-4 text-paper shadow-xl backdrop-blur-md lg:p-5"
+      className="panel-dark p-5 text-[#F1F5F9] backdrop-blur-md lg:p-6"
     >
       {/* Top Status & Desk Telemetry Header */}
       <div className="flex flex-col justify-between gap-3 border-b border-paper/10 pb-3.5 lg:flex-row lg:items-center">

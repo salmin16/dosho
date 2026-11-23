@@ -5,19 +5,27 @@
   --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --color-ink: #15120f;
-  --color-ink-2: #231e1a;
-  --color-ink-3: #3a322b;
-  --color-paper: #f6f1e7;
-  --color-paper-2: #ede5d6;
-  --color-sand: #d9ccb4;
-  --color-stone: #776c60;
-  --color-ochre: #c0612b;
-  --color-ochre-dark: #9a4a1e;
-  --color-gold: #d6a443;
-  --color-moss: #3e5c49;
-  --color-moss-light: #dfe8df;
-  --color-danger: #a33a2a;
+  /* Calibrated Obsidian-Slate Dark Surfaces */
+  --color-ink: #11161d;
+  --color-ink-2: #18202a;
+  --color-ink-3: #334155;
+  --color-alabaster: #f1f5f9;
+  --color-slate-muted: #94a3b8;
+
+  /* Calibrated Warm Mineral Light Surfaces */
+  --color-paper: #f7f6f2;
+  --color-paper-2: #f0eee8;
+  --color-sand: #ddd9ce;
+  --color-hairline: #e5e2d9;
+  --color-stone: #5b6472;
+
+  /* Authoritative Bullion Gold & Emerald Status Accents */
+  --color-ochre: #c69214;
+  --color-ochre-dark: #a8790d;
+  --color-gold: #d4a52e;
+  --color-moss: #059669;
+  --color-moss-light: #ecfdf5;
+  --color-danger: #b91c1c;
 
   --animate-rise: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-fade: fade 1.2s ease both;
@@ -60,16 +68,32 @@ html {
 }
 
 body {
-  @apply m-0 bg-paper text-ink font-sans;
+  @apply m-0 bg-paper text-[#14181F] font-sans;
+  line-height: 1.6;
   overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
 }
 
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+}
+
+/* Tabular precision for financial figures, prices, percentages, and KPI tables */
+table td,
+table th,
+.font-mono,
+.tabular-precision {
+  font-variant-numeric: tabular-nums;
+}
+
 ::selection {
-  background: var(--color-ochre);
-  color: var(--color-paper);
+  background: rgba(198, 146, 20, 0.24);
+  color: #11161d;
 }
 
 .font-display {
@@ -77,10 +101,29 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* Fine contour-line texture used behind dark sections */
+/* Tactile Geological Micro-Textures (3% opacity pure-CSS dot-grid patterns) */
+.surface-texture-dark {
+  background-image: radial-gradient(
+    rgba(241, 245, 249, 0.045) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+.surface-texture-light {
+  background-image: radial-gradient(
+    rgba(17, 22, 29, 0.042) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* Fine topographic contour-line texture layered on obsidian-slate hero/header surfaces */
 .contours {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Cg fill='none' stroke='%23d6a443' stroke-opacity='0.09' stroke-width='1'%3E%3Cpath d='M-50 320c80-60 160-90 240-60s150 100 240 70 130-110 220-90'/%3E%3Cpath d='M-50 360c80-60 170-80 250-50s140 100 230 70 140-100 220-80'/%3E%3Cpath d='M-50 400c90-50 170-70 250-40s140 90 230 60 140-90 220-70'/%3E%3Cpath d='M-50 440c90-40 170-60 250-30s140 80 230 50 140-80 220-60'/%3E%3Cpath d='M-50 280c80-70 160-100 240-70s150 110 240 80 130-120 220-100'/%3E%3Cpath d='M-50 240c80-80 160-110 240-80s150 120 240 90 130-130 220-110'/%3E%3Cpath d='M-50 200c80-90 160-120 240-90s150 130 240 100 130-140 220-120'/%3E%3Cpath d='M-50 480c90-30 170-50 250-20s140 70 230 40 140-70 220-50'/%3E%3C/g%3E%3C/svg%3E");
-  background-size: 600px 600px;
+  background-image:
+    radial-gradient(rgba(241, 245, 249, 0.035) 1px, transparent 1px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Cg fill='none' stroke='%23C69214' stroke-opacity='0.08' stroke-width='1'%3E%3Cpath d='M-50 320c80-60 160-90 240-60s150 100 240 70 130-110 220-90'/%3E%3Cpath d='M-50 360c80-60 170-80 250-50s140 100 230 70 140-100 220-80'/%3E%3Cpath d='M-50 400c90-50 170-70 250-40s140 90 230 60 140-90 220-70'/%3E%3Cpath d='M-50 440c90-40 170-60 250-30s140 80 230 50 140-80 220-60'/%3E%3Cpath d='M-50 280c80-70 160-100 240-70s150 110 240 80 130-120 220-100'/%3E%3Cpath d='M-50 240c80-80 160-110 240-80s150 120 240 90 130-130 220-110'/%3E%3Cpath d='M-50 200c80-90 160-120 240-90s150 130 240 100 130-140 220-120'/%3E%3Cpath d='M-50 480c90-30 170-50 250-20s140 70 230 40 140-70 220-50'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 24px 24px, 600px 600px;
 }
 
 .grain::after {
@@ -88,8 +131,65 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.08;
+  opacity: 0.04;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Architectural Multi-Layered Surface Elevation */
+.card-elevated {
+  background-color: #ffffff;
+  border: 1px solid #e5e2d9;
+  border-radius: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 2px 6px rgba(15, 23, 42, 0.04),
+    0 12px 28px -12px rgba(15, 23, 42, 0.09);
+  transition:
+    transform 150ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.card-elevated-interactive {
+  background-color: #ffffff;
+  border: 1px solid #e5e2d9;
+  border-radius: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 2px 6px rgba(15, 23, 42, 0.04),
+    0 12px 28px -12px rgba(15, 23, 42, 0.09);
+  transition:
+    transform 150ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.card-elevated-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(198, 146, 20, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 4px 12px rgba(15, 23, 42, 0.06),
+    0 18px 34px -14px rgba(15, 23, 42, 0.14);
+}
+
+.card-inset {
+  background-color: #f0eee8;
+  border: 1px solid #ddd9ce;
+  border-radius: 0.75rem;
+}
+
+.panel-dark {
+  background-color: #18202a;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 32px -16px rgba(0, 0, 0, 0.55);
+}
+
+.section-divider {
+  border-bottom: 1px solid #e5e2d9;
 }
 
 .marker-ping {
@@ -103,35 +203,35 @@ body {
   background-size: 0% 1px;
   background-repeat: no-repeat;
   background-position: 0 100%;
-  transition: background-size 0.3s ease;
+  transition: background-size 0.25s ease;
 }
 .link-underline:hover {
   background-size: 100% 1px;
 }
 
 .field {
-  @apply min-h-[44px] w-full rounded-md border border-sand bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20;
+  @apply min-h-[44px] w-full rounded-lg border border-[#DDD9CE] bg-white px-3.5 py-2.5 text-sm text-[#14181F] outline-none transition duration-150 placeholder:text-[#5B6472]/70 focus:border-[#C69214] focus:ring-2 focus:ring-[#C69214]/20;
 }
 
 .label {
-  @apply mb-1.5 block font-mono text-[11px] uppercase tracking-[0.14em] text-stone;
+  @apply mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#5B6472];
 }
 
 .btn-primary {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-[0_1px_0_rgba(255,255,255,0.2)_inset,0_8px_24px_-12px_rgba(192,97,43,0.8)] transition hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[#C69214] px-5 py-3 text-sm font-semibold text-[#11161D] shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_2px_6px_rgba(15,23,42,0.08),0_10px_22px_-12px_rgba(198,146,20,0.6)] transition-all duration-150 hover:-translate-y-px hover:bg-[#A8790D] hover:text-white active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C69214];
 }
 
 .btn-ghost {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition hover:border-current/60 hover:bg-current/5 active:translate-y-px;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-[#DDD9CE] bg-white/80 px-5 py-3 text-sm font-semibold text-[#14181F] transition-all duration-150 hover:-translate-y-px hover:border-[#C69214]/55 hover:bg-white active:translate-y-0;
 }
 
 .eyebrow {
-  @apply font-mono text-[11px] uppercase tracking-[0.22em];
+  @apply font-mono text-[11px] font-semibold uppercase tracking-[0.14em];
 }
 
 /* Custom Leaflet GIS Dark Engineering Theme Overrides */
 .leaflet-container {
-  background: #111318 !important;
+  background: #11161d !important;
   font-family: var(--font-sans) !important;
 }
 
@@ -140,17 +240,17 @@ body {
 }
 
 .mineconnect-leaflet-tooltip {
-  background: rgba(21, 18, 15, 0.94) !important;
-  border: 1px solid rgba(217, 119, 6, 0.55) !important;
+  background: rgba(17, 22, 29, 0.95) !important;
+  border: 1px solid rgba(198, 146, 20, 0.5) !important;
   border-radius: 8px !important;
-  color: #f6f1e7 !important;
+  color: #f1f5f9 !important;
   padding: 5px 10px !important;
   box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.8) !important;
   backdrop-filter: blur(8px);
 }
 
 .mineconnect-leaflet-tooltip::before {
-  border-top-color: rgba(217, 119, 6, 0.55) !important;
+  border-top-color: rgba(198, 146, 20, 0.5) !important;
 }
 
 .mineconnect-region-label,
@@ -162,14 +262,14 @@ body {
 }
 
 .leaflet-control-zoom a {
-  background-color: rgba(21, 18, 15, 0.9) !important;
-  color: #d6a443 !important;
-  border-color: rgba(214, 164, 67, 0.3) !important;
+  background-color: rgba(17, 22, 29, 0.92) !important;
+  color: #d4a52e !important;
+  border-color: rgba(198, 146, 20, 0.3) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background-color: #231e1a !important;
-  color: #f6f1e7 !important;
+  background-color: #18202a !important;
+  color: #f1f5f9 !important;
 }
 
 .leaflet-control-attribution {

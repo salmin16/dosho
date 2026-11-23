@@ -36,7 +36,6 @@ import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
 import { levelTone } from '../components/VerificationBadge'
-import IndicativeMineralPrices from '../components/IndicativeMineralPrices'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -47,7 +46,6 @@ function Home() {
     <>
       <Hero />
       <Stats />
-      <IndicativeMineralPrices showHeaderCta />
       <OpportunityStreamsShowcase />
       <Featured />
       <HowItWorks />

@@ -19,7 +19,7 @@ function Verification() {
 
   return (
     <div className="pt-[72px]">
-      <section className="relative overflow-hidden bg-ink text-paper">
+      <section className="surface-texture-dark relative overflow-hidden bg-[#11161D] text-[#F1F5F9]">
         <div className="contours absolute inset-0" aria-hidden />
         <div className="relative mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
           <p className="eyebrow mb-4 text-gold">{t('verif.eyebrow')}</p>
@@ -63,7 +63,7 @@ function Verification() {
       <section className="px-5 py-20 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-5">
           {levels.map((v, i) => (
-            <article key={v.level} className="grid overflow-hidden rounded-2xl border border-ink/10 bg-white/50 md:grid-cols-[220px_1fr_1fr]">
+            <article key={v.level} className="card-elevated grid overflow-hidden md:grid-cols-[220px_1fr_1fr]">
               <div className={`flex flex-col justify-between border-b p-6 md:border-b-0 md:border-r ${levelTone(v.level)}`}>
                 <span className="font-display text-6xl font-light">L{v.level}</span>
                 <div>

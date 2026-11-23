@@ -42,23 +42,23 @@ export default function Footer() {
   const { t } = useI18n()
 
   return (
-    <footer className="relative overflow-hidden bg-ink text-paper/80">
+    <footer className="surface-texture-dark relative overflow-hidden border-t border-white/[0.09] bg-[#11161D] text-[#94A3B8]">
       <div className="contours absolute inset-0 opacity-60" aria-hidden />
       <div className="relative mx-auto max-w-7xl px-5 pb-10 pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
           <div>
             <Logo light />
-            <p className="mt-5 max-w-sm text-sm leading-relaxed text-paper/60">{t('footer.tagline')}</p>
-            <p className="eyebrow mt-8 text-gold">{t('footer.motto')}</p>
+            <p className="mt-5 max-w-sm text-sm leading-relaxed text-[#94A3B8]">{t('footer.tagline')}</p>
+            <p className="eyebrow mt-8 text-[#D4A52E]">{t('footer.motto')}</p>
           </div>
 
           {COLS.map((c) => (
             <div key={c.titleKey}>
-              <h3 className="eyebrow mb-5 text-paper/40">{t(c.titleKey)}</h3>
-              <ul className="space-y-3 text-sm">
+              <h3 className="eyebrow mb-5 text-[#94A3B8]/80">{t(c.titleKey)}</h3>
+              <ul className="space-y-3 text-sm text-[#F1F5F9]/85">
                 {c.links.map((l) => (
                   <li key={l.labelKey}>
-                    <Link to={l.to} hash={l.hash} className="link-underline hover:text-paper">
+                    <Link to={l.to} hash={l.hash} className="link-underline hover:text-[#F1F5F9]">
                       {t(l.labelKey)}
                     </Link>
                   </li>
@@ -68,10 +68,10 @@ export default function Footer() {
           ))}
 
           <div>
-            <h3 className="eyebrow mb-5 text-paper/40">{t('footer.legalPolicies')}</h3>
+            <h3 className="eyebrow mb-5 text-[#94A3B8]/80">{t('footer.legalPolicies')}</h3>
             <ul className="space-y-2.5 text-sm">
               {LEGAL_KEYS.map((k) => (
-                <li key={k} className="text-paper/60">
+                <li key={k} className="text-[#94A3B8]">
                   {t(k)}
                 </li>
               ))}
@@ -79,7 +79,7 @@ export default function Footer() {
                 <button
                   type="button"
                   onClick={openCookieSettings}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-gold transition hover:text-paper"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-[#D4A52E] transition duration-150 hover:text-[#F1F5F9]"
                 >
                   <Cookie size={14} />
                   Cookie Settings
@@ -89,22 +89,22 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-16 rounded-lg border border-paper/10 bg-paper/[0.03] p-5 text-xs leading-relaxed text-paper/50">
-          <strong className="text-paper/70">{t('footer.noticeTitle')}</strong> {t('footer.noticeBody')}
+        <div className="panel-dark mt-16 p-6 text-xs leading-relaxed text-[#94A3B8]">
+          <strong className="text-[#F1F5F9]">{t('footer.noticeTitle')}</strong> {t('footer.noticeBody')}
         </div>
 
-        <div className="mt-8 flex flex-col items-start justify-between gap-3 border-t border-paper/10 pt-6 text-xs text-paper/40 sm:flex-row sm:items-center">
+        <div className="mt-8 flex flex-col items-start justify-between gap-3 border-t border-white/[0.09] pt-6 text-xs text-[#94A3B8] sm:flex-row sm:items-center">
           <span>{t('footer.copyright')}</span>
           <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               onClick={openCookieSettings}
-              className="inline-flex min-h-[44px] items-center gap-1.5 font-medium text-paper/70 transition hover:text-gold"
+              className="inline-flex min-h-[44px] items-center gap-1.5 font-medium text-[#F1F5F9]/80 transition duration-150 hover:text-[#D4A52E]"
             >
               <Cookie size={13} />
               Cookie Settings
             </button>
-            <span className="font-mono">{t('footer.pilotBadge')}</span>
+            <span className="font-mono text-[#94A3B8]">{t('footer.pilotBadge')}</span>
           </div>
         </div>
       </div>
