@@ -20,6 +20,7 @@ import {
 } from '../data/mineralPrices'
 import { useLocalization } from '../context/LocalizationContext'
 import LiveMarketTicker from './LiveMarketTicker'
+import MineralTrendChart from './MineralTrendChart'
 import PriceDisplay from './PriceDisplay'
 import type { MineralCategory, MineralPriceRecord } from '../types/database'
 
@@ -105,6 +106,7 @@ export default function MineralPricesBoard({
   )
   const [selectedCategory, setSelectedCategory] = useState<'ALL' | MineralCategory>('ALL')
   const [unitBasis, setUnitBasis] = useState<'standard' | 'metric_local'>('metric_local')
+  const [chartSymbol, setChartSymbol] = useState<string>('XAU')
 
   // Interactive Statutory Valuation & Royalty Calculator State
   const [calcSymbol, setCalcSymbol] = useState<string>('XAU')
@@ -286,10 +288,18 @@ export default function MineralPricesBoard({
         {/* 1. Real-Time Market Status & Trading-Floor Ticker */}
         <LiveMarketTicker unitBasis={unitBasis} />
 
+        {/* 1B. Interactive Mineral Trend Chart (Local Unit Rates Only) */}
+        <MineralTrendChart
+          minerals={minerals}
+          selectedSymbol={chartSymbol}
+          onSelectSymbol={setChartSymbol}
+        />
+
         {/* 2. Priority Commodity Spotlight Cards (Gold, Silver, Copper, Tanzanite) */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {minerals.slice(0, 4).map((m) => {
             const positive = m.trend_percentage >= 0
+            const isChartFocused = chartSymbol === m.symbol
             const worldLocal = formatStatutoryPrice(
               m.world_market_price_usd,
               m.unit,
@@ -310,7 +320,12 @@ export default function MineralPricesBoard({
             return (
               <article
                 key={m.id}
-                className="flex flex-col justify-between rounded-xl border border-paper/12 bg-ink-2 p-5 shadow-sm transition duration-150 hover:border-gold/40"
+                onClick={() => setChartSymbol(m.symbol)}
+                className={`flex cursor-pointer flex-col justify-between rounded-xl border bg-ink-2 p-5 shadow-sm transition duration-150 ${
+                  isChartFocused
+                    ? 'border-gold/55'
+                    : 'border-paper/12 hover:border-gold/40'
+                }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
