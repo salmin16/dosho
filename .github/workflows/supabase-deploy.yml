@@ -114,11 +114,15 @@
           - name: Link to production Supabase project
             run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
-          - name: Dry-run pending migrations against production
-            run: supabase db push --dry-run
+          - - name: Dry-run pending migrations against production
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push --remote --dry-run --password "$SUPABASE_DB_PASSWORD"
 
-          - name: Push pending migrations to production
-            run: supabase db push
+      - name: Push pending migrations to production
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push --remote --password "$SUPABASE_DB_PASSWORD"
 
           - name: Deploy Supabase Edge Functions (if present)
             run: |
