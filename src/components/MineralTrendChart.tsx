@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
 import {
+  DAY_MS,
   TAPE_TOTAL_SLOTS,
   computeNiceAxisTicks,
   computeNiceTimeTicks,
@@ -21,6 +22,7 @@ import {
   formatChartTooltipDateByScale,
   formatSpanCompact,
   formatVisibleDateWindow,
+  getEatYear,
   type ChartPricingMode,
   type TimelineScale,
 } from '../lib/mineralHistory'
@@ -128,17 +130,18 @@ export default function MineralTrendChart({
     return minerals.find((m) => m.symbol === activeSymbol) ?? minerals[0]
   }, [minerals, activeSymbol])
 
-  // Continuous 4-year (2023–2026) -> sub-minute model anchored to live World Spot Parity
+  // Uncapped multi-year (2000 -> live spot) continuous LOD model
   const model = useMemo(() => {
     if (!activeMineral) return null
     return createContinuousMineralModel(activeMineral, unitBasis)
   }, [activeMineral, unitBasis])
 
-  // Full multi-year default viewport (2023 -> present live spot)
+  // Default to latest 5 years so dragging left immediately pans back through 2020 -> 2000,
+  // while pinching out expands all the way to 2000–2026 and pinching in dives to hours/minutes.
   const defaultViewport = useMemo<ViewportRange | null>(() => {
     if (!model) return null
     return {
-      startMs: model.historyStartMs,
+      startMs: model.historyEndMs - model.defaultSpanMs,
       endMs: model.historyEndMs,
     }
   }, [model])
@@ -160,7 +163,6 @@ export default function MineralTrendChart({
     viewportRef.current = activeViewport
   }, [activeViewport])
 
-  // Clean up any pending animation frame on unmount
   useEffect(() => {
     return () => {
       if (rafIdRef.current !== null) {
@@ -196,7 +198,6 @@ export default function MineralTrendChart({
     [onSelectSymbol],
   )
 
-  // Observe container width for crisp, distortion-free SVG geometry
   useEffect(() => {
     const el = chartContainerRef.current
     if (!el) return
@@ -270,10 +271,10 @@ export default function MineralTrendChart({
 
   const isModifiedView = useMemo(() => {
     if (!activeViewport || !defaultViewport) return false
-    const fullSpan = Math.max(1, defaultViewport.endMs - defaultViewport.startMs)
+    const defaultSpan = defaultViewport.endMs - defaultViewport.startMs
     const curSpan = activeViewport.endMs - activeViewport.startMs
     return (
-      curSpan < fullSpan * 0.992 ||
+      Math.abs(curSpan - defaultSpan) > 60_000 ||
       Math.abs(activeViewport.endMs - defaultViewport.endMs) > 60_000
     )
   }, [activeViewport, defaultViewport])
@@ -374,7 +375,6 @@ export default function MineralTrendChart({
     return () => svg.removeEventListener('wheel', onWheel)
   }, [model, chartWidth, applyContinuousZoom, applyContinuousPanByMs])
 
-  // Compact k/M mobile Y-axis formatting keeps the chart plot wide on 360px–390px viewports
   const formatAxisPrice = useCallback(
     (displayValue: number, step: number, compactMobile: boolean): string => {
       const usdEquivalent =
@@ -456,7 +456,6 @@ export default function MineralTrendChart({
     [ui],
   )
 
-  // Generous chart plot height (316px mobile / 412px desktop) with compact right-side price axis
   const chartGeometry = useMemo(() => {
     if (!visibleStats || visiblePoints.length < 2) return null
 
@@ -678,7 +677,6 @@ export default function MineralTrendChart({
     setIsDragging(false)
   }, [])
 
-  // Responsive two-finger pinch-to-zoom + midpoint pan directly on touch devices
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<SVGSVGElement>) => {
       if (e.touches.length === 2 && chartGeometry && viewportRef.current) {
@@ -726,8 +724,7 @@ export default function MineralTrendChart({
         if (curDist < 10) return
 
         const { startDist, startMidFrac, startView } = pinchRef.current
-        // Slightly amplified pinch curve makes zooming from multi-year down to minutes effortless
-        const scale = Math.pow(startDist / curDist, 1.3)
+        const scale = Math.pow(startDist / curDist, 1.35)
         const origSpan = startView.endMs - startView.startMs
         const nextSpan = Math.max(
           model.minSpanMs,
@@ -831,6 +828,16 @@ export default function MineralTrendChart({
   const activePoint = visiblePoints[activePointIdx]
   const activeCoord = chartGeometry.coords[activePointIdx]
   const terminalCoord = chartGeometry.coords[lastIdx]
+
+  // Automatically detect the active year being dragged or inspected anywhere from 2000 -> present
+  const activeYear =
+    safeInspectIdx !== null
+      ? getEatYear(activePoint.timestampMs)
+      : visibleStats.endMs >= model.historyEndMs - DAY_MS
+        ? model.endYear
+        : getEatYear(Math.round((visibleStats.startMs + visibleStats.endMs) / 2))
+
+  const inspectedYearSummary = model.getYearSummary(activeYear)
 
   const displayedUnitUsd = activePoint.unitUsd
   const displayedDeltaUsd = displayedUnitUsd - visibleStats.startUnitUsd
@@ -981,7 +988,7 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Clean Trading Header: Price + Exact Date / Scale / Counter + Subtle Reset Only When Modified */}
+      {/* Clean Trading Header: Price + Active Year / Date / Scale / Counter + Subtle Reset */}
       <div className="px-4 pt-3.5 pb-2 sm:px-5 lg:px-6">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
@@ -1024,8 +1031,8 @@ export default function MineralTrendChart({
             <button
               type="button"
               onClick={handleResetView}
-              title={ui('Reset to full multi-year view', 'Rejesha miaka yote', 'Restablecer vista completa')}
-              aria-label={ui('Reset to full multi-year view', 'Rejesha miaka yote', 'Restablecer vista completa')}
+              title={ui('Reset to latest view', 'Rejesha mwonekano wa sasa', 'Restablecer vista actual')}
+              aria-label={ui('Reset to latest view', 'Rejesha mwonekano wa sasa', 'Restablecer vista actual')}
               className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/20 bg-ink px-2.5 font-mono text-[10px] font-semibold text-gold transition hover:bg-ochre hover:text-paper"
             >
               <RotateCcw size={11} />
@@ -1034,21 +1041,26 @@ export default function MineralTrendChart({
           )}
         </div>
 
-        {/* Single Compact Status Strip: Exact Date/EAT Readout + Auto Scale + Window Counter */}
+        {/* Compact Status Strip: Auto-Detected Active Year + Exact Date/EAT + Scale + Window Counter */}
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-paper-2/65 px-2.5 py-1.5 sm:px-3">
-          <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] font-semibold text-ink tabular-nums sm:text-[11px]">
-            <Calendar size={12} className="shrink-0 text-ochre" />
-            <span className="truncate">
-              {safeInspectIdx !== null
-                ? formatChartTooltipDateByScale(
-                    activePoint.timestampMs,
-                    visibleStats.scale,
-                    visibleStats.spanMs,
-                    language,
-                  )
-                : visibleDateWindowLabel}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 rounded bg-ochre px-1.5 py-0.5 font-mono text-[10px] font-bold text-paper tabular-nums">
+              {inspectedYearSummary.year}
             </span>
-          </span>
+            <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] font-semibold text-ink tabular-nums sm:text-[11px]">
+              <Calendar size={12} className="shrink-0 text-ochre" />
+              <span className="truncate">
+                {safeInspectIdx !== null
+                  ? formatChartTooltipDateByScale(
+                      activePoint.timestampMs,
+                      visibleStats.scale,
+                      visibleStats.spanMs,
+                      language,
+                    )
+                  : visibleDateWindowLabel}
+              </span>
+            </span>
+          </div>
 
           <div className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
             <span className="rounded border border-ochre/30 bg-ochre/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-ochre">
@@ -1059,9 +1071,9 @@ export default function MineralTrendChart({
             </span>
             <span
               title={ui(
-                'Timeline window position',
-                'Nafasi kwenye mfuatano wa muda',
-                'Posición en la línea temporal',
+                `Timeline position (${model.startYear}–${model.endYear})`,
+                `Nafasi kwenye mfuatano (${model.startYear}–${model.endYear})`,
+                `Posición temporal (${model.startYear}–${model.endYear})`,
               )}
               className="rounded border border-ink/12 bg-ink px-1.5 py-0.5 font-semibold text-gold"
             >
@@ -1071,7 +1083,7 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Generous Direct-Manipulation Trading Canvas (Pinch-Zoom & Drag/Pan Directly on Chart) */}
+      {/* Generous Direct-Manipulation Trading Canvas (Uncapped 2000 -> Present Drag/Pinch) */}
       <div className="relative px-2 pb-2 sm:px-5 sm:pb-3 lg:px-6">
         <div
           ref={chartContainerRef}
@@ -1084,7 +1096,7 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${visibleStats.spanCompact} World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
+            aria-label={`${activeMineral.mineral_name} ${model.startYear}–${model.endYear} World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
             className={`block h-[316px] w-full touch-none rounded-lg border border-ink/8 bg-[#fbf8f2] outline-none focus-visible:ring-2 focus-visible:ring-ochre/40 sm:h-[412px] ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
@@ -1230,7 +1242,7 @@ export default function MineralTrendChart({
               strokeDasharray="3 3"
             />
 
-            {/* Terminal Live Price Dot */}
+            {/* Terminal Visible Point Dot */}
             <g aria-hidden="true">
               <circle
                 cx={terminalCoord.x}
@@ -1249,7 +1261,7 @@ export default function MineralTrendChart({
               />
             </g>
 
-            {/* Highlighted Current Price Pill Badge on Right Y-Axis */}
+            {/* Highlighted Right-Axis Current Price Pill Badge */}
             <g aria-hidden="true">
               <rect
                 x={chartGeometry.plotRightX + 2}
@@ -1310,7 +1322,6 @@ export default function MineralTrendChart({
                   strokeWidth={2}
                 />
 
-                {/* Active Crosshair Price Badge on Right Axis */}
                 <rect
                   x={chartGeometry.plotRightX + 2}
                   y={inspectBadgeY - badgeHalf}
@@ -1332,7 +1343,6 @@ export default function MineralTrendChart({
                   {inspectBadgeLabel}
                 </text>
 
-                {/* Active Crosshair Time Pill on Bottom X-Axis */}
                 <g>
                   <rect
                     x={Math.max(
@@ -1419,14 +1429,93 @@ export default function MineralTrendChart({
         {/* Minimal Direct-Manipulation Hint */}
         <p className="mt-1.5 text-center font-mono text-[10px] text-stone/85">
           {ui(
-            'Pinch or scroll to zoom (2023–2026 → min) · Drag to pan · Tap to inspect',
-            'Bana au zungusha kukuza (2023–2026 → dakika) · Buruta kusogeza · Gusa kukagua',
-            'Pellizca o haz scroll para zoom (2023–2026 → min) · Arrastra para desplazar',
+            `Drag left/right across ${model.startYear}–${model.endYear} · Pinch or scroll to zoom (years → min) · Tap to inspect`,
+            `Buruta kushoto/kulia (${model.startYear}–${model.endYear}) · Bana au zungusha kukuza (miaka → dakika) · Gusa kukagua`,
+            `Arrastra (${model.startYear}–${model.endYear}) · Pellizca o haz scroll para zoom (años → min)`,
           )}
         </p>
       </div>
 
-      {/* Mode-Matched Statutory Benchmark Summary Strip */}
+      {/* Drag-Detected Active Year Summary Card (Updates Live for Any Year 2000 -> Present) */}
+      <div className="mx-4 mb-3.5 rounded-xl border border-ink/12 bg-white px-3.5 py-3 shadow-xs sm:mx-5 sm:px-4 lg:mx-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/8 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-bold text-gold tabular-nums">
+              {inspectedYearSummary.year}
+            </span>
+            <span className="truncate font-display text-sm font-medium text-ink">
+              {inspectedYearSummary.isYtd
+                ? ui(
+                    `${inspectedYearSummary.year} Year-to-Date Readout`,
+                    `Muhtasari wa Mwaka ${inspectedYearSummary.year} (Hadi Sasa)`,
+                    `Resumen Acumulado ${inspectedYearSummary.year}`,
+                  )
+                : ui(
+                    `${inspectedYearSummary.year} Historical Year Readout`,
+                    `Muhtasari wa Mwaka ${inspectedYearSummary.year}`,
+                    `Resumen del Año ${inspectedYearSummary.year}`,
+                  )}
+            </span>
+          </div>
+
+          <span
+            className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-2 py-0.5 font-mono text-[10.5px] font-bold tabular-nums ${
+              inspectedYearSummary.changeUsd >= 0
+                ? 'border-moss/30 bg-moss-light text-moss'
+                : 'border-danger/30 bg-danger/10 text-danger'
+            }`}
+          >
+            {inspectedYearSummary.changeUsd >= 0 ? '+' : ''}
+            {inspectedYearSummary.changePct.toFixed(2)}%
+          </span>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2.5 sm:grid-cols-4">
+          <div className="min-w-0">
+            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+              {ui('Year Open', 'Kufungua', 'Apertura')}
+            </span>
+            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+              {formatPrice(inspectedYearSummary.openUnitUsd)}
+              <span className="font-normal text-stone">{model.unitSuffix}</span>
+            </span>
+          </div>
+
+          <div className="min-w-0">
+            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+              {inspectedYearSummary.year} {ui('High', 'Juu', 'Máx')}
+            </span>
+            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+              {formatPrice(inspectedYearSummary.highUnitUsd)}
+              <span className="font-normal text-stone">{model.unitSuffix}</span>
+            </span>
+          </div>
+
+          <div className="min-w-0">
+            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+              {inspectedYearSummary.year} {ui('Low', 'Chini', 'Mín')}
+            </span>
+            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+              {formatPrice(inspectedYearSummary.lowUnitUsd)}
+              <span className="font-normal text-stone">{model.unitSuffix}</span>
+            </span>
+          </div>
+
+          <div className="min-w-0">
+            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+              {inspectedYearSummary.isYtd
+                ? ui('Latest Spot', 'Ya Sasa', 'Actual')
+                : ui('Year-End', 'Mwisho wa Mwaka', 'Cierre')}
+            </span>
+            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+              {formatPrice(inspectedYearSummary.closeUnitUsd)}
+              <span className="font-normal text-stone">{model.unitSuffix}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Mode-Matched Window & Statutory Benchmark Summary Strip */}
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-ink/10 bg-paper-2/70 px-4 py-3.5 sm:grid-cols-4 sm:px-5 lg:px-6">
         <div className="min-w-0">
           <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
