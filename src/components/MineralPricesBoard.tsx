@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
   Calculator,
+  Check,
   Clock,
   Coins,
   Globe,
@@ -134,7 +135,12 @@ export default function MineralPricesBoard({
     getMarketSyncTelemetry(),
   )
   const [syncing, setSyncing] = useState(false)
+  const [justUpdatedTime, setJustUpdatedTime] = useState<string | null>(null)
   const [secondsToNextSync, setSecondsToNextSync] = useState(45)
+
+  const isSyncingRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const updatedTimerRef = useRef<number | null>(null)
 
   const [internalView, setInternalView] = useState<MarketTerminalView>('spot')
   const activeView = controlledView ?? internalView
@@ -154,23 +160,75 @@ export default function MineralPricesBoard({
     }
   }, [initialSymbol])
 
+  const triggerUpdatedConfirmation = useCallback((isoTimestamp: string) => {
+    let timeStr: string
+    try {
+      timeStr = new Date(isoTimestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    } catch {
+      timeStr = new Date().toLocaleTimeString()
+    }
+    setJustUpdatedTime(timeStr)
+    if (updatedTimerRef.current !== null) {
+      window.clearTimeout(updatedTimerRef.current)
+    }
+    updatedTimerRef.current = window.setTimeout(() => {
+      setJustUpdatedTime(null)
+      updatedTimerRef.current = null
+    }, 3500)
+  }, [])
+
   const handleManualSync = useCallback(
     async (force = true) => {
+      if (isSyncingRef.current) return
+      isSyncingRef.current = true
       setSyncing(true)
+
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
       try {
+        // Non-blocking fail-fast FX refresh guard so slow mobile networks never stall the feed
+        const guardedFxRefresh = force
+          ? Promise.race([
+              refreshRates().catch(() => undefined),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 2600)),
+            ])
+          : Promise.resolve()
+
         const [result] = await Promise.all([
-          executeLiveMarketSync({ force }),
-          force ? refreshRates() : Promise.resolve(),
+          executeLiveMarketSync({ force, signal: controller.signal }),
+          guardedFxRefresh,
         ])
-        setMinerals(result.records)
-        setTelemetry(result.telemetry)
-        setSecondsToNextSync(45)
+
+        if (!controller.signal.aborted && result.records.length > 0) {
+          setMinerals(result.records)
+          setTelemetry(result.telemetry)
+          setSecondsToNextSync(45)
+          if (force) {
+            triggerUpdatedConfirmation(result.telemetry.lastSyncedAt)
+          }
+        }
       } finally {
+        isSyncingRef.current = false
         setSyncing(false)
       }
     },
-    [refreshRates],
+    [refreshRates, triggerUpdatedConfirmation],
   )
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      if (updatedTimerRef.current !== null) {
+        window.clearTimeout(updatedTimerRef.current)
+      }
+    }
+  }, [])
 
   // Live subscription + non-blocking initial sync
   useEffect(() => {
@@ -399,14 +457,29 @@ export default function MineralPricesBoard({
               </span>
             </span>
 
-            <span className="hidden items-center gap-1.5 text-paper/60 md:inline-flex tabular-nums">
-              <Clock size={11} className="text-gold" />
-              <span>
-                {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
-                <strong className="text-paper/85">{formattedSyncTime}</strong>{' '}
-                <span className="text-paper/45">({secondsToNextSync}s)</span>
+            {justUpdatedTime ? (
+              <span
+                role="status"
+                aria-live="polite"
+                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2 py-0.5 text-[10px] font-semibold text-[#9de4b4] tabular-nums"
+              >
+                <Check size={11} />
+                <span>
+                  {ui('Updated', 'Imesasishwa', 'Actualizado')} · {justUpdatedTime}
+                </span>
               </span>
-            </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] text-paper/65 tabular-nums sm:text-[11px]">
+                <Clock size={11} className="text-gold" />
+                <span>
+                  <span className="hidden sm:inline">
+                    {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
+                  </span>
+                  <strong className="text-paper/85">{formattedSyncTime}</strong>{' '}
+                  <span className="hidden text-paper/45 md:inline">({secondsToNextSync}s)</span>
+                </span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -420,7 +493,7 @@ export default function MineralPricesBoard({
                 type="button"
                 aria-pressed={unitBasis === 'metric_local'}
                 onClick={() => setUnitBasis('metric_local')}
-                className={`rounded px-2.5 py-1 font-mono font-semibold transition ${
+                className={`rounded px-2 py-1 font-mono font-semibold transition sm:px-2.5 ${
                   unitBasis === 'metric_local'
                     ? 'bg-ochre text-paper shadow-xs'
                     : 'text-paper/70 hover:text-paper'
@@ -432,7 +505,7 @@ export default function MineralPricesBoard({
                 type="button"
                 aria-pressed={unitBasis === 'standard'}
                 onClick={() => setUnitBasis('standard')}
-                className={`rounded px-2.5 py-1 font-mono font-semibold transition ${
+                className={`rounded px-2 py-1 font-mono font-semibold transition sm:px-2.5 ${
                   unitBasis === 'standard'
                     ? 'bg-ochre text-paper shadow-xs'
                     : 'text-paper/70 hover:text-paper'
@@ -446,13 +519,13 @@ export default function MineralPricesBoard({
               type="button"
               onClick={() => void handleManualSync(true)}
               disabled={syncing}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/15 px-2.5 py-1 font-mono text-[10px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/15 px-2.5 py-1 font-mono text-[10px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-60"
             >
               <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">
+              <span>
                 {syncing
-                  ? ui('Syncing...', 'Inasasisha...', 'Sincronizando...')
-                  : ui('Sync Live', 'Sasisha', 'Sincronizar')}
+                  ? ui('Refreshing...', 'Inasasisha...', 'Actualizando...')
+                  : ui('Refresh', 'Sasisha', 'Actualizar')}
               </span>
             </button>
           </div>

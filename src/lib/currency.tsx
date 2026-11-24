@@ -62,8 +62,8 @@ const RATES_UPDATED_EVENT = 'mineconnect:fx-rates-updated';
 const LIVE_FRESH_TTL_MS = 90 * 1000;
 /** Periodic background refresh interval while tab is visible (2 minutes) */
 const AUTO_REFRESH_INTERVAL_MS = 120 * 1000;
-/** Per-endpoint network timeout */
-const FX_FETCH_TIMEOUT_MS = 5000;
+/** Per-endpoint network timeout (fast fail on slow mobile networks) */
+const FX_FETCH_TIMEOUT_MS = 2600;
 
 export interface CachedRatesPayload {
   /** Epoch ms when rates were last fetched from a live FX provider (0 if offline fallback) */
@@ -220,46 +220,48 @@ async function fetchLiveExchangeRates(
         ? previous.rates
         : FALLBACK_RATES_PER_USD;
 
-    // 1. Primary FX Endpoint (open.er-api.com)
-    try {
+    // Race Primary (open.er-api.com) and Secondary (CDN Currency API) concurrently
+    // so live FX resolves in ~200-400ms on mobile instead of waiting sequentially.
+    const tryPrimary = async (): Promise<CachedRatesPayload> => {
       const data = (await fetchJsonWithTimeout(
         'https://open.er-api.com/v6/latest/USD',
       )) as { result?: string; rates?: Record<string, unknown> };
-      if (data?.rates) {
-        const { rates, matchedCount } = normalizeRateMap(data.rates, baseline);
-        if (matchedCount >= 6 && isValidRateNumber(rates.TZS) && isValidRateNumber(rates.EUR)) {
-          const now = Date.now();
-          return {
-            fetchedAt: now,
-            updatedAt: now,
-            source: 'live',
-            provider: 'open.er-api.com',
-            rates,
-          };
-        }
+      if (!data?.rates) throw new Error('Invalid primary payload');
+      const { rates, matchedCount } = normalizeRateMap(data.rates, baseline);
+      if (matchedCount >= 6 && isValidRateNumber(rates.TZS) && isValidRateNumber(rates.EUR)) {
+        const now = Date.now();
+        return {
+          fetchedAt: now,
+          updatedAt: now,
+          source: 'live',
+          provider: 'open.er-api.com',
+          rates,
+        };
       }
-    } catch {
-      // Automatically fall back to secondary FX endpoint
-    }
+      throw new Error('Incomplete primary FX map');
+    };
 
-    // 2. Secondary FX Endpoint (Global CDN Currency API — full TZS/EUR/USD coverage)
-    try {
+    const trySecondary = async (): Promise<CachedRatesPayload> => {
       const data = (await fetchJsonWithTimeout(
         'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',
       )) as { usd?: Record<string, unknown> };
-      if (data?.usd) {
-        const { rates, matchedCount } = normalizeRateMap(data.usd, baseline);
-        if (matchedCount >= 6 && isValidRateNumber(rates.TZS) && isValidRateNumber(rates.EUR)) {
-          const now = Date.now();
-          return {
-            fetchedAt: now,
-            updatedAt: now,
-            source: 'live',
-            provider: 'currency-api (CDN)',
-            rates,
-          };
-        }
+      if (!data?.usd) throw new Error('Invalid secondary payload');
+      const { rates, matchedCount } = normalizeRateMap(data.usd, baseline);
+      if (matchedCount >= 6 && isValidRateNumber(rates.TZS) && isValidRateNumber(rates.EUR)) {
+        const now = Date.now();
+        return {
+          fetchedAt: now,
+          updatedAt: now,
+          source: 'live',
+          provider: 'currency-api (CDN)',
+          rates,
+        };
       }
+      throw new Error('Incomplete secondary FX map');
+    };
+
+    try {
+      return await Promise.any([tryPrimary(), trySecondary()]);
     } catch {
       // Automatically fall back to tertiary ECB endpoint
     }

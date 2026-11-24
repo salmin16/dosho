@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   Activity,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Check,
   Clock,
   Globe,
   Radio,
@@ -24,7 +25,6 @@ import {
 import { executeLiveMarketSync } from '../app/api/market-sync/route'
 import { useLocalization } from '../context/LocalizationContext'
 import PriceDisplay from './PriceDisplay'
-import { useCallback, useEffect } from 'react'
 import type {
   MarketSyncTelemetry,
   MineralCategory,
@@ -77,6 +77,18 @@ function matchesSpotFilterGroup(
   return category === group
 }
 
+function formatClockTime(isoOrDate: string | Date): string {
+  try {
+    return new Date(isoOrDate).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  } catch {
+    return new Date().toLocaleTimeString()
+  }
+}
+
 export default function LiveMarketTicker({
   unitBasis: externalUnitBasis,
   compact = false,
@@ -95,6 +107,7 @@ export default function LiveMarketTicker({
     ratesProvider,
     fetchedAt: fxFetchedAt,
     refreshRates,
+    formatPrice,
     formatStatutoryPrice,
     language,
     ui,
@@ -105,14 +118,18 @@ export default function LiveMarketTicker({
   >('metric_local')
   const activeUnitBasis = externalUnitBasis ?? internalUnitBasis
 
-  const [internalMinerals, setInternalMinerals] = useState<MineralPriceRecord[]>(() =>
-    getStoredMineralPrices(),
+  const [internalMinerals, setInternalMinerals] = useState<MineralPriceRecord[]>(
+    () => getStoredMineralPrices(),
   )
-  const [internalTelemetry, setInternalTelemetry] = useState<MarketSyncTelemetry>(() =>
-    getMarketSyncTelemetry(),
-  )
+  const [internalTelemetry, setInternalTelemetry] =
+    useState<MarketSyncTelemetry>(() => getMarketSyncTelemetry())
   const [syncing, setSyncing] = useState(false)
+  const [justUpdatedTime, setJustUpdatedTime] = useState<string | null>(null)
   const [secondsToNextSync, setSecondsToNextSync] = useState(45)
+
+  const isSyncingRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const confirmTimerRef = useRef<number | null>(null)
 
   // Live Spot Feed filter, search, and sort controls
   const [spotFilter, setSpotFilter] = useState<SpotFeedFilterGroup>('ALL')
@@ -122,23 +139,64 @@ export default function LiveMarketTicker({
   const minerals = mineralsOverride ?? internalMinerals
   const telemetry = telemetryOverride ?? internalTelemetry
 
+  const showUpdatedConfirmation = useCallback((isoTimestamp: string) => {
+    setJustUpdatedTime(formatClockTime(isoTimestamp))
+    if (confirmTimerRef.current !== null) {
+      window.clearTimeout(confirmTimerRef.current)
+    }
+    confirmTimerRef.current = window.setTimeout(() => {
+      setJustUpdatedTime(null)
+      confirmTimerRef.current = null
+    }, 3500)
+  }, [])
+
   const handleManualSync = useCallback(
     async (force = true) => {
+      if (isSyncingRef.current) return
+      isSyncingRef.current = true
       setSyncing(true)
+
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
       try {
+        const fxRefreshGuarded = force
+          ? Promise.race([
+              refreshRates().catch(() => undefined),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 2600)),
+            ])
+          : Promise.resolve()
+
         const [result] = await Promise.all([
-          executeLiveMarketSync({ force }),
-          force ? refreshRates() : Promise.resolve(),
+          executeLiveMarketSync({ force, signal: controller.signal }),
+          fxRefreshGuarded,
         ])
-        setInternalMinerals(result.records)
-        setInternalTelemetry(result.telemetry)
-        setSecondsToNextSync(45)
+
+        if (!controller.signal.aborted && result.records.length > 0) {
+          setInternalMinerals(result.records)
+          setInternalTelemetry(result.telemetry)
+          setSecondsToNextSync(45)
+          if (force) {
+            showUpdatedConfirmation(result.telemetry.lastSyncedAt)
+          }
+        }
       } finally {
+        isSyncingRef.current = false
         setSyncing(false)
       }
     },
-    [refreshRates],
+    [refreshRates, showUpdatedConfirmation],
   )
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      if (confirmTimerRef.current !== null) {
+        window.clearTimeout(confirmTimerRef.current)
+      }
+    }
+  }, [])
 
   // Subscribe to store updates only when managing own data (not controlled by parent)
   useEffect(() => {
@@ -158,7 +216,7 @@ export default function LiveMarketTicker({
 
   useEffect(() => {
     if (mineralsOverride) return
-    const interval = setInterval(() => {
+    const interval = window.setInterval(() => {
       setSecondsToNextSync((prev) => {
         if (prev <= 1) {
           void handleManualSync(true)
@@ -168,12 +226,13 @@ export default function LiveMarketTicker({
       })
     }, 1000)
 
-    return () => clearInterval(interval)
+    return () => window.clearInterval(interval)
   }, [handleManualSync, mineralsOverride])
 
   const deskSessions = useMemo(() => getTradingDeskSessions(), [])
 
-  const displayedMinerals = useMemo(() => {
+  // Zero-lag memoized selector tied directly to active currency, FX rate, unit mode, and filters
+  const computedCards = useMemo(() => {
     let list = compact ? minerals.slice(0, 5) : [...minerals]
 
     if (showSpotControls) {
@@ -190,23 +249,80 @@ export default function LiveMarketTicker({
             m.category.toLowerCase().includes(q),
         )
       }
+    }
 
+    const mapped = list.map((m) => {
+      const positive = m.trend_percentage >= 0
+      const world = formatStatutoryPrice(
+        m.world_market_price_usd,
+        m.unit,
+        activeUnitBasis,
+      )
+      const soko = formatStatutoryPrice(
+        m.local_market_price_usd,
+        m.unit,
+        activeUnitBasis,
+      )
+      const buying = formatStatutoryPrice(
+        m.buying_centre_price_usd,
+        m.unit,
+        activeUnitBasis,
+      )
+
+      // Compute exact signed 24h delta in the active currency & active unit basis
+      const openUnitUsd =
+        m.day_open_usd && m.day_open_usd > 0
+          ? formatStatutoryPrice(m.day_open_usd, m.unit, activeUnitBasis).unitUsd
+          : world.unitUsd / Math.max(0.2, 1 + m.trend_percentage / 100)
+      const deltaUnitUsd = world.unitUsd - openUnitUsd
+      const deltaSign = deltaUnitUsd >= 0 ? '+' : '-'
+      const delta24hFormatted = `${deltaSign}${formatPrice(Math.abs(deltaUnitUsd))}${world.unitSuffix}`
+
+      const intSpotUnit = m.unit.replace(/^USD\//i, '')
+      const dayLow = m.day_low_usd ?? m.world_market_price_usd * 0.992
+      const dayHigh = m.day_high_usd ?? m.world_market_price_usd * 1.008
+      const rangeSpan = Math.max(0.0001, dayHigh - dayLow)
+      const rangePct = Math.min(
+        100,
+        Math.max(
+          8,
+          Math.round(((m.world_market_price_usd - dayLow) / rangeSpan) * 100),
+        ),
+      )
+
+      return {
+        mineral: m,
+        positive,
+        world,
+        soko,
+        buying,
+        delta24hFormatted,
+        unitCurrencyBadge: `${currency}${world.unitSuffix}`,
+        intSpotUnit,
+        rangePct,
+        isDirectLive: m.feed_source === 'LIVE_API',
+      }
+    })
+
+    if (showSpotControls) {
       if (sortBy === 'gainers') {
-        list.sort((a, b) => b.trend_percentage - a.trend_percentage)
+        mapped.sort(
+          (a, b) => b.mineral.trend_percentage - a.mineral.trend_percentage,
+        )
       } else if (sortBy === 'losers') {
-        list.sort((a, b) => a.trend_percentage - b.trend_percentage)
+        mapped.sort(
+          (a, b) => a.mineral.trend_percentage - b.mineral.trend_percentage,
+        )
       } else if (sortBy === 'price_desc') {
-        list.sort((a, b) => {
-          const aVal = formatStatutoryPrice(a.world_market_price_usd, a.unit, activeUnitBasis).unitUsd
-          const bVal = formatStatutoryPrice(b.world_market_price_usd, b.unit, activeUnitBasis).unitUsd
-          return bVal - aVal
-        })
+        mapped.sort((a, b) => b.world.unitUsd - a.world.unitUsd)
       } else if (sortBy === 'name_asc') {
-        list.sort((a, b) => a.mineral_name.localeCompare(b.mineral_name))
+        mapped.sort((a, b) =>
+          a.mineral.mineral_name.localeCompare(b.mineral.mineral_name),
+        )
       }
     }
 
-    return list
+    return mapped
   }, [
     minerals,
     compact,
@@ -214,25 +330,29 @@ export default function LiveMarketTicker({
     spotFilter,
     searchQuery,
     sortBy,
-    formatStatutoryPrice,
+    currency,
+    rateForSelected,
     activeUnitBasis,
+    formatStatutoryPrice,
+    formatPrice,
   ])
 
-  const formattedSyncTime = useMemo(() => {
-    try {
-      return new Date(telemetry.lastSyncedAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    } catch {
-      return new Date().toLocaleTimeString()
-    }
-  }, [telemetry.lastSyncedAt])
+  const formattedSyncTime = useMemo(
+    () => formatClockTime(telemetry.lastSyncedAt),
+    [telemetry.lastSyncedAt],
+  )
 
   const filterLabels: Record<SpotFeedFilterGroup, string> = {
-    ALL: ui(`All (${minerals.length})`, `Zote (${minerals.length})`, `Todos (${minerals.length})`),
-    'Precious Metals': ui('Precious Metals', 'Madini ya Thamani', 'Metales Preciosos'),
+    ALL: ui(
+      `All (${minerals.length})`,
+      `Zote (${minerals.length})`,
+      `Todos (${minerals.length})`,
+    ),
+    'Precious Metals': ui(
+      'Precious Metals',
+      'Madini ya Thamani',
+      'Metales Preciosos',
+    ),
     Gemstones: ui('Gemstones', 'Vito vya Thamani', 'Piedras Preciosas'),
     'Battery & Industrial': ui(
       'Battery & Industrial',
@@ -244,6 +364,7 @@ export default function LiveMarketTicker({
   return (
     <div
       data-currency={currency}
+      data-unit-basis={activeUnitBasis}
       data-language={language}
       className="rounded-xl border border-paper/15 bg-ink-2 p-4 text-paper shadow-sm lg:p-5"
     >
@@ -302,13 +423,24 @@ export default function LiveMarketTicker({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px]">
-            <span className="inline-flex items-center gap-1.5 text-paper/65">
-              <Clock size={12} className="text-gold" />
-              {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
-              <strong className="text-paper/90">{formattedSyncTime}</strong>
-              <span className="text-paper/45">({secondsToNextSync}s)</span>
-            </span>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+            {justUpdatedTime ? (
+              <span
+                role="status"
+                aria-live="polite"
+                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2.5 py-0.5 text-[10.5px] font-semibold text-[#9de4b4] tabular-nums"
+              >
+                <Check size={11} />
+                {ui('Updated', 'Imesasishwa', 'Actualizado')} · {justUpdatedTime}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-paper/65 tabular-nums">
+                <Clock size={12} className="text-gold" />
+                {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
+                <strong className="text-paper/90">{formattedSyncTime}</strong>
+                <span className="text-paper/45">({secondsToNextSync}s)</span>
+              </span>
+            )}
 
             {externalUnitBasis === undefined && (
               <div className="inline-flex rounded-lg border border-paper/15 bg-ink p-0.5 text-[10px]">
@@ -332,7 +464,7 @@ export default function LiveMarketTicker({
                       : 'text-paper/65 hover:text-paper'
                   }`}
                 >
-                  {ui('Spot (/toz, /t)', 'Kimataifa (/toz, /t)', 'Spot (/toz, /t)')}
+                  {ui('Global (/toz, /t)', 'Dunia (/toz, /t)', 'Global (/toz, /t)')}
                 </button>
               </div>
             )}
@@ -341,12 +473,12 @@ export default function LiveMarketTicker({
               type="button"
               onClick={() => void handleManualSync(true)}
               disabled={syncing}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/15 px-2.5 py-1 font-mono text-[11px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/15 px-2.5 py-1 font-mono text-[11px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-60"
             >
               <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} />
               {syncing
-                ? ui('Syncing Desk...', 'Inasasisha...', 'Sincronizando...')
-                : ui('Sync Live', 'Sasisha Sasa', 'Sincronizar')}
+                ? ui('Refreshing...', 'Inasasisha...', 'Actualizando...')
+                : ui('Refresh', 'Sasisha', 'Actualizar')}
             </button>
 
             {showFullMarketsLink && (
@@ -367,7 +499,11 @@ export default function LiveMarketTicker({
         <div className="flex flex-col justify-between gap-3 border-b border-paper/10 pb-4 lg:flex-row lg:items-center">
           <div
             role="group"
-            aria-label={ui('Filter minerals by category', 'Chuja madini kwa kategoria', 'Filtrar minerales por categoría')}
+            aria-label={ui(
+              'Filter minerals by category',
+              'Chuja madini kwa kategoria',
+              'Filtrar minerales por categoría',
+            )}
             className="flex flex-wrap items-center gap-1.5"
           >
             {(
@@ -443,8 +579,8 @@ export default function LiveMarketTicker({
         </div>
       )}
 
-      {/* Live Pricing Matrix Grid */}
-      {displayedMinerals.length === 0 ? (
+      {/* Reactive Live Pricing Matrix Grid */}
+      {computedCards.length === 0 ? (
         <div className="my-8 rounded-xl border border-paper/10 bg-paper/[0.03] px-6 py-10 text-center">
           <p className="font-display text-lg text-paper">
             {ui(
@@ -463,46 +599,26 @@ export default function LiveMarketTicker({
         </div>
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          {displayedMinerals.map((m) => {
-            const positive = m.trend_percentage >= 0
-            const worldStatutory = formatStatutoryPrice(
-              m.world_market_price_usd,
-              m.unit,
-              activeUnitBasis,
-            )
-            const sokoStatutory = formatStatutoryPrice(
-              m.local_market_price_usd,
-              m.unit,
-              'metric_local',
-            )
-            const buyingStatutory = formatStatutoryPrice(
-              m.buying_centre_price_usd,
-              m.unit,
-              'metric_local',
-            )
-            const intSpotUnit = m.unit.replace(/^USD\//i, '')
-
-            const dayLow = m.day_low_usd ?? m.world_market_price_usd * 0.992
-            const dayHigh = m.day_high_usd ?? m.world_market_price_usd * 1.008
-            const rangeSpan = Math.max(0.0001, dayHigh - dayLow)
-            const rangePct = Math.min(
-              100,
-              Math.max(
-                8,
-                Math.round(((m.world_market_price_usd - dayLow) / rangeSpan) * 100),
-              ),
-            )
-
-            const isDirectLive = m.feed_source === 'LIVE_API'
-
-            return (
+          {computedCards.map(
+            ({
+              mineral: m,
+              positive,
+              world,
+              soko,
+              buying,
+              delta24hFormatted,
+              unitCurrencyBadge,
+              intSpotUnit,
+              rangePct,
+              isDirectLive,
+            }) => (
               <article
                 key={m.id}
-                className="group relative flex flex-col justify-between rounded-xl border border-paper/10 bg-paper/[0.04] p-4 transition hover:border-gold/45 hover:bg-paper/[0.07]"
+                className="group relative flex min-w-0 flex-col justify-between rounded-xl border border-paper/10 bg-paper/[0.04] p-4 transition hover:border-gold/45 hover:bg-paper/[0.07]"
               >
-                <div>
-                  {/* Row 1: Symbol, Feed Badge, & 24h Trend */}
-                  <div className="flex items-center justify-between gap-1.5">
+                <div className="min-w-0">
+                  {/* Row 1: Symbol, Feed Status, Active Currency/Unit Badge, & 24h Trend */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono text-xs font-bold tracking-wider text-gold">
                         {m.symbol}
@@ -518,6 +634,9 @@ export default function LiveMarketTicker({
                         {isDirectLive
                           ? ui('LIVE', 'HAI', 'VIVO')
                           : ui('DESK', 'DAWATI', 'MESA')}
+                      </span>
+                      <span className="rounded border border-gold/25 bg-ochre/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-gold tabular-nums">
+                        {unitCurrencyBadge}
                       </span>
                     </div>
 
@@ -539,7 +658,7 @@ export default function LiveMarketTicker({
                   </div>
 
                   {/* Row 2: Commodity Name & Exchange Desk */}
-                  <div className="mt-2">
+                  <div className="mt-2 min-w-0">
                     <p className="truncate text-sm font-semibold text-paper/95">
                       {m.mineral_name}
                     </p>
@@ -548,53 +667,70 @@ export default function LiveMarketTicker({
                     </p>
                   </div>
 
-                  {/* Row 3: Primary Active Price + Statutory Reference Tiers */}
+                  {/* Row 3: Reactive Active Price Tiers + 24h Unit Delta */}
                   <div className="mt-3 border-t border-paper/10 pt-2.5">
-                    <div className="flex items-baseline justify-between gap-1">
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
+                    <div className="flex items-baseline justify-between gap-1.5">
+                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-paper/55">
                         {ui('World Spot', 'Bei ya Dunia', 'Spot Mundial')}
                       </span>
-                      <div className="font-mono text-xs font-bold text-paper tabular-nums">
-                        {worldStatutory.formatted}
+                      <div className="truncate font-mono text-xs font-bold text-paper tabular-nums">
+                        {world.formatted}
                         <span className="text-[10px] font-normal text-paper/55">
-                          {worldStatutory.unitSuffix}
+                          {world.unitSuffix}
                         </span>
                       </div>
                     </div>
 
-                    <div className="mt-1 flex items-baseline justify-between gap-1">
-                      <span className="font-mono text-[10px] text-paper/60">
+                    <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                      <span className="shrink-0 font-mono text-[10px] text-paper/60">
                         {ui('Soko la Madini', 'Soko la Madini', 'Soko la Madini')}
                       </span>
-                      <div className="font-mono text-[11px] font-semibold text-[#9de4b4] tabular-nums">
-                        {sokoStatutory.formatted}
+                      <div className="truncate font-mono text-[11px] font-semibold text-[#9de4b4] tabular-nums">
+                        {soko.formatted}
                         <span className="text-[9px] font-normal text-paper/55">
-                          {sokoStatutory.unitSuffix}
+                          {soko.unitSuffix}
                         </span>
                       </div>
                     </div>
 
-                    <div className="mt-1 flex items-baseline justify-between gap-1">
-                      <span className="font-mono text-[10px] text-paper/55">
+                    <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                      <span className="shrink-0 font-mono text-[10px] text-paper/55">
                         {ui('Buying Centre', 'Kituo cha Ununuzi', 'Centro Compra')}
                       </span>
-                      <div className="font-mono text-[11px] font-semibold text-gold tabular-nums">
-                        {buyingStatutory.formatted}
+                      <div className="truncate font-mono text-[11px] font-semibold text-gold tabular-nums">
+                        {buying.formatted}
                         <span className="text-[9px] font-normal text-paper/55">
-                          {buyingStatutory.unitSuffix}
+                          {buying.unitSuffix}
                         </span>
                       </div>
                     </div>
 
-                    <div className="mt-1 flex items-baseline justify-between gap-1 font-mono text-[10px] text-paper/45 tabular-nums">
-                      <span>{ui('Intl Unit', 'Kimataifa', 'Unidad Intl')}</span>
-                      <span>
-                        <PriceDisplay
-                          amountInUSD={m.world_market_price_usd}
-                          suffix={`/${intSpotUnit}`}
-                        />
+                    <div className="mt-1 flex items-baseline justify-between gap-1.5 font-mono text-[10px] tabular-nums">
+                      <span className="shrink-0 text-paper/45">
+                        {ui('24h Move', 'Mabadiliko 24h', 'Var. 24h')}
+                      </span>
+                      <span
+                        className={`truncate font-medium ${
+                          positive ? 'text-[#9de4b4]/90' : 'text-[#f59c8a]/90'
+                        }`}
+                      >
+                        {delta24hFormatted}
                       </span>
                     </div>
+
+                    {activeUnitBasis === 'metric_local' && (
+                      <div className="mt-1 flex items-baseline justify-between gap-1.5 font-mono text-[10px] text-paper/45 tabular-nums">
+                        <span className="shrink-0">
+                          {ui('Intl Ref', 'Kimataifa', 'Ref Intl')}
+                        </span>
+                        <span className="truncate">
+                          <PriceDisplay
+                            amountInUSD={m.world_market_price_usd}
+                            suffix={`/${intSpotUnit}`}
+                          />
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -623,8 +759,8 @@ export default function LiveMarketTicker({
                   )}
                 </div>
               </article>
-            )
-          })}
+            ),
+          )}
         </div>
       )}
 

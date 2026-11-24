@@ -12,7 +12,7 @@ import type {
 } from '../../../types/database';
 
 const SYNC_CACHE_TTL_MS = 45_000; // 45 seconds cache window
-const EXTERNAL_FETCH_TIMEOUT_MS = 3_500;
+const EXTERNAL_FETCH_TIMEOUT_MS = 2_200; // Fast fail on slow mobile connections to retain last-known-good rates
 
 /**
  * Sanity corridors (min/max USD per standard unit) to guard against malformed external API payloads
@@ -47,15 +47,21 @@ let inFlightSyncPromise: Promise<{
  * Fetches live spot quote from Gold-API (public CORS-enabled commodity endpoint)
  * with strict timeout protection.
  */
-async function fetchGoldApiSymbol(symbol: 'XAU' | 'XAG' | 'HG'): Promise<ExternalSpotQuote | null> {
-  if (typeof fetch === 'undefined') return null;
+async function fetchGoldApiSymbol(
+  symbol: 'XAU' | 'XAG' | 'HG',
+  parentSignal?: AbortSignal,
+): Promise<ExternalSpotQuote | null> {
+  if (typeof fetch === 'undefined' || parentSignal?.aborted) return null;
 
   const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  parentSignal?.addEventListener('abort', onParentAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), EXTERNAL_FETCH_TIMEOUT_MS);
 
   try {
     const response = await fetch(`https://api.gold-api.com/price/${symbol}`, {
       method: 'GET',
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
@@ -94,6 +100,7 @@ async function fetchGoldApiSymbol(symbol: 'XAU' | 'XAG' | 'HG'): Promise<Externa
     return null;
   } finally {
     clearTimeout(timer);
+    parentSignal?.removeEventListener('abort', onParentAbort);
   }
 }
 
@@ -147,12 +154,14 @@ function computeAnchoredDeskTick(record: MineralPriceRecord): {
  */
 export async function executeLiveMarketSync(options?: {
   force?: boolean;
+  signal?: AbortSignal;
 }): Promise<{
   records: MineralPriceRecord[];
   telemetry: MarketSyncTelemetry;
 }> {
   const nowMs = Date.now();
   const force = options?.force ?? false;
+  const signal = options?.signal;
 
   if (!force && nowMs - lastSyncTimestampMs < SYNC_CACHE_TTL_MS) {
     return {
@@ -171,11 +180,11 @@ export async function executeLiveMarketSync(options?: {
     const baselineList =
       currentRecords.length > 0 ? currentRecords : INITIAL_MINERAL_PRICES;
 
-    // Fetch live spot quotes in parallel with automatic fallback on timeout
+    // Fetch live spot quotes in parallel with tight abort/timeout guard
     const [xauQuote, xagQuote, hgQuote] = await Promise.all([
-      fetchGoldApiSymbol('XAU'),
-      fetchGoldApiSymbol('XAG'),
-      fetchGoldApiSymbol('HG'),
+      fetchGoldApiSymbol('XAU', signal),
+      fetchGoldApiSymbol('XAG', signal),
+      fetchGoldApiSymbol('HG', signal),
     ]);
 
     const liveQuoteMap = new Map<string, ExternalSpotQuote>();

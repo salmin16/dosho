@@ -264,6 +264,61 @@ export const INITIAL_MINERAL_PRICES: MineralPriceRecord[] = [
 
 let inMemoryMineralCache: MineralPriceRecord[] | null = null;
 let inMemoryTelemetry: MarketSyncTelemetry | null = null;
+let localHydrated = false;
+
+function hydrateLocalMineralCache(): void {
+  if (localHydrated || typeof window === 'undefined') return;
+  localHydrated = true;
+  try {
+    const rawPrices = window.localStorage.getItem(MINERAL_PRICES_STORAGE_KEY);
+    if (rawPrices) {
+      const parsed = JSON.parse(rawPrices) as unknown;
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        parsed.every(
+          (item) =>
+            item &&
+            typeof item === 'object' &&
+            typeof (item as MineralPriceRecord).symbol === 'string' &&
+            Number.isFinite((item as MineralPriceRecord).world_market_price_usd) &&
+            (item as MineralPriceRecord).world_market_price_usd > 0
+        )
+      ) {
+        inMemoryMineralCache = parsed as MineralPriceRecord[];
+      }
+    }
+
+    const rawTelemetry = window.localStorage.getItem(MARKET_TELEMETRY_STORAGE_KEY);
+    if (rawTelemetry) {
+      const parsedTel = JSON.parse(rawTelemetry) as Partial<MarketSyncTelemetry>;
+      if (parsedTel && typeof parsedTel.lastSyncedAt === 'string') {
+        inMemoryTelemetry = {
+          syncId: parsedTel.syncId ?? 'sync-cached',
+          provider:
+            parsedTel.provider ??
+            'LBMA / LME / GoldAPI Spot Aggregator + Tume ya Madini',
+          syncMode: parsedTel.syncMode ?? 'HYBRID_LIVE',
+          status: parsedTel.status ?? 'CACHED',
+          latencyMs: typeof parsedTel.latencyMs === 'number' ? parsedTel.latencyMs : 95,
+          commoditiesSynced:
+            typeof parsedTel.commoditiesSynced === 'number'
+              ? parsedTel.commoditiesSynced
+              : (inMemoryMineralCache ?? INITIAL_MINERAL_PRICES).length,
+          liveSymbols: Array.isArray(parsedTel.liveSymbols)
+            ? parsedTel.liveSymbols
+            : ['XAU', 'XAG', 'HG'],
+          lastSyncedAt: parsedTel.lastSyncedAt,
+          nextSyncAt:
+            parsedTel.nextSyncAt ??
+            new Date(Date.now() + 45_000).toISOString(),
+        };
+      }
+    }
+  } catch {
+    // Ignore storage read/parse errors and fall back to verified initial benchmarks
+  }
+}
 
 /**
  * Computes Tanzania statutory Tier 2 (Soko la Madini) and Tier 3 (Kituo cha Ununuzi)
@@ -305,6 +360,7 @@ export async function fetchMineralPricesFromSupabase(): Promise<MineralPriceReco
 }
 
 export function getStoredMineralPrices(): MineralPriceRecord[] {
+  hydrateLocalMineralCache();
   if (typeof window !== 'undefined' && !supabaseMineralFetchStarted) {
     supabaseMineralFetchStarted = true;
     void fetchMineralPricesFromSupabase();
@@ -316,11 +372,27 @@ export function saveStoredMineralPrices(
   records: MineralPriceRecord[],
   telemetry?: MarketSyncTelemetry
 ): void {
+  if (!Array.isArray(records) || records.length === 0) return;
   inMemoryMineralCache = records;
   if (telemetry) {
     inMemoryTelemetry = telemetry;
   }
   if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        MINERAL_PRICES_STORAGE_KEY,
+        JSON.stringify(records)
+      );
+      if (telemetry) {
+        window.localStorage.setItem(
+          MARKET_TELEMETRY_STORAGE_KEY,
+          JSON.stringify(telemetry)
+        );
+      }
+    } catch {
+      // Ignore quota / private browsing storage exceptions
+    }
+
     window.dispatchEvent(
       new CustomEvent(MINERAL_PRICES_EVENT, {
         detail: { records, telemetry },
@@ -330,6 +402,7 @@ export function saveStoredMineralPrices(
 }
 
 export function getMarketSyncTelemetry(): MarketSyncTelemetry {
+  hydrateLocalMineralCache();
   if (inMemoryTelemetry) return inMemoryTelemetry;
 
   const now = new Date();
