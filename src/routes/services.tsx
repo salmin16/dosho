@@ -7,6 +7,8 @@ import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
+import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
+import { useSubscription } from '../lib/subscriptions'
 import {
   createGroundedQuoteRequest,
   fetchApprovedPublicServices,
@@ -33,8 +35,10 @@ function Services() {
   const { category } = Route.useSearch()
   const navigate = useNavigate()
   const session = useAuthSession()
+  const { plan, planId, entitlements, canSubmitRfq, refreshSubscription } = useSubscription()
   const [verifiedOnly, setVerifiedOnly] = useState(false)
   const [quoteFor, setQuoteFor] = useState<ServiceProvider | null>(null)
+  const [showRfqUpgrade, setShowRfqUpgrade] = useState(false)
   const [liveApprovedServices, setLiveApprovedServices] = useState<UserServiceRecord[]>([])
 
   useEffect(() => {
@@ -52,6 +56,10 @@ function Services() {
         to: '/signup',
         search: { next: '/services', reason: 'request_quote' } as unknown as undefined,
       })
+      return
+    }
+    if (!canSubmitRfq) {
+      setShowRfqUpgrade(true)
       return
     }
     setQuoteFor(provider)
@@ -229,7 +237,39 @@ function Services() {
         <p className="mt-10 text-xs text-stone">{t('services.footnote')}</p>
       </div>
 
-      {quoteFor && <QuoteModal provider={quoteFor} onClose={() => setQuoteFor(null)} />}
+      {quoteFor && (
+        <QuoteModal
+          provider={quoteFor}
+          onClose={() => setQuoteFor(null)}
+          onQuoteSubmitted={() => void refreshSubscription()}
+          onQuotaExceeded={() => {
+            setQuoteFor(null)
+            setShowRfqUpgrade(true)
+          }}
+        />
+      )}
+
+      {showRfqUpgrade && (
+        <UpgradeRequiredGate
+          variant="modal"
+          requiredPlan={planId === 'pro' ? 'enterprise' : 'pro'}
+          currentPlanLabel={plan.name}
+          quotaSummary={`${entitlements.monthly_rfqs_count} / ${
+            entitlements.max_monthly_rfqs < 0 ? '∞' : entitlements.max_monthly_rfqs
+          } Monthly RFQs`}
+          featureTitle={
+            planId === 'pro'
+              ? 'Monthly RFQ Limit Reached — Upgrade to Institutional / JV Desk'
+              : 'Monthly Free RFQ Limit Reached (2/2)'
+          }
+          reason={
+            planId === 'pro'
+              ? 'You have used all 25 monthly quote requests on Operator Pro. Upgrade to Institutional / JV Desk for unlimited monthly RFQs and NDA Data Room access.'
+              : 'Explorer (Free) accounts include up to 2 Quote Requests per month. Upgrade to Operator Pro for 25 monthly RFQs and up to 3 active project listings.'
+          }
+          onClose={() => setShowRfqUpgrade(false)}
+        />
+      )}
     </div>
   )
 }
@@ -259,9 +299,13 @@ function CatChip({
 function QuoteModal({
   provider,
   onClose,
+  onQuoteSubmitted,
+  onQuotaExceeded,
 }: {
   provider: ServiceProvider
   onClose: () => void
+  onQuoteSubmitted: () => void
+  onQuotaExceeded: () => void
 }) {
   const { t, tv } = useI18n()
   const navigate = useNavigate()
@@ -385,6 +429,10 @@ function QuoteModal({
                   scopeNotes: scopeVal,
                 })
                 if (res.error) {
+                  if (/row-level security|policy|42501|quota|rfq/i.test(res.error)) {
+                    onQuotaExceeded()
+                    return
+                  }
                   setErr(
                     formatSafeUserError(
                       res.error,
@@ -393,6 +441,7 @@ function QuoteModal({
                   )
                   return
                 }
+                onQuoteSubmitted()
                 setSent(true)
               } catch (submitErr) {
                 setErr(

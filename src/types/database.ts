@@ -326,17 +326,88 @@ export type UnifiedContentType =
   | 'OPPORTUNITY'
   | 'SERVICE';
 
+export type SubscriptionPlanId = 'free' | 'pro' | 'enterprise';
+
 export type SubscriptionTierName =
   | 'Explorer'
+  | 'Operator Pro'
+  | 'Institutional / JV Desk'
   | 'Miner'
   | 'Professional'
   | 'Investor'
   | 'Corporate';
 
-export type SubscriptionStatus = 'active' | 'expired' | 'canceled';
+export type SubscriptionStatus =
+  | 'active'
+  | 'pending_verification'
+  | 'past_due'
+  | 'expired'
+  | 'cancelled'
+  | 'canceled';
 export type BillingCycle = 'monthly' | 'yearly';
 
-export type PaymentGatewayId = 'FREE_TIER' | 'CLICKPESA';
+export type PaymentGatewayId =
+  | 'FREE_TIER'
+  | 'CLICKPESA'
+  | 'AZAMPAY'
+  | 'STRIPE'
+  | 'BANK_EFT'
+  | 'MOBILE_MONEY_MANUAL'
+  | 'ADMIN_GRANT';
+
+export interface SubscriptionPlanRecord {
+  id: SubscriptionPlanId;
+  name: string;
+  tagline: string;
+  price_tzs: number;
+  price_usd: number;
+  billing_cycle: BillingCycle;
+  max_active_listings: number; // -1 = unlimited
+  max_monthly_rfqs: number; // -1 = unlimited
+  can_access_data_room: boolean;
+  can_export_markets: boolean;
+  is_active: boolean;
+  sort_order: number;
+  updated_at?: string;
+}
+
+export type SubscriptionPaymentStatus =
+  | 'pending_verification'
+  | 'approved'
+  | 'rejected'
+  | 'settled'
+  | 'failed';
+
+export interface SubscriptionPaymentRecord {
+  id: string;
+  user_id: string;
+  plan_id: SubscriptionPlanId;
+  amount: number;
+  currency: SupportedCurrency;
+  payment_method: string;
+  reference_code: string;
+  receipt_url: string | null;
+  status: SubscriptionPaymentStatus;
+  notes?: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_at: string;
+}
+
+export interface UserEntitlements {
+  plan_id: SubscriptionPlanId;
+  plan_name: string;
+  status: SubscriptionStatus;
+  is_paid_active: boolean;
+  starts_at: string | null;
+  expires_at: string | null;
+  max_active_listings: number; // -1 = unlimited
+  max_monthly_rfqs: number; // -1 = unlimited
+  active_listings_count: number;
+  monthly_rfqs_count: number;
+  can_access_data_room: boolean;
+  can_export_markets: boolean;
+}
 
 export type ClickPesaRail =
   | 'FREE'
@@ -367,15 +438,18 @@ export type ClickPesaTransactionState =
 export interface UserSubscriptionRecord {
   id: string;
   user_id: string;
+  plan_id?: SubscriptionPlanId;
   tier_name: SubscriptionTierName;
   status: SubscriptionStatus;
   billing_cycle: BillingCycle;
   price_tzs: number;
   price_usd: number;
   payment_gateway: PaymentGatewayId;
+  payment_method?: string | null;
   payment_rail?: ClickPesaRail;
   payment_provider?: ClickPesaProviderCode | null;
   payment_reference: string | null;
+  starts_at?: string | null;
   expires_at: string;
   created_at: string;
   updated_at: string;
@@ -859,6 +933,37 @@ export type Database = {
         };
         Relationships: [];
       };
+      subscription_plans: {
+        Row: TableRow<SubscriptionPlanRecord>;
+        Insert: TableRow<SubscriptionPlanRecord>;
+        Update: TableRow<Partial<Omit<SubscriptionPlanRecord, 'id'>>>;
+        Relationships: [];
+      };
+      subscription_payments: {
+        Row: TableRow<SubscriptionPaymentRecord>;
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_id: SubscriptionPlanId;
+          amount: number;
+          currency?: SupportedCurrency;
+          payment_method: string;
+          reference_code: string;
+          receipt_url?: string | null;
+          status?: SubscriptionPaymentStatus;
+          notes?: string | null;
+          verified_by?: string | null;
+          verified_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          status?: SubscriptionPaymentStatus;
+          notes?: string | null;
+          verified_by?: string | null;
+          verified_at?: string | null;
+        };
+        Relationships: [];
+      };
       user_subscriptions: {
         Row: TableRow<UserSubscriptionRecord>;
         Insert: TableRow<
@@ -928,6 +1033,30 @@ export type Database = {
           p_clickpesa_order_id: string;
           p_signature_verified: boolean;
           p_new_state?: string;
+        };
+        Returns: Json;
+      };
+      is_billing_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      get_user_entitlements: {
+        Args: { uid: string };
+        Returns: Json;
+      };
+      can_create_listing: {
+        Args: { uid: string };
+        Returns: boolean;
+      };
+      can_submit_rfq: {
+        Args: { uid: string };
+        Returns: boolean;
+      };
+      admin_review_subscription_payment: {
+        Args: {
+          p_payment_id: string;
+          p_decision: string;
+          p_notes?: string | null;
         };
         Returns: Json;
       };

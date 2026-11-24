@@ -13,26 +13,131 @@ import {
   generateClickPesaIdempotencyKey,
   generateClickPesaOrderIdentifiers,
 } from './payments/clickpesa';
+import {
+  formatSafeUserError,
+  verifyTurnstileForForm,
+} from './verifyTurnstileClient';
 import type {
   BillingCycle,
   ClickPesaProviderCode,
   ClickPesaRail,
   PaymentTransactionRecord,
+  SubscriptionPaymentRecord,
+  SubscriptionPlanId,
+  SubscriptionPlanRecord,
   SubscriptionTierName,
   SupportedCurrency,
+  UserEntitlements,
   UserSubscriptionRecord,
 } from '../types/database';
 
 export const SUBSCRIPTION_UPDATED_EVENT = 'mineconnect:subscription-updated';
 
 /**
- * Statutory baseline TZS-to-USD parity used to convert TZS subscription tiers
- * into USD base equivalents for dynamic multi-currency formatting via `LocalizationContext`.
+ * Statutory baseline TZS-to-USD parity used for fallback conversions
  */
 export const STATUTORY_TZS_PER_USD = 2685;
 
+/**
+ * Canonical 3-Tier Institutional Subscription Plans (`public.subscription_plans`)
+ */
+export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
+  {
+    id: 'free',
+    name: 'Explorer',
+    tagline: 'Standard market benchmarks, 31-Mikoa GIS map & discovery access',
+    price_tzs: 0,
+    price_usd: 0,
+    billing_cycle: 'monthly',
+    max_active_listings: 0,
+    max_monthly_rfqs: 2,
+    can_access_data_room: false,
+    can_export_markets: false,
+    is_active: true,
+    sort_order: 1,
+  },
+  {
+    id: 'pro',
+    name: 'Operator Pro',
+    tagline: 'Active project listings, verified tenement eligibility & full market analytics',
+    price_tzs: 120_000,
+    price_usd: 45,
+    billing_cycle: 'monthly',
+    max_active_listings: 3,
+    max_monthly_rfqs: 25,
+    can_access_data_room: false,
+    can_export_markets: true,
+    is_active: true,
+    sort_order: 2,
+  },
+  {
+    id: 'enterprise',
+    name: 'Institutional / JV Desk',
+    tagline: 'Unlimited listings & RFQs, NDA Data Room access & statutory market exports',
+    price_tzs: 450_000,
+    price_usd: 170,
+    billing_cycle: 'monthly',
+    max_active_listings: -1,
+    max_monthly_rfqs: -1,
+    can_access_data_room: true,
+    can_export_markets: true,
+    is_active: true,
+    sort_order: 3,
+  },
+] as const;
+
+export const PLAN_FEATURE_BULLETS: Record<SubscriptionPlanId, string[]> = {
+  free: [
+    'Live Mineral Spot Feed & 31-Mikoa GIS Map',
+    'Browse public mining opportunities & service providers',
+    'Up to 2 Quote Requests (RFQs) per month',
+    '0 active project listings (upgrade to publish)',
+  ],
+  pro: [
+    'Publish up to 3 active mining project listings',
+    'Up to 25 Quote Requests (RFQs) per month',
+    'Verified Tenement eligibility & priority review',
+    'Full multi-decade market history & CSV exports',
+  ],
+  enterprise: [
+    'Unlimited active project listings & tenders',
+    'Unlimited monthly Quote Requests (RFQs)',
+    'NDA Data Room & restricted tenement document access',
+    'Full Markets CSV/data exports & JV Desk support',
+  ],
+};
+
+export function normalizePlanId(input?: string | null): SubscriptionPlanId {
+  const clean = String(input ?? '').trim().toLowerCase();
+  if (
+    clean === 'enterprise' ||
+    clean === 'institutional' ||
+    clean === 'institutional / jv desk' ||
+    clean === 'corporate' ||
+    clean === 'investor'
+  ) {
+    return 'enterprise';
+  }
+  if (
+    clean === 'pro' ||
+    clean === 'operator pro' ||
+    clean === 'professional' ||
+    clean === 'miner'
+  ) {
+    return 'pro';
+  }
+  return 'free';
+}
+
+export function getPlanHeaderLabel(planId: SubscriptionPlanId): string {
+  if (planId === 'enterprise') return 'Institutional';
+  if (planId === 'pro') return 'Operator Pro';
+  return 'Explorer';
+}
+
 export interface TierQuotas {
   maxProjectListings: number;
+  maxMonthlyRfqs: number;
   maxOpportunityListings: number;
   maxServiceListings: number;
   maxVaultDocuments: number;
@@ -43,6 +148,7 @@ export interface TierPermissions {
   canHostDocuments: boolean;
   canViewAnalytics: boolean;
   canAccessDealRoom: boolean;
+  canExportMarkets: boolean;
   canUseAdvancedMapFilters: boolean;
   canPriorityPlacement: boolean;
   teamSeats: number;
@@ -50,6 +156,7 @@ export interface TierPermissions {
 
 export interface SubscriptionTierConfig {
   id: string;
+  planId: SubscriptionPlanId;
   tierName: SubscriptionTierName;
   rank: number;
   monthlyTzs: number;
@@ -63,25 +170,23 @@ export interface SubscriptionTierConfig {
   features: string[];
 }
 
-/**
- * Canonical Server & Client Dictionary of Subscription Tiers & Feature Gating Rules
- * Never trust prices or limits sent from client browsers — always resolve from this dictionary.
- */
 export const SUBSCRIPTION_TIERS: Record<
   SubscriptionTierName,
   SubscriptionTierConfig
 > = {
   Explorer: {
-    id: 'explorer',
+    id: 'free',
+    planId: 'free',
     tierName: 'Explorer',
     rank: 0,
     monthlyTzs: 0,
     yearlyTzs: 0,
     monthlyUsd: 0,
     yearlyUsd: 0,
-    tagline: 'Anyone exploring the market',
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[0].tagline,
     quotas: {
       maxProjectListings: 0,
+      maxMonthlyRfqs: 2,
       maxOpportunityListings: 1,
       maxServiceListings: 0,
       maxVaultDocuments: 2,
@@ -91,123 +196,56 @@ export const SUBSCRIPTION_TIERS: Record<
       canHostDocuments: false,
       canViewAnalytics: false,
       canAccessDealRoom: false,
+      canExportMarkets: false,
       canUseAdvancedMapFilters: false,
       canPriorityPlacement: false,
       teamSeats: 1,
     },
-    features: [
-      'Basic search & filters',
-      'Selected public listings',
-      'Saved searches (up to 2 Vault notes)',
-      'Personal Explorer account',
-    ],
+    features: PLAN_FEATURE_BULLETS.free,
   },
-  Miner: {
-    id: 'miner',
-    tierName: 'Miner',
+  'Operator Pro': {
+    id: 'pro',
+    planId: 'pro',
+    tierName: 'Operator Pro',
     rank: 1,
-    monthlyTzs: 50_000,
-    yearlyTzs: 500_000,
-    monthlyUsd: Number((50_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    yearlyUsd: Number((500_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    tagline: 'Small-scale miners & PML holders',
+    monthlyTzs: 120_000,
+    yearlyTzs: 1_200_000,
+    monthlyUsd: 45,
+    yearlyUsd: 450,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[1].tagline,
+    highlighted: true,
     quotas: {
       maxProjectListings: 3,
-      maxOpportunityListings: 3,
-      maxServiceListings: 1,
-      maxVaultDocuments: 10,
-    },
-    permissions: {
-      canListProject: true,
-      canHostDocuments: false,
-      canViewAnalytics: false,
-      canAccessDealRoom: false,
-      canUseAdvancedMapFilters: true,
-      canPriorityPlacement: false,
-      teamSeats: 1,
-    },
-    features: [
-      'Up to 3 project listings',
-      'Basic owner profile',
-      'Investor enquiries',
-      'Email & SMS notifications',
-    ],
-  },
-  Professional: {
-    id: 'professional',
-    tierName: 'Professional',
-    rank: 2,
-    monthlyTzs: 150_000,
-    yearlyTzs: 1_500_000,
-    monthlyUsd: Number((150_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    yearlyUsd: Number((1_500_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    tagline: 'Project owners & professionals',
-    quotas: {
-      maxProjectListings: 10,
-      maxOpportunityListings: 15,
-      maxServiceListings: 10,
+      maxMonthlyRfqs: 25,
+      maxOpportunityListings: 10,
+      maxServiceListings: 5,
       maxVaultDocuments: 50,
     },
     permissions: {
       canListProject: true,
       canHostDocuments: true,
       canViewAnalytics: true,
-      canAccessDealRoom: true,
+      canAccessDealRoom: false,
+      canExportMarkets: true,
       canUseAdvancedMapFilters: true,
       canPriorityPlacement: true,
       teamSeats: 3,
     },
-    features: [
-      'Up to 10 project listings',
-      'Enhanced project pages',
-      'Document hosting (50 Vault files)',
-      'Listing analytics',
-      'Priority placement',
-    ],
+    features: PLAN_FEATURE_BULLETS.pro,
   },
-  Investor: {
-    id: 'investor',
-    tierName: 'Investor',
-    rank: 3,
-    monthlyTzs: 300_000,
-    yearlyTzs: 3_000_000,
-    monthlyUsd: Number((300_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    yearlyUsd: Number((3_000_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    tagline: 'Investors & investment companies',
-    highlighted: true,
-    quotas: {
-      maxProjectListings: 5,
-      maxOpportunityListings: 10,
-      maxServiceListings: 5,
-      maxVaultDocuments: 100,
-    },
-    permissions: {
-      canListProject: true,
-      canHostDocuments: true,
-      canViewAnalytics: true,
-      canAccessDealRoom: true,
-      canUseAdvancedMapFilters: true,
-      canPriorityPlacement: true,
-      teamSeats: 5,
-    },
-    features: [
-      'Advanced search & map filters',
-      'Selected mining intelligence',
-      'Deal-room access',
-      'Investor alerts & matching',
-    ],
-  },
-  Corporate: {
-    id: 'corporate',
-    tierName: 'Corporate',
-    rank: 4,
-    monthlyTzs: 1_000_000,
-    yearlyTzs: 10_000_000,
-    monthlyUsd: Number((1_000_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    yearlyUsd: Number((10_000_000 / STATUTORY_TZS_PER_USD).toFixed(2)),
-    tagline: 'Mining companies & institutions',
+  'Institutional / JV Desk': {
+    id: 'enterprise',
+    planId: 'enterprise',
+    tierName: 'Institutional / JV Desk',
+    rank: 2,
+    monthlyTzs: 450_000,
+    yearlyTzs: 4_500_000,
+    monthlyUsd: 170,
+    yearlyUsd: 1_700,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[2].tagline,
     quotas: {
       maxProjectListings: 999,
+      maxMonthlyRfqs: 999,
       maxOpportunityListings: 999,
       maxServiceListings: 999,
       maxVaultDocuments: 999,
@@ -217,38 +255,152 @@ export const SUBSCRIPTION_TIERS: Record<
       canHostDocuments: true,
       canViewAnalytics: true,
       canAccessDealRoom: true,
+      canExportMarkets: true,
       canUseAdvancedMapFilters: true,
       canPriorityPlacement: true,
       teamSeats: 25,
     },
-    features: [
-      'Multiple team seats (up to 25)',
-      'Corporate profile & unlimited listings',
-      'Premium visibility',
-      'Intelligence & Deal-Room access',
-      'Dedicated account support',
-    ],
+    features: PLAN_FEATURE_BULLETS.enterprise,
+  },
+  // Legacy tier aliases kept for ClickPesa/checkout route compatibility
+  Miner: {
+    id: 'pro',
+    planId: 'pro',
+    tierName: 'Miner',
+    rank: 1,
+    monthlyTzs: 120_000,
+    yearlyTzs: 1_200_000,
+    monthlyUsd: 45,
+    yearlyUsd: 450,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[1].tagline,
+    quotas: {
+      maxProjectListings: 3,
+      maxMonthlyRfqs: 25,
+      maxOpportunityListings: 5,
+      maxServiceListings: 2,
+      maxVaultDocuments: 25,
+    },
+    permissions: {
+      canListProject: true,
+      canHostDocuments: true,
+      canViewAnalytics: true,
+      canAccessDealRoom: false,
+      canExportMarkets: true,
+      canUseAdvancedMapFilters: true,
+      canPriorityPlacement: false,
+      teamSeats: 1,
+    },
+    features: PLAN_FEATURE_BULLETS.pro,
+  },
+  Professional: {
+    id: 'pro',
+    planId: 'pro',
+    tierName: 'Professional',
+    rank: 1,
+    monthlyTzs: 120_000,
+    yearlyTzs: 1_200_000,
+    monthlyUsd: 45,
+    yearlyUsd: 450,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[1].tagline,
+    quotas: {
+      maxProjectListings: 3,
+      maxMonthlyRfqs: 25,
+      maxOpportunityListings: 10,
+      maxServiceListings: 5,
+      maxVaultDocuments: 50,
+    },
+    permissions: {
+      canListProject: true,
+      canHostDocuments: true,
+      canViewAnalytics: true,
+      canAccessDealRoom: false,
+      canExportMarkets: true,
+      canUseAdvancedMapFilters: true,
+      canPriorityPlacement: true,
+      teamSeats: 3,
+    },
+    features: PLAN_FEATURE_BULLETS.pro,
+  },
+  Investor: {
+    id: 'enterprise',
+    planId: 'enterprise',
+    tierName: 'Investor',
+    rank: 2,
+    monthlyTzs: 450_000,
+    yearlyTzs: 4_500_000,
+    monthlyUsd: 170,
+    yearlyUsd: 1_700,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[2].tagline,
+    highlighted: true,
+    quotas: {
+      maxProjectListings: 999,
+      maxMonthlyRfqs: 999,
+      maxOpportunityListings: 999,
+      maxServiceListings: 999,
+      maxVaultDocuments: 999,
+    },
+    permissions: {
+      canListProject: true,
+      canHostDocuments: true,
+      canViewAnalytics: true,
+      canAccessDealRoom: true,
+      canExportMarkets: true,
+      canUseAdvancedMapFilters: true,
+      canPriorityPlacement: true,
+      teamSeats: 10,
+    },
+    features: PLAN_FEATURE_BULLETS.enterprise,
+  },
+  Corporate: {
+    id: 'enterprise',
+    planId: 'enterprise',
+    tierName: 'Corporate',
+    rank: 2,
+    monthlyTzs: 450_000,
+    yearlyTzs: 4_500_000,
+    monthlyUsd: 170,
+    yearlyUsd: 1_700,
+    tagline: CANONICAL_SUBSCRIPTION_PLANS[2].tagline,
+    quotas: {
+      maxProjectListings: 999,
+      maxMonthlyRfqs: 999,
+      maxOpportunityListings: 999,
+      maxServiceListings: 999,
+      maxVaultDocuments: 999,
+    },
+    permissions: {
+      canListProject: true,
+      canHostDocuments: true,
+      canViewAnalytics: true,
+      canAccessDealRoom: true,
+      canExportMarkets: true,
+      canUseAdvancedMapFilters: true,
+      canPriorityPlacement: true,
+      teamSeats: 25,
+    },
+    features: PLAN_FEATURE_BULLETS.enterprise,
   },
 };
 
 export const SUBSCRIPTION_TIER_LIST: SubscriptionTierConfig[] = [
   SUBSCRIPTION_TIERS.Explorer,
-  SUBSCRIPTION_TIERS.Miner,
-  SUBSCRIPTION_TIERS.Professional,
-  SUBSCRIPTION_TIERS.Investor,
-  SUBSCRIPTION_TIERS.Corporate,
+  SUBSCRIPTION_TIERS['Operator Pro'],
+  SUBSCRIPTION_TIERS['Institutional / JV Desk'],
 ];
 
-/**
- * Normalizes any tier slug or label (`'miner'`, `'Miner'`, `'PROFESSIONAL'`)
- * into a canonical `SubscriptionTierName`.
- */
 export function normalizeSubscriptionTier(
-  input?: string | null
+  input?: string | null,
 ): SubscriptionTierName {
   if (!input) return 'Explorer';
   const clean = input.trim().toLowerCase();
   switch (clean) {
+    case 'pro':
+    case 'operator pro':
+      return 'Operator Pro';
+    case 'enterprise':
+    case 'institutional':
+    case 'institutional / jv desk':
+      return 'Institutional / JV Desk';
     case 'miner':
       return 'Miner';
     case 'professional':
@@ -257,6 +409,7 @@ export function normalizeSubscriptionTier(
       return 'Investor';
     case 'corporate':
       return 'Corporate';
+    case 'free':
     case 'explorer':
     default:
       return 'Explorer';
@@ -268,13 +421,9 @@ export function normalizeBillingCycle(input?: string | null): BillingCycle {
   return input.trim().toLowerCase() === 'yearly' ? 'yearly' : 'monthly';
 }
 
-/**
- * Anti-Tampering Server/Controller Price Lookup
- * Computes the exact verified TZS and USD amount strictly from the server dictionary.
- */
 export function resolveVerifiedTierPricing(
   tierInput: string,
-  billingInput: string
+  billingInput: string,
 ): {
   tierConfig: SubscriptionTierConfig;
   tierName: SubscriptionTierName;
@@ -303,95 +452,653 @@ export function resolveVerifiedTierPricing(
   };
 }
 
+let cachedPlans: SubscriptionPlanRecord[] = [...CANONICAL_SUBSCRIPTION_PLANS];
 const subscriptionCache = new Map<string, UserSubscriptionRecord>();
+const entitlementsCache = new Map<string, UserEntitlements>();
 const transactionsCache = new Map<string, PaymentTransactionRecord[]>();
+const paymentsCache = new Map<string, SubscriptionPaymentRecord[]>();
 
 function createDefaultExplorerSubscription(
-  userId?: string | null
+  userId?: string | null,
 ): UserSubscriptionRecord {
   const now = new Date();
   const expiresDefault = new Date(
-    now.getTime() + 30 * 24 * 60 * 60 * 1000
+    now.getTime() + 30 * 24 * 60 * 60 * 1000,
   ).toISOString();
 
   return {
     id: userId ? `sub-${userId.slice(0, 8)}` : 'sub-guest-explorer',
     user_id: userId || 'guest',
+    plan_id: 'free',
     tier_name: 'Explorer',
     status: 'active',
     billing_cycle: 'monthly',
     price_tzs: 0,
     price_usd: 0,
     payment_gateway: 'FREE_TIER',
+    payment_method: 'FREE',
     payment_rail: 'FREE',
     payment_provider: 'FREE',
     payment_reference: null,
+    starts_at: now.toISOString(),
     expires_at: expiresDefault,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };
 }
 
-export function getUserSubscription(
-  userId?: string | null
-): UserSubscriptionRecord {
-  if (!userId) {
-    return createDefaultExplorerSubscription(null);
+function createDefaultEntitlements(isAdmin = false): UserEntitlements {
+  if (isAdmin) {
+    const now = new Date();
+    const expires = new Date(now.getTime() + 365 * 86_400_000).toISOString();
+    return {
+      plan_id: 'enterprise',
+      plan_name: 'Institutional / JV Desk',
+      status: 'active',
+      is_paid_active: true,
+      starts_at: now.toISOString(),
+      expires_at: expires,
+      max_active_listings: -1,
+      max_monthly_rfqs: -1,
+      active_listings_count: 0,
+      monthly_rfqs_count: 0,
+      can_access_data_room: true,
+      can_export_markets: true,
+    };
   }
+  return {
+    plan_id: 'free',
+    plan_name: 'Explorer',
+    status: 'active',
+    is_paid_active: false,
+    starts_at: null,
+    expires_at: null,
+    max_active_listings: 0,
+    max_monthly_rfqs: 2,
+    active_listings_count: 0,
+    monthly_rfqs_count: 0,
+    can_access_data_room: false,
+    can_export_markets: false,
+  };
+}
+
+export function getCachedSubscriptionPlans(): SubscriptionPlanRecord[] {
+  return cachedPlans;
+}
+
+export async function fetchSubscriptionPlans(): Promise<
+  SubscriptionPlanRecord[]
+> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return cachedPlans;
+
+  try {
+    const { data, error } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      cachedPlans = data.map((row) => ({
+        ...row,
+        id: normalizePlanId(row.id),
+        price_tzs: Number(row.price_tzs) || 0,
+        price_usd: Number(row.price_usd) || 0,
+        max_active_listings: Number(row.max_active_listings),
+        max_monthly_rfqs: Number(row.max_monthly_rfqs),
+        can_access_data_room: Boolean(row.can_access_data_room),
+        can_export_markets: Boolean(row.can_export_markets),
+      }));
+    }
+  } catch {
+    // Fallback smoothly to canonical plans if migration not yet executed
+  }
+
+  return cachedPlans;
+}
+
+export function getUserSubscription(
+  userId?: string | null,
+): UserSubscriptionRecord {
+  if (!userId) return createDefaultExplorerSubscription(null);
   return (
     subscriptionCache.get(userId) ?? createDefaultExplorerSubscription(userId)
   );
 }
 
 export function getUserPaymentTransactions(
-  userId?: string | null
+  userId?: string | null,
 ): PaymentTransactionRecord[] {
   if (!userId) return [];
   return transactionsCache.get(userId) ?? [];
 }
 
+export function getUserSubscriptionPayments(
+  userId?: string | null,
+): SubscriptionPaymentRecord[] {
+  if (!userId) return [];
+  return paymentsCache.get(userId) ?? [];
+}
+
+function broadcastSubscriptionUpdate(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SUBSCRIPTION_UPDATED_EVENT));
+  }
+}
+
 export async function fetchUserSubscriptionFromSupabase(
-  userId: string
+  userId: string,
+  userEmail?: string | null,
+  isAdmin = false,
 ): Promise<{
+  plans: SubscriptionPlanRecord[];
   subscription: UserSubscriptionRecord;
+  entitlements: UserEntitlements;
+  payments: SubscriptionPaymentRecord[];
   transactions: PaymentTransactionRecord[];
 }> {
+  const plans = await fetchSubscriptionPlans();
   const supabase = getSupabaseClient();
+  const adminAccount =
+    isAdmin || (userEmail ?? '').trim().toLowerCase() === 'salminmwenesi@gmail.com';
+
   if (!supabase) {
     return {
+      plans,
       subscription: createDefaultExplorerSubscription(userId),
+      entitlements: createDefaultEntitlements(adminAccount),
+      payments: [],
       transactions: [],
     };
   }
 
-  const [subRes, txRes] = await Promise.all([
+  const [subRes, payRes, txRes, rpcRes] = await Promise.all([
     supabase
       .from('user_subscriptions')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle(),
     supabase
+      .from('subscription_payments')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(25),
+    supabase
       .from('payment_transactions')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(50),
+      .limit(25),
+    supabase.rpc('get_user_entitlements', { uid: userId }),
   ]);
 
-  const subscription =
-    subRes.data ?? createDefaultExplorerSubscription(userId);
-  const transactions = txRes.data ?? [];
+  const rawSub = subRes.data ?? createDefaultExplorerSubscription(userId);
+  const resolvedPlanId = normalizePlanId(rawSub.plan_id ?? rawSub.tier_name);
+  const subscription: UserSubscriptionRecord = {
+    ...rawSub,
+    plan_id: resolvedPlanId,
+  };
+
+  const payments: SubscriptionPaymentRecord[] = Array.isArray(payRes.data)
+    ? (payRes.data as SubscriptionPaymentRecord[])
+    : [];
+  const transactions: PaymentTransactionRecord[] = Array.isArray(txRes.data)
+    ? (txRes.data as PaymentTransactionRecord[])
+    : [];
+
+  let entitlements: UserEntitlements;
+
+  if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object') {
+    const raw = rpcRes.data as Record<string, unknown>;
+    entitlements = {
+      plan_id: normalizePlanId(String(raw.plan_id ?? 'free')),
+      plan_name: String(raw.plan_name ?? 'Explorer'),
+      status: (raw.status as UserEntitlements['status']) ?? 'active',
+      is_paid_active: Boolean(raw.is_paid_active),
+      starts_at: typeof raw.starts_at === 'string' ? raw.starts_at : null,
+      expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : null,
+      max_active_listings: Number(raw.max_active_listings ?? 0),
+      max_monthly_rfqs: Number(raw.max_monthly_rfqs ?? 2),
+      active_listings_count: Number(raw.active_listings_count ?? 0),
+      monthly_rfqs_count: Number(raw.monthly_rfqs_count ?? 0),
+      can_access_data_room: Boolean(raw.can_access_data_room),
+      can_export_markets: Boolean(raw.can_export_markets),
+    };
+  } else {
+    // Fallback calculation if SQL RPC migration hasn't been executed yet
+    const startOfMonthIso = new Date(
+      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
+    ).toISOString();
+
+    const [projCountRes, quoteCountRes] = await Promise.all([
+      supabase
+        .from('projects')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .not('status', 'in', '("rejected","hidden","archived")'),
+      supabase
+        .from('quotes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonthIso),
+    ]);
+
+    const activeListingsCount = projCountRes.count ?? 0;
+    const monthlyRfqsCount = quoteCountRes.count ?? 0;
+
+    if (adminAccount) {
+      entitlements = {
+        ...createDefaultEntitlements(true),
+        active_listings_count: activeListingsCount,
+        monthly_rfqs_count: monthlyRfqsCount,
+      };
+    } else {
+      const expiresMs = Date.parse(subscription.expires_at);
+      const isUnexpired = Number.isFinite(expiresMs) && expiresMs > Date.now();
+      const isPaidActive =
+        subscription.status === 'active' &&
+        isUnexpired &&
+        resolvedPlanId !== 'free';
+      const effectivePlanId: SubscriptionPlanId = isPaidActive
+        ? resolvedPlanId
+        : 'free';
+      const matchedPlan =
+        plans.find((p) => p.id === effectivePlanId) ??
+        CANONICAL_SUBSCRIPTION_PLANS[0];
+
+      const effectiveStatus =
+        subscription.status === 'active' && !isUnexpired && resolvedPlanId !== 'free'
+          ? 'expired'
+          : subscription.status;
+
+      entitlements = {
+        plan_id: matchedPlan.id,
+        plan_name: matchedPlan.name,
+        status: effectiveStatus,
+        is_paid_active: isPaidActive,
+        starts_at: subscription.starts_at ?? subscription.created_at,
+        expires_at: subscription.expires_at,
+        max_active_listings: matchedPlan.max_active_listings,
+        max_monthly_rfqs: matchedPlan.max_monthly_rfqs,
+        active_listings_count: activeListingsCount,
+        monthly_rfqs_count: monthlyRfqsCount,
+        can_access_data_room: matchedPlan.can_access_data_room && isPaidActive,
+        can_export_markets: matchedPlan.can_export_markets && isPaidActive,
+      };
+    }
+  }
 
   subscriptionCache.set(userId, subscription);
+  entitlementsCache.set(userId, entitlements);
+  paymentsCache.set(userId, payments);
   transactionsCache.set(userId, transactions);
 
-  return { subscription, transactions };
+  return { plans, subscription, entitlements, payments, transactions };
 }
 
 /**
- * ClickPesa Checkout Execution (Server-Reconciled):
- * Requires a verified Supabase Auth session and sends checkout requests to
- * `/api/payments/create` (never writing fake subscriptions to `localStorage`).
+ * Corporate Mobile Money / NMB-CRDB Bank EFT Reference Submission (Turnstile Protected)
+ * Creates a `pending_verification` payment record in `public.subscription_payments` for admin approval.
+ */
+export async function submitManualSubscriptionPayment(params: {
+  planId: SubscriptionPlanId;
+  currency: SupportedCurrency;
+  amount: number;
+  paymentMethod: string;
+  referenceCode: string;
+  receiptUrl?: string;
+  notes?: string;
+  turnstileToken: string;
+}): Promise<{
+  ok: boolean;
+  payment?: SubscriptionPaymentRecord;
+  error?: string;
+}> {
+  const session = await waitForAuthReady();
+  if (!session) {
+    return { ok: false, error: 'Please sign in before submitting a subscription payment.' };
+  }
+
+  if (params.planId === 'free') {
+    return { ok: false, error: 'Explorer is already included free with your account.' };
+  }
+
+  const refClean = params.referenceCode.trim();
+  if (refClean.length < 4) {
+    return {
+      ok: false,
+      error: 'Please enter a valid transaction reference or bank slip number (at least 4 characters).',
+    };
+  }
+
+  // Server-side Cloudflare Turnstile check before creating a billing verification entry
+  const turnstileRes = await verifyTurnstileForForm(
+    params.turnstileToken,
+    'subscription-payment',
+  );
+  if (!turnstileRes.ok) {
+    return {
+      ok: false,
+      error:
+        turnstileRes.error ||
+        'Security verification failed or expired. Please complete the challenge again.',
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { ok: false, error: 'Billing service is temporarily unavailable.' };
+  }
+
+  const receiptClean = params.receiptUrl?.trim() || null;
+  if (receiptClean && !/^https?:\/\//i.test(receiptClean)) {
+    return {
+      ok: false,
+      error: 'Receipt link must start with https:// or http:// (or leave blank).',
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('subscription_payments')
+    .insert({
+      user_id: session.user.id,
+      plan_id: params.planId,
+      amount: Math.max(0, Number(params.amount) || 0),
+      currency: params.currency,
+      payment_method: params.paymentMethod.trim(),
+      reference_code: refClean,
+      receipt_url: receiptClean,
+      status: 'pending_verification',
+      notes: params.notes?.trim() || null,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    return {
+      ok: false,
+      error: formatSafeUserError(
+        error?.message,
+        'Unable to submit your payment verification reference right now. Please try again.',
+      ),
+    };
+  }
+
+  recordAuditActivity({
+    userId: session.user.id,
+    action: 'SUBSCRIPTION_PAYMENT_SUBMITTED',
+    metadata: {
+      planId: params.planId,
+      amount: params.amount,
+      currency: params.currency,
+      paymentMethod: params.paymentMethod,
+      referenceCode: refClean,
+    },
+  });
+
+  await fetchUserSubscriptionFromSupabase(
+    session.user.id,
+    session.user.email,
+    session.user.role === 'admin',
+  );
+  broadcastSubscriptionUpdate();
+
+  return { ok: true, payment: data as SubscriptionPaymentRecord };
+}
+
+/**
+ * Instant Payment Hook (AzamPay / Stripe / ClickPesa via `verify-subscription` Edge Function)
+ */
+export async function initiateInstantSubscriptionCheckout(params: {
+  planId: SubscriptionPlanId;
+  provider: 'azampay' | 'stripe';
+  phoneOrEmail?: string;
+}): Promise<{
+  ok: boolean;
+  gatewayReady?: boolean;
+  referenceCode?: string;
+  message?: string;
+  error?: string;
+}> {
+  const session = await waitForAuthReady();
+  if (!session) {
+    return { ok: false, error: 'Please sign in to initiate instant checkout.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      error: 'Instant payment gateway is not configured in this environment.',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      ok?: boolean;
+      gatewayReady?: boolean;
+      referenceCode?: string;
+      message?: string;
+      error?: string;
+    }>('verify-subscription', {
+      body: {
+        mode: 'initiate',
+        provider: params.provider,
+        planId: params.planId,
+        phoneOrEmail: params.phoneOrEmail?.trim() || undefined,
+      },
+    });
+
+    if (error || !data?.ok) {
+      const fallbackRef = `MC-${params.planId.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+      return {
+        ok: true,
+        gatewayReady: false,
+        referenceCode: fallbackRef,
+        message:
+          data?.error ||
+          `Instant ${params.provider.toUpperCase()} webhook is in standby. Use reference ${fallbackRef} via Mobile Money or NMB/CRDB EFT below for immediate admin activation.`,
+      };
+    }
+
+    return {
+      ok: true,
+      gatewayReady: Boolean(data.gatewayReady),
+      referenceCode: data.referenceCode,
+      message: data.message,
+    };
+  } catch {
+    const fallbackRef = `MC-${params.planId.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+    return {
+      ok: true,
+      gatewayReady: false,
+      referenceCode: fallbackRef,
+      message: `Use reference ${fallbackRef} via Mobile Money or NMB/CRDB Bank EFT below — our billing desk activates verified transfers promptly.`,
+    };
+  }
+}
+
+/**
+ * Admin Governance: Fetch All Plans, Pending/Historical Payments, & Active Subscriptions
+ */
+export async function fetchAdminBillingData(): Promise<{
+  plans: SubscriptionPlanRecord[];
+  payments: Array<SubscriptionPaymentRecord & { user_email?: string; user_name?: string }>;
+  subscriptions: Array<UserSubscriptionRecord & { user_email?: string; user_name?: string }>;
+  error?: string;
+}> {
+  const session = await waitForAuthReady();
+  if (!session || session.user.role !== 'admin') {
+    return {
+      plans: cachedPlans,
+      payments: [],
+      subscriptions: [],
+      error: '403 Forbidden: Administrative clearance required.',
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      plans: cachedPlans,
+      payments: [],
+      subscriptions: [],
+      error: 'Supabase client unavailable.',
+    };
+  }
+
+  const [plansRes, paymentsRes, subsRes, profilesRes] = await Promise.all([
+    supabase
+      .from('subscription_plans')
+      .select('*')
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('subscription_payments')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('user_subscriptions')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(100),
+    supabase.from('profiles').select('id, email, full_name').limit(500),
+  ]);
+
+  const profileMap = new Map<string, { email: string; full_name: string | null }>();
+  if (Array.isArray(profilesRes.data)) {
+    for (const p of profilesRes.data) {
+      profileMap.set(p.id, { email: p.email, full_name: p.full_name });
+    }
+  }
+
+  const plans: SubscriptionPlanRecord[] =
+    !plansRes.error && Array.isArray(plansRes.data) && plansRes.data.length > 0
+      ? (plansRes.data as SubscriptionPlanRecord[])
+      : [...CANONICAL_SUBSCRIPTION_PLANS];
+
+  const payments = (
+    Array.isArray(paymentsRes.data)
+      ? (paymentsRes.data as SubscriptionPaymentRecord[])
+      : []
+  ).map((pay) => {
+    const prof = profileMap.get(pay.user_id);
+    return {
+      ...pay,
+      user_email: prof?.email,
+      user_name: prof?.full_name ?? undefined,
+    };
+  });
+
+  const subscriptions = (
+    Array.isArray(subsRes.data)
+      ? (subsRes.data as UserSubscriptionRecord[])
+      : []
+  ).map((sub) => {
+    const prof = profileMap.get(sub.user_id);
+    return {
+      ...sub,
+      user_email: prof?.email,
+      user_name: prof?.full_name ?? undefined,
+    };
+  });
+
+  const warningError =
+    plansRes.error?.message ||
+    paymentsRes.error?.message ||
+    subsRes.error?.message;
+
+  return {
+    plans,
+    payments,
+    subscriptions,
+    error: warningError,
+  };
+}
+
+/**
+ * Admin Action: Approve & Activate (30 days) or Reject a Subscription Payment
+ */
+export async function adminReviewSubscriptionPayment(params: {
+  paymentId: string;
+  decision: 'approved' | 'rejected';
+  notes?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await waitForAuthReady();
+  if (!session || session.user.role !== 'admin') {
+    return { ok: false, error: '403 Forbidden: Administrative clearance required.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase client unavailable.' };
+  }
+
+  const { error } = await supabase.rpc('admin_review_subscription_payment', {
+    p_payment_id: params.paymentId,
+    p_decision: params.decision,
+    p_notes: params.notes?.trim() || null,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  broadcastSubscriptionUpdate();
+  return { ok: true };
+}
+
+/**
+ * Admin Action: Edit Subscription Plan Pricing & Entitlement Limits
+ */
+export async function adminUpdateSubscriptionPlan(
+  planId: SubscriptionPlanId,
+  updates: Partial<
+    Pick<
+      SubscriptionPlanRecord,
+      | 'name'
+      | 'tagline'
+      | 'price_tzs'
+      | 'price_usd'
+      | 'max_active_listings'
+      | 'max_monthly_rfqs'
+      | 'can_access_data_room'
+      | 'can_export_markets'
+      | 'is_active'
+    >
+  >,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await waitForAuthReady();
+  if (!session || session.user.role !== 'admin') {
+    return { ok: false, error: '403 Forbidden: Administrative clearance required.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase client unavailable.' };
+  }
+
+  const { error } = await supabase
+    .from('subscription_plans')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  await fetchSubscriptionPlans();
+  broadcastSubscriptionUpdate();
+  return { ok: true };
+}
+
+/**
+ * Legacy ClickPesa Checkout Execution preserved for `/checkout` compatibility
  */
 export async function executeClickPesaSubscriptionPayment(params: {
   userId?: string;
@@ -416,14 +1123,14 @@ export async function executeClickPesaSubscriptionPayment(params: {
   if (!session) {
     return {
       success: false,
-      error: 'Authentication required: Please sign in with your Supabase account before subscribing.',
+      error: 'Authentication required: Please sign in before subscribing.',
     };
   }
 
   const targetUserId = session.user.id;
   const verified = resolveVerifiedTierPricing(
     params.tierName,
-    params.billingCycle
+    params.billingCycle,
   );
 
   const idempotencyKey =
@@ -438,7 +1145,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
 
   const existingTxList = getUserPaymentTransactions(targetUserId);
   const duplicateTx = existingTxList.find(
-    (t) => t.idempotency_key === idempotencyKey
+    (t) => t.idempotency_key === idempotencyKey,
   );
   if (duplicateTx && duplicateTx.state === 'SETTLED') {
     const existingSub = getUserSubscription(targetUserId);
@@ -460,7 +1167,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
 
   const { orderId, controlNumber } = generateClickPesaOrderIdentifiers(
     params.providerCode,
-    verified.tierName
+    verified.tierName,
   );
 
   const nowIso = new Date().toISOString();
@@ -520,7 +1227,7 @@ export async function executeClickPesaSubscriptionPayment(params: {
     return {
       success: false,
       error:
-        'Unable to reach server payment gateway (/api/payments/create). Subscriptions can only be reconciled server-side.',
+        'Direct gateway offline. Please submit your Mobile Money or NMB/CRDB EFT reference on /pricing for immediate verification.',
     };
   }
 
@@ -543,32 +1250,12 @@ export async function executeClickPesaSubscriptionPayment(params: {
     params.onStateChange?.({ ...txRecord });
   }
 
-  // Refresh authoritative subscription & transactions from Supabase after server response
-  const refreshed = await fetchUserSubscriptionFromSupabase(targetUserId);
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent(SUBSCRIPTION_UPDATED_EVENT, {
-        detail: {
-          subscription: refreshed.subscription,
-          transaction: txRecord,
-        },
-      })
-    );
-  }
-
-  recordAuditActivity({
-    userId: targetUserId,
-    action: 'CLICKPESA_CHECKOUT_INITIATED',
-    metadata: {
-      orderId: txRecord.clickpesa_order_id,
-      idempotencyKey: txRecord.idempotency_key,
-      tierName: verified.tierName,
-      billingCycle: verified.billingCycle,
-      rail: channelMeta.rail,
-      providerCode: params.providerCode,
-    },
-  });
+  const refreshed = await fetchUserSubscriptionFromSupabase(
+    targetUserId,
+    session.user.email,
+    session.user.role === 'admin',
+  );
+  broadcastSubscriptionUpdate();
 
   return {
     success: true,
@@ -578,71 +1265,149 @@ export async function executeClickPesaSubscriptionPayment(params: {
 }
 
 /**
- * Custom React Hook (`useSubscription()`)
- * Synchronizes active user subscription & transactions directly from Supabase (`public.user_subscriptions`).
+ * Authoritative React Hook (`useSubscription()`)
+ * Synchronizes active subscription plans, database-verified entitlements,
+ * remaining quotas, and header tier badge across the application.
  */
 export function useSubscription() {
   const session = useAuthSession();
   const userId = session?.user.id ?? null;
+  const userEmail = session?.user.email ?? null;
+  const isAdmin =
+    session?.user.role === 'admin' ||
+    (userEmail ?? '').trim().toLowerCase() === 'salminmwenesi@gmail.com';
 
+  const [plans, setPlans] = useState<SubscriptionPlanRecord[]>(() =>
+    getCachedSubscriptionPlans(),
+  );
   const [subscription, setSubscription] = useState<UserSubscriptionRecord>(() =>
-    getUserSubscription(userId)
+    getUserSubscription(userId),
+  );
+  const [entitlements, setEntitlements] = useState<UserEntitlements>(() =>
+    userId
+      ? (entitlementsCache.get(userId) ?? createDefaultEntitlements(isAdmin))
+      : createDefaultEntitlements(false),
+  );
+  const [payments, setPayments] = useState<SubscriptionPaymentRecord[]>(() =>
+    getUserSubscriptionPayments(userId),
   );
   const [transactions, setTransactions] = useState<PaymentTransactionRecord[]>(
-    () => getUserPaymentTransactions(userId)
+    () => getUserPaymentTransactions(userId),
   );
+  const [loading, setLoading] = useState<boolean>(Boolean(userId));
+
+  const refreshSubscription = useCallback(async () => {
+    if (!userId) {
+      const loadedPlans = await fetchSubscriptionPlans();
+      setPlans(loadedPlans);
+      setSubscription(createDefaultExplorerSubscription(null));
+      setEntitlements(createDefaultEntitlements(false));
+      setPayments([]);
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetchUserSubscriptionFromSupabase(
+        userId,
+        userEmail,
+        isAdmin,
+      );
+      setPlans(res.plans);
+      setSubscription(res.subscription);
+      setEntitlements(res.entitlements);
+      setPayments(res.payments);
+      setTransactions(res.transactions);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, userEmail, isAdmin]);
 
   useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      if (!userId) {
-        if (active) {
-          setSubscription(createDefaultExplorerSubscription(null));
-          setTransactions([]);
-        }
-        return;
-      }
-      const res = await fetchUserSubscriptionFromSupabase(userId);
-      if (active) {
-        setSubscription(res.subscription);
-        setTransactions(res.transactions);
-      }
-    };
-
-    void load();
+    void refreshSubscription();
 
     const handleSync = () => {
-      void load();
+      void refreshSubscription();
     };
 
     window.addEventListener(SUBSCRIPTION_UPDATED_EVENT, handleSync);
     return () => {
-      active = false;
       window.removeEventListener(SUBSCRIPTION_UPDATED_EVENT, handleSync);
     };
-  }, [userId]);
+  }, [refreshSubscription]);
 
-  const tierConfig = useMemo(
+  const activePlan = useMemo(
     () =>
-      SUBSCRIPTION_TIERS[subscription.tier_name] ?? SUBSCRIPTION_TIERS.Explorer,
-    [subscription.tier_name]
+      plans.find((p) => p.id === entitlements.plan_id) ??
+      CANONICAL_SUBSCRIPTION_PLANS[0],
+    [plans, entitlements.plan_id],
   );
+
+  const pendingPayment = useMemo(
+    () => payments.find((p) => p.status === 'pending_verification') ?? null,
+    [payments],
+  );
+
+  const tierConfig = useMemo(() => {
+    const mappedName: SubscriptionTierName =
+      entitlements.plan_id === 'enterprise'
+        ? 'Institutional / JV Desk'
+        : entitlements.plan_id === 'pro'
+          ? 'Operator Pro'
+          : 'Explorer';
+    const base = SUBSCRIPTION_TIERS[mappedName];
+    return {
+      ...base,
+      monthlyTzs: activePlan.price_tzs,
+      monthlyUsd: activePlan.price_usd,
+      tagline: activePlan.tagline,
+      quotas: {
+        ...base.quotas,
+        maxProjectListings:
+          activePlan.max_active_listings < 0
+            ? 999
+            : activePlan.max_active_listings,
+        maxMonthlyRfqs:
+          activePlan.max_monthly_rfqs < 0 ? 999 : activePlan.max_monthly_rfqs,
+      },
+      permissions: {
+        ...base.permissions,
+        canListProject:
+          entitlements.is_paid_active &&
+          (activePlan.max_active_listings < 0 ||
+            activePlan.max_active_listings > 0),
+        canAccessDealRoom: entitlements.can_access_data_room,
+        canExportMarkets: entitlements.can_export_markets,
+      },
+    };
+  }, [entitlements, activePlan]);
+
+  const canCreateListing = useMemo(() => {
+    if (!entitlements.is_paid_active) return false;
+    if (entitlements.max_active_listings < 0) return true;
+    return entitlements.active_listings_count < entitlements.max_active_listings;
+  }, [entitlements]);
+
+  const canSubmitRfq = useMemo(() => {
+    if (entitlements.max_monthly_rfqs < 0) return true;
+    return entitlements.monthly_rfqs_count < entitlements.max_monthly_rfqs;
+  }, [entitlements]);
 
   const hasMinimumTier = useCallback(
     (requiredTier: SubscriptionTierName): boolean => {
       const requiredRank = SUBSCRIPTION_TIERS[requiredTier]?.rank ?? 0;
-      return (
-        subscription.status === 'active' && tierConfig.rank >= requiredRank
-      );
+      if (requiredRank === 0) return true;
+      return entitlements.is_paid_active && tierConfig.rank >= requiredRank;
     },
-    [subscription.status, tierConfig.rank]
+    [entitlements.is_paid_active, tierConfig.rank],
   );
 
   const checkQuota = useCallback(
     (
       quotaKey: keyof TierQuotas,
-      currentUsed: number
+      currentUsed: number,
     ): {
       allowed: boolean;
       limit: number;
@@ -651,8 +1416,11 @@ export function useSubscription() {
       usagePercent: number;
     } => {
       const limit = tierConfig.quotas[quotaKey];
-      const remaining = Math.max(0, limit - currentUsed);
-      const allowed = subscription.status === 'active' && currentUsed < limit;
+      const remaining = limit >= 999 ? 999 : Math.max(0, limit - currentUsed);
+      const needsPaid = quotaKey === 'maxProjectListings';
+      const allowed =
+        (!needsPaid || entitlements.is_paid_active) &&
+        (limit >= 999 || currentUsed < limit);
       const usagePercent =
         limit === 0
           ? 100
@@ -668,17 +1436,33 @@ export function useSubscription() {
         usagePercent,
       };
     },
-    [subscription.status, tierConfig.quotas]
+    [entitlements.is_paid_active, tierConfig.quotas],
   );
 
+  const headerTierLabel = getPlanHeaderLabel(entitlements.plan_id);
+
   return {
+    loading,
+    plans,
+    plan: activePlan,
+    planId: entitlements.plan_id,
+    entitlements,
     subscription,
+    pendingPayment,
+    payments,
     tierConfig,
-    tierName: subscription.tier_name,
+    tierName: headerTierLabel,
+    isPaidActive: entitlements.is_paid_active,
+    isExpired: entitlements.status === 'expired',
+    canCreateListing,
+    canSubmitRfq,
+    canAccessDataRoom: entitlements.can_access_data_room,
+    canExportMarkets: entitlements.can_export_markets,
     quotas: tierConfig.quotas,
     permissions: tierConfig.permissions,
     transactions,
     hasMinimumTier,
     checkQuota,
+    refreshSubscription,
   };
 }

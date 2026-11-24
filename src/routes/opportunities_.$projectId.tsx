@@ -27,6 +27,8 @@ import { useI18n } from '../i18n'
 import VerificationBadge, { levelTone } from '../components/VerificationBadge'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap from '../components/TanzaniaMap'
+import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
+import { useSubscription } from '../lib/subscriptions'
 
 export const Route = createFileRoute('/opportunities_/$projectId')({
   loader: ({ params }) => {
@@ -64,7 +66,9 @@ function ProjectDetail() {
   const { t, tv, localizeProject, formatDate, fixtures } = useI18n()
   const p = localizeProject(rawProject)
   const { isSaved, toggle } = useSavedProjects()
+  const { plan, canAccessDataRoom } = useSubscription()
   const [modal, setModal] = useState<Modal>(null)
+  const [dataRoomUpgradeDoc, setDataRoomUpgradeDoc] = useState<string | null>(null)
   const saved = isSaved(p.id)
   const levelMeta = fixtures.verificationLevels[p.verification.level]
   const related = PROJECTS.filter(
@@ -198,24 +202,42 @@ function ProjectDetail() {
 
           <Section title={t('detail.documents')}>
             <ul className="divide-y divide-ink/10 overflow-hidden rounded-xl border border-ink/10 bg-white/50">
-              {p.documents.map((d) => (
-                <li key={d.name} className="flex items-center justify-between gap-4 p-4">
-                  <span className="flex items-center gap-3">
-                    <FileText size={18} className="shrink-0 text-stone" />
-                    <span>
-                      <span className="block text-sm font-medium">{d.name}</span>
-                      <span className="font-mono text-[11px] text-stone">{d.kind}</span>
+              {p.documents.map((d) => {
+                const isRestrictedDoc = d.access !== 'Public'
+                const unlocked = !isRestrictedDoc || canAccessDataRoom
+                return (
+                  <li key={d.name} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <span className="flex min-w-0 items-center gap-3">
+                      <FileText size={18} className="shrink-0 text-stone" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{d.name}</span>
+                        <span className="font-mono text-[11px] text-stone">{d.kind}</span>
+                      </span>
                     </span>
-                  </span>
-                  <span
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider ${
-                      d.access === 'Public' ? 'bg-moss-light text-moss' : d.access === 'On request' ? 'bg-paper-2 text-stone' : 'bg-ink text-paper'
-                    }`}
-                  >
-                    {d.access === 'Public' ? <Unlock size={11} /> : <Lock size={11} />} {tv(d.access)}
-                  </span>
-                </li>
-              ))}
+                    {unlocked ? (
+                      <button
+                        type="button"
+                        onClick={() => setModal('diligence')}
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
+                          d.access === 'Public'
+                            ? 'bg-moss-light text-moss hover:bg-moss hover:text-paper'
+                            : 'border border-moss/35 bg-moss-light text-moss hover:bg-moss hover:text-paper'
+                        }`}
+                      >
+                        <Unlock size={11} /> {d.access === 'Public' ? tv(d.access) : 'Data Room Unlocked'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setDataRoomUpgradeDoc(d.name)}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold transition hover:bg-ochre hover:text-paper"
+                      >
+                        <Lock size={11} /> {tv(d.access)} · Unlock
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </Section>
 
@@ -291,8 +313,18 @@ function ProjectDetail() {
               <button onClick={() => setModal('enquiry')} className="btn-primary w-full">
                 <MessageSquareText size={16} /> {t('detail.requestInfo')}
               </button>
-              <button onClick={() => setModal('diligence')} className="btn-ghost w-full">
-                <Microscope size={16} /> {t('detail.requestDiligence')}
+              <button
+                onClick={() => {
+                  if (!canAccessDataRoom) {
+                    setDataRoomUpgradeDoc('Verified Tenement & NDA Data Room Dossier')
+                  } else {
+                    setModal('diligence')
+                  }
+                }}
+                className="btn-ghost w-full"
+              >
+                {canAccessDataRoom ? <Microscope size={16} /> : <Lock size={15} className="text-ochre" />}
+                {t('detail.requestDiligence')}
               </button>
               <button onClick={() => toggle(p.id)} className="btn-ghost w-full" aria-pressed={saved}>
                 {saved ? <BookmarkCheck size={16} className="text-ochre" /> : <Bookmark size={16} />}
@@ -354,6 +386,16 @@ function ProjectDetail() {
       )}
 
       {modal && <ActionModal kind={modal} project={p} onClose={() => setModal(null)} />}
+      {dataRoomUpgradeDoc && (
+        <UpgradeRequiredGate
+          variant="modal"
+          requiredPlan="enterprise"
+          currentPlanLabel={plan.name}
+          featureTitle="Institutional / JV Desk Required for NDA Data Room"
+          reason={`Accessing "${dataRoomUpgradeDoc}" and verified tenement diligence packs requires an active Institutional / JV Desk subscription.`}
+          onClose={() => setDataRoomUpgradeDoc(null)}
+        />
+      )}
     </div>
   )
 }

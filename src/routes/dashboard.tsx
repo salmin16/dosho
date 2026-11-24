@@ -285,6 +285,16 @@ export function DashboardRouteComponent() {
         <div className="mt-6">
           <SubscriptionStatusWidget
             projectsUsed={listedProjects.length}
+            quotesUsedThisMonth={
+              quoteRequests.filter((q) => {
+                const d = new Date(q.created_at)
+                const now = new Date()
+                return (
+                  d.getUTCFullYear() === now.getUTCFullYear() &&
+                  d.getUTCMonth() === now.getUTCMonth()
+                )
+              }).length
+            }
             documentsUsed={documents.length}
             opportunitiesUsed={userOpportunities.length}
             servicesUsed={userServices.length}

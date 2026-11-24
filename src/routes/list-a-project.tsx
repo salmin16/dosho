@@ -10,6 +10,7 @@ import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
+import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
 import {
   formatSafeUserError,
   verifyTurnstileForForm,
@@ -36,9 +37,18 @@ function ListProject() {
   const navigate = useNavigate()
   const { session, loading: authLoading } = useAuthState()
   const { currency, toUsd } = useCurrency()
-  const { tierName, checkQuota } = useSubscription()
+  const {
+    plan,
+    planId,
+    entitlements,
+    tierName,
+    isExpired,
+    canCreateListing,
+    refreshSubscription,
+  } = useSubscription()
   const [projectsCount, setProjectsCount] = useState(0)
   const [step, setStep] = useState(0)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   useEffect(() => {
     void fetchGroundedUserData().then((d) => {
@@ -46,7 +56,14 @@ function ListProject() {
     })
   }, [session?.user.id])
 
-  const projectQuota = checkQuota('maxProjectListings', projectsCount)
+  const effectiveListingsUsed = Math.max(
+    projectsCount,
+    entitlements.active_listings_count,
+  )
+  const listingsLimit = entitlements.max_active_listings
+  const listingsUnlimited = listingsLimit < 0 || listingsLimit >= 999
+  const listingEntitlementOk =
+    canCreateListing && (listingsUnlimited || effectiveListingsUsed < listingsLimit)
   const [form, setForm] = useState<Form>(() => {
     const active = getSession()
     return {
@@ -136,6 +153,10 @@ function ListProject() {
     }
     if (!validate()) return
     if (step === STEP_KEYS.length - 1) {
+      if (!listingEntitlementOk) {
+        setShowUpgradeModal(true)
+        return
+      }
       setSubmitting(true)
       try {
         const verification = await verifyTurnstileForForm(captchaToken, 'list-project')
@@ -149,7 +170,7 @@ function ListProject() {
           return
         }
         const rawInv = parseFloat(v('investment').replace(/[^0-9.]/g, '')) || 0
-        await createGroundedProject({
+        const res = await createGroundedProject({
           title: v('title'),
           mineral: arr('minerals')[0] || 'Gold',
           region: v('region'),
@@ -159,6 +180,21 @@ function ListProject() {
           submittedCurrency: currency,
           summary: v('summary'),
         })
+        if (res.error) {
+          if (/row-level security|policy|entitled|42501/i.test(res.error)) {
+            setShowUpgradeModal(true)
+            return
+          }
+          setErrors((prev) => ({
+            ...prev,
+            captcha: formatSafeUserError(
+              res.error,
+              'We could not submit your project listing right now. Please try again.',
+            ),
+          }))
+          return
+        }
+        await refreshSubscription()
         setSubmitted(`MC-SUB-${Math.floor(10000 + Math.random() * 89999)}`)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } catch (err) {
@@ -245,33 +281,66 @@ function ListProject() {
       </section>
 
       <div className="mx-auto max-w-5xl px-5 py-12 lg:px-8">
-        {/* Subscription Tier Quota & Gating Banner */}
-        <div className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-ink/15 bg-ink p-5 text-paper sm:flex-row sm:items-center">
-          <div>
-            <div className="flex items-center gap-2 font-mono text-xs text-gold">
-              <Crown size={14} />
-              <span>Active Subscription Tier: <strong>{tierName}</strong></span>
-              <span>·</span>
-              <span>
-                Project Listings Used: <strong>{projectQuota.used} / {projectQuota.limit >= 999 ? 'Unlimited' : projectQuota.limit}</strong>
-              </span>
+        {/* Subscription Entitlement & Quota Gate */}
+        {listingEntitlementOk ? (
+          <div className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-ink/15 bg-ink p-5 text-paper sm:flex-row sm:items-center">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-gold">
+                <Crown size={14} />
+                <span>
+                  Active Subscription: <strong>{plan.name}</strong>
+                </span>
+                <span>·</span>
+                <span>
+                  Active Project Listings:{' '}
+                  <strong>
+                    {effectiveListingsUsed} /{' '}
+                    {listingsUnlimited ? 'Unlimited' : listingsLimit}
+                  </strong>
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-paper/70">
+                Your verified {plan.name} subscription entitles you to publish{' '}
+                {listingsUnlimited ? 'unlimited' : `up to ${listingsLimit}`} active mining project listings.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-paper/70">
-              {projectQuota.allowed
-                ? `Your ${tierName} plan entitles you to publish up to ${projectQuota.limit >= 999 ? 'unlimited' : projectQuota.limit} mining project listings.`
-                : `Your current ${tierName} plan has reached its project listing limit (${projectQuota.used}/${projectQuota.limit}). Subscribe to Miner (TSh 50,000/mo) or Professional (TSh 150,000/mo) to unlock additional project slots.`}
-            </p>
           </div>
-          {!projectQuota.allowed && (
-            <Link
-              to="/checkout"
-              search={{ tier: tierName === 'Explorer' ? 'miner' : 'professional', billing: 'monthly' }}
-              className="btn-primary shrink-0 !py-2.5 !px-4 text-xs"
-            >
-              Subscribe / Upgrade Plan <ArrowRight size={14} />
-            </Link>
-          )}
-        </div>
+        ) : (
+          <div className="mb-8">
+            <UpgradeRequiredGate
+              variant="banner"
+              requiredPlan={planId === 'pro' ? 'enterprise' : 'pro'}
+              currentPlanLabel={isExpired ? `${tierName} (Expired)` : plan.name}
+              quotaSummary={`${effectiveListingsUsed} / ${listingsUnlimited ? '∞' : listingsLimit} Listings`}
+              featureTitle={
+                isExpired
+                  ? 'Renew Your Subscription to Publish Project Listings'
+                  : planId === 'pro'
+                    ? 'Active Listing Quota Reached — Upgrade to Institutional / JV Desk'
+                    : 'Upgrade to Operator Pro to List Mining Projects'
+              }
+              reason={
+                isExpired
+                  ? 'Your paid subscription has expired. Renew your plan to publish or manage active project listings.'
+                  : planId === 'pro'
+                    ? `Your Operator Pro plan allows up to ${listingsLimit} active project listings. Upgrade to Institutional / JV Desk for unlimited listings and NDA Data Room access.`
+                    : 'Explorer (Free) accounts include 0 active project listings. Activate Operator Pro (TSh 120,000 / US$45 per month) to publish up to 3 verified tenement listings.'
+              }
+            />
+          </div>
+        )}
+
+        {showUpgradeModal && (
+          <UpgradeRequiredGate
+            variant="modal"
+            requiredPlan={planId === 'pro' ? 'enterprise' : 'pro'}
+            currentPlanLabel={isExpired ? `${tierName} (Expired)` : plan.name}
+            quotaSummary={`${effectiveListingsUsed} / ${listingsUnlimited ? '∞' : listingsLimit} Listings`}
+            featureTitle="Subscription Required to Publish Listing"
+            reason="Publishing mining projects on MineConnect requires an active, unexpired Operator Pro or Institutional / JV Desk subscription."
+            onClose={() => setShowUpgradeModal(false)}
+          />
+        )}
 
         <div key={step} className="animate-rise">
           {step === 0 && (

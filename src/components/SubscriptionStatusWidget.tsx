@@ -5,20 +5,20 @@ import {
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
+  Clock,
   Crown,
+  Download,
   Lock,
   ShieldCheck,
   Zap,
 } from 'lucide-react';
 import { useLocalization } from '../context/LocalizationContext';
-import {
-  SUBSCRIPTION_TIERS,
-  useSubscription,
-} from '../lib/subscriptions';
-import type { SubscriptionTierName } from '../types/database';
+import { useSubscription } from '../lib/subscriptions';
+import type { SubscriptionPlanId } from '../types/database';
 
 export interface SubscriptionStatusWidgetProps {
   projectsUsed: number;
+  quotesUsedThisMonth?: number;
   documentsUsed: number;
   opportunitiesUsed: number;
   servicesUsed: number;
@@ -26,335 +26,354 @@ export interface SubscriptionStatusWidgetProps {
 
 export default function SubscriptionStatusWidget({
   projectsUsed,
-  documentsUsed,
-  opportunitiesUsed,
-  servicesUsed,
+  quotesUsedThisMonth,
 }: SubscriptionStatusWidgetProps) {
   const { currency, formatPrice, ui } = useLocalization();
-  const { subscription, tierConfig, tierName, checkQuota } = useSubscription();
+  const {
+    plan,
+    planId,
+    entitlements,
+    pendingPayment,
+    payments,
+    isPaidActive,
+    isExpired,
+  } = useSubscription();
 
-  const projectQuota = checkQuota('maxProjectListings', projectsUsed);
-  const documentQuota = checkQuota('maxVaultDocuments', documentsUsed);
-  const opportunityQuota = checkQuota(
-    'maxOpportunityListings',
-    opportunitiesUsed + servicesUsed
-  );
+  const listingsUsed = Math.max(projectsUsed, entitlements.active_listings_count);
+  const listingsLimit = entitlements.max_active_listings;
+  const listingsUnlimited = listingsLimit < 0 || listingsLimit >= 999;
+  const listingsAllowed =
+    isPaidActive && (listingsUnlimited || listingsUsed < listingsLimit);
+  const listingsPct =
+    listingsLimit === 0
+      ? 100
+      : listingsUnlimited
+        ? Math.min(100, Math.round((listingsUsed / 20) * 100))
+        : Math.min(100, Math.round((listingsUsed / Math.max(1, listingsLimit)) * 100));
 
-  const activeTierUsd =
-    subscription.billing_cycle === 'yearly'
-      ? tierConfig.yearlyUsd
-      : tierConfig.monthlyUsd;
+  const rfqsUsed =
+    quotesUsedThisMonth !== undefined
+      ? Math.max(quotesUsedThisMonth, entitlements.monthly_rfqs_count)
+      : entitlements.monthly_rfqs_count;
+  const rfqsLimit = entitlements.max_monthly_rfqs;
+  const rfqsUnlimited = rfqsLimit < 0 || rfqsLimit >= 999;
+  const rfqsAllowed = rfqsUnlimited || rfqsUsed < rfqsLimit;
+  const rfqsPct = rfqsUnlimited
+    ? Math.min(100, Math.round((rfqsUsed / 30) * 100))
+    : Math.min(100, Math.round((rfqsUsed / Math.max(1, rfqsLimit)) * 100));
 
-  const activeTierTzs =
-    subscription.billing_cycle === 'yearly'
-      ? tierConfig.yearlyTzs
-      : tierConfig.monthlyTzs;
-
-  const formattedTierPrice =
-    activeTierTzs === 0
+  const formattedPlanPrice =
+    plan.price_tzs === 0
       ? ui('Free', 'Bure', 'Gratis')
       : currency === 'TZS'
-        ? `TSh ${activeTierTzs.toLocaleString('en-US')}`
-        : formatPrice(activeTierUsd);
+        ? `TSh ${plan.price_tzs.toLocaleString('en-US')}`
+        : formatPrice(plan.price_usd);
 
-  const renewalDateFormatted = new Date(
-    subscription.expires_at
-  ).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const expiryDateObj = entitlements.expires_at
+    ? new Date(entitlements.expires_at)
+    : null;
+  const hasValidExpiry =
+    expiryDateObj !== null && !Number.isNaN(expiryDateObj.getTime());
 
-  const daysRemaining = Math.max(
-    1,
-    Math.ceil(
-      (new Date(subscription.expires_at).getTime() - Date.now()) /
-        (1000 * 60 * 60 * 24)
-    )
-  );
+  const renewalDateFormatted = hasValidExpiry
+    ? expiryDateObj.toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : ui('No expiry (Free tier)', 'Haina mwisho (Bure)', 'Sin vencimiento');
 
-  const nextRecommendedTier: SubscriptionTierName =
-    tierName === 'Explorer'
-      ? 'Miner'
-      : tierName === 'Miner'
-        ? 'Professional'
-        : tierName === 'Professional'
-          ? 'Investor'
-          : 'Corporate';
+  const daysRemaining = hasValidExpiry
+    ? Math.max(
+        0,
+        Math.ceil((expiryDateObj.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      )
+    : 0;
 
-  const nextTierConfig = SUBSCRIPTION_TIERS[nextRecommendedTier];
+  const nextRecommendedPlan: Exclude<SubscriptionPlanId, 'free'> =
+    planId === 'pro' ? 'enterprise' : 'pro';
 
   return (
     <section
       aria-label="Active Subscription & Quota Governance"
-      className="grain relative overflow-hidden rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-xl lg:p-8"
+      className="grain relative overflow-hidden rounded-2xl border border-ink/15 bg-ink p-5 text-paper shadow-xl sm:p-6 lg:p-8"
     >
       <div className="contours absolute inset-0 -z-10" aria-hidden="true" />
 
-      {/* Top Row: Active Plan Badge, Renewal Date, & Upgrade Actions */}
-      <div className="flex flex-col justify-between gap-6 border-b border-paper/12 pb-6 lg:flex-row lg:items-center">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5">
+      {/* Top Row: Plan Status, Expiry & Upgrade CTA */}
+      <div className="flex flex-col justify-between gap-5 border-b border-paper/12 pb-6 lg:flex-row lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/45 bg-ochre/25 px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-gold">
               <Crown size={13} />
-              {ui('Active Plan:', 'Mpango Hai:', 'Plan Activo:')} {tierName}
+              {ui('Active Plan:', 'Mpango Hai:', 'Plan Activo:')} {plan.name}
             </span>
 
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/50 bg-moss/30 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#9de4b4]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#9de4b4]" />
-              {subscription.status.toUpperCase()} ·{' '}
-              {subscription.billing_cycle === 'yearly'
-                ? ui('Yearly Plan', 'Mpango wa Mwaka', 'Anual')
-                : ui('Monthly Plan', 'Mpango wa Mwezi', 'Mensual')}
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider ${
+                isExpired
+                  ? 'border-danger/50 bg-danger/25 text-[#f59c8a]'
+                  : isPaidActive
+                    ? 'border-moss/50 bg-moss/30 text-[#9de4b4]'
+                    : 'border-paper/20 bg-paper/10 text-paper/80'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isExpired
+                    ? 'bg-[#f59c8a]'
+                    : isPaidActive
+                      ? 'bg-[#9de4b4]'
+                      : 'bg-gold'
+                }`}
+              />
+              {isExpired
+                ? ui('EXPIRED', 'IMEISHA MUDA', 'EXPIRADO')
+                : isPaidActive
+                  ? ui('VERIFIED ACTIVE', 'HAI ILIYOTHIBITISHWA', 'ACTIVO VERIFICADO')
+                  : ui('FREE TIER', 'BURE', 'GRATUITO')}
             </span>
+
+            {pendingPayment && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/45 bg-gold/15 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+                <Clock size={11} />
+                {ui(
+                  'Payment Pending Verification',
+                  'Malipo Yanasubiri Uhakiki',
+                  'Pago Pendiente de Revisión',
+                )}
+              </span>
+            )}
           </div>
 
-          <h2 className="mt-3 font-display text-3xl font-light text-paper md:text-4xl">
-            {tierName}{' '}
-            <em className="italic text-gold">
-              {ui('Membership Tier', 'Ngazi ya Uanachama', 'Nivel de Membresía')}
-            </em>{' '}
-            <span className="font-mono text-lg font-normal text-paper/75">
-              ({formattedTierPrice}
-              {activeTierTzs > 0
-                ? subscription.billing_cycle === 'yearly'
-                  ? ui('/yr', '/mwaka', '/año')
-                  : ui('/mo', '/mwezi', '/mes')
-                : ''}
-              )
+          <h2 className="mt-3 font-display text-2xl font-light text-paper sm:text-3xl md:text-4xl">
+            {plan.name}{' '}
+            <span className="font-mono text-base font-normal text-paper/75 sm:text-lg">
+              ({formattedPlanPrice}
+              {plan.price_tzs > 0 ? ui('/mo', '/mwezi', '/mes') : ''})
             </span>
           </h2>
 
-          <p className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-paper/70">
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-paper/70">
             <span className="inline-flex items-center gap-1.5">
               <CalendarClock size={13} className="text-gold" />
-              {ui('Valid Until:', 'Inaisha:', 'Válido Hasta:')}{' '}
-              <strong className="font-mono text-paper">
-                {renewalDateFormatted}
-              </strong>{' '}
-              ({daysRemaining} {ui('days remaining', 'siku zimebaki', 'días restantes')})
+              {isPaidActive ? (
+                <>
+                  {ui('Expires:', 'Inaisha:', 'Vence:')}{' '}
+                  <strong className="font-mono text-paper">
+                    {renewalDateFormatted}
+                  </strong>{' '}
+                  ({daysRemaining} {ui('days left', 'siku zimebaki', 'días restantes')})
+                </>
+              ) : isExpired ? (
+                <span className="text-[#f59c8a]">
+                  {ui(
+                    `Expired on ${renewalDateFormatted} — renew to restore paid entitlements`,
+                    `Iliisha ${renewalDateFormatted} — huisha ili kurejesha huduma`,
+                    `Expiró el ${renewalDateFormatted} — renueva para restaurar acceso`,
+                  )}
+                </span>
+              ) : (
+                <span>{plan.tagline}</span>
+              )}
             </span>
-            <span>·</span>
-            <span>{tierConfig.tagline}</span>
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {tierName !== 'Corporate' && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          {planId !== 'enterprise' && (
             <Link
-              to="/checkout"
-              search={{
-                tier: nextRecommendedTier.toLowerCase(),
-                billing: subscription.billing_cycle,
-              }}
+              to="/pricing"
+              search={{ plan: nextRecommendedPlan } as unknown as undefined}
               className="btn-primary !py-2.5 !px-4 text-xs"
             >
               <Zap size={14} />
-              {ui(
-                `Subscribe to ${nextRecommendedTier}`,
-                `Jiunge na ${nextRecommendedTier}`,
-                `Suscribirse a ${nextRecommendedTier}`
-              )}
+              {planId === 'pro'
+                ? ui('Upgrade to Institutional', 'Pandisha hadi Institutional', 'Mejorar a Institucional')
+                : ui('Upgrade to Operator Pro', 'Pandisha hadi Operator Pro', 'Mejorar a Operator Pro')}
               <ArrowUpRight size={14} />
             </Link>
           )}
-
           <Link
             to="/pricing"
             className="inline-flex items-center gap-1.5 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/20"
           >
-            {ui('Compare All 5 Tiers', 'Linganisha Ngazi 5', 'Comparar 5 Planes')}
+            {ui('Manage Billing & Plans', 'Simamia Malipo na Mipango', 'Gestionar Planes')}
           </Link>
         </div>
       </div>
 
-      {/* Middle Row: Real-Time Quota Usage Meters */}
+      {/* Middle Row: Remaining Active Listings Quota, Monthly RFQ Quota & Entitlements */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-        {/* Meter 1: Project Listings */}
+        {/* Quota 1: Active Project Listings */}
         <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="font-mono text-[10px] uppercase tracking-wider text-paper/60">
-              {ui('Project Listings Quota', 'Kikomo cha Miradi', 'Cuota de Proyectos')}
+              {ui('Active Project Listings', 'Miradi Iliyochapishwa', 'Proyectos Activos')}
             </span>
             <span
-              className={`font-mono text-xs font-bold ${
-                projectQuota.allowed ? 'text-gold' : 'text-[#f59c8a]'
+              className={`font-mono text-xs font-bold tabular-nums ${
+                listingsAllowed ? 'text-gold' : 'text-[#f59c8a]'
               }`}
             >
-              {projectQuota.used} /{' '}
-              {projectQuota.limit >= 999
-                ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                : projectQuota.limit}
+              {listingsUsed} /{' '}
+              {listingsUnlimited ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado') : listingsLimit}
             </span>
           </div>
 
           <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-paper/10">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
-                projectQuota.allowed ? 'bg-gold' : 'bg-danger'
+                listingsAllowed ? 'bg-gold' : 'bg-danger'
               }`}
-              style={{ width: `${projectQuota.usagePercent}%` }}
+              style={{ width: `${listingsPct}%` }}
             />
           </div>
 
           <p className="mt-2 text-[11px] text-paper/65">
-            {projectQuota.limit === 0 ? (
+            {listingsLimit === 0 ? (
               <span className="text-[#f59c8a]">
                 {ui(
-                  `Explorer tier cannot list projects. View Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mo) for 3 listings.`,
-                  `Mpango wa Explorer hauruhusu kusajili miradi. Tazama Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mwezi).`,
-                  `El nivel Explorer no permite listar proyectos. Consulte Miner (${currency === 'TZS' ? `TSh ${SUBSCRIPTION_TIERS.Miner.monthlyTzs.toLocaleString('en-US')}` : formatPrice(SUBSCRIPTION_TIERS.Miner.monthlyUsd)}/mes).`
+                  'Explorer tier includes 0 listings. Upgrade to Operator Pro for up to 3 active listings.',
+                  'Mpango wa Explorer hauruhusu kusajili miradi. Pandisha hadi Operator Pro kupata nafasi 3.',
+                  'Explorer incluye 0 listados. Mejora a Operator Pro para publicar hasta 3 proyectos.',
                 )}
               </span>
-            ) : projectQuota.allowed ? (
+            ) : listingsUnlimited ? (
               ui(
-                `${projectQuota.remaining >= 900 ? 'Unlimited' : projectQuota.remaining} project listing slots available on ${tierName}.`,
-                `Nafasi ${projectQuota.remaining >= 900 ? 'zote' : projectQuota.remaining} za miradi zinapatikana kwenye ${tierName}.`,
-                `${projectQuota.remaining} espacios disponibles en ${tierName}.`
+                'Unlimited verified project listings unlocked on Institutional / JV Desk.',
+                'Miradi isiyo na kikomo imefunguliwa kwenye Institutional / JV Desk.',
+                'Proyectos ilimitados desbloqueados en Institutional / JV Desk.',
               )
             ) : (
-              <span className="text-[#f59c8a]">
-                {ui(
-                  `Quota reached (${projectQuota.limit}/${projectQuota.limit}). Upgrade tier to publish more projects.`,
-                  `Kikomo kimefikiwa (${projectQuota.limit}/${projectQuota.limit}). Pandisha ngazi kuongeza miradi.`,
-                  `Límite alcanzado (${projectQuota.limit}/${projectQuota.limit}).`
-                )}
+              ui(
+                `${Math.max(0, listingsLimit - listingsUsed)} listing slot(s) remaining on ${plan.name}.`,
+                `Nafasi ${Math.max(0, listingsLimit - listingsUsed)} za miradi zimesalia kwenye ${plan.name}.`,
+                `${Math.max(0, listingsLimit - listingsUsed)} espacios restantes en ${plan.name}.`,
+              )
+            )}
+          </p>
+        </div>
+
+        {/* Quota 2: Monthly Quote Requests (RFQs) */}
+        <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-paper/60">
+              {ui('Monthly Quote Requests (RFQs)', 'Maombi ya Bei (Mwezi)', 'Cotizaciones Mensuales')}
+            </span>
+            <span
+              className={`font-mono text-xs font-bold tabular-nums ${
+                rfqsAllowed ? 'text-[#9de4b4]' : 'text-[#f59c8a]'
+              }`}
+            >
+              {rfqsUsed} /{' '}
+              {rfqsUnlimited ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado') : rfqsLimit}
+            </span>
+          </div>
+
+          <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-paper/10">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                rfqsAllowed ? 'bg-[#9de4b4]' : 'bg-danger'
+              }`}
+              style={{ width: `${rfqsPct}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-[11px] text-paper/65">
+            {rfqsUnlimited
+              ? ui(
+                  'Unlimited monthly RFQs across verified service providers.',
+                  'Maombi ya bei bila kikomo kila mwezi.',
+                  'Solicitudes de cotización ilimitadas cada mes.',
+                )
+              : rfqsAllowed
+                ? ui(
+                    `${Math.max(0, rfqsLimit - rfqsUsed)} monthly RFQ(s) remaining this billing cycle.`,
+                    `Maombi ${Math.max(0, rfqsLimit - rfqsUsed)} ya bei yamesalia mwezi huu.`,
+                    `${Math.max(0, rfqsLimit - rfqsUsed)} cotizaciones restantes este mes.`,
+                  )
+                : ui(
+                    `Monthly RFQ cap reached (${rfqsUsed}/${rfqsLimit}). Upgrade to Operator Pro (25/mo) or Institutional.`,
+                    `Kikomo cha maombi ya bei kimefikiwa (${rfqsUsed}/${rfqsLimit}). Pandisha mpango wako.`,
+                    `Límite mensual alcanzado (${rfqsUsed}/${rfqsLimit}). Actualiza tu plan.`,
+                  )}
+          </p>
+        </div>
+
+        {/* Entitlements 3: Data Room & Markets Exports */}
+        <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-4">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-paper/60">
+            {ui('Premium Access Rights', 'Haki za Ufikiaji', 'Permisos Premium')}
+          </span>
+          <ul className="mt-2.5 space-y-2 text-xs">
+            <li className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-paper/80">
+                <ShieldCheck size={13} className="text-gold" />
+                {ui('NDA Data Room', 'Chumba cha Nyaraka (NDA)', 'Sala de Datos NDA')}
               </span>
-            )}
-          </p>
-        </div>
-
-        {/* Meter 2: Document Hosting Vault */}
-        <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-4">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-paper/60">
-              {ui('Vault Document Hosting', 'Nyaraka za Hifadhi', 'Documentos en Bóveda')}
-            </span>
-            <span
-              className={`font-mono text-xs font-bold ${
-                documentQuota.allowed ? 'text-[#9de4b4]' : 'text-[#f59c8a]'
-              }`}
-            >
-              {documentQuota.used} /{' '}
-              {documentQuota.limit >= 999
-                ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                : documentQuota.limit}
-            </span>
-          </div>
-
-          <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-paper/10">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                documentQuota.allowed ? 'bg-[#9de4b4]' : 'bg-danger'
-              }`}
-              style={{ width: `${documentQuota.usagePercent}%` }}
-            />
-          </div>
-
-          <p className="mt-2 text-[11px] text-paper/65">
-            {ui(
-              `${documentQuota.remaining >= 900 ? 'Unlimited' : documentQuota.remaining} encrypted dossier slots remaining.`,
-              `Nafasi ${documentQuota.remaining >= 900 ? 'zote' : documentQuota.remaining} za nyaraka za siri zimesalia.`,
-              `${documentQuota.remaining} espacios de documentos restantes.`
-            )}
-          </p>
-        </div>
-
-        {/* Meter 3: Guided Opportunities & Services */}
-        <div className="rounded-xl border border-paper/12 bg-ink-2/90 p-4">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-paper/60">
-              {ui('Opportunities & Services', 'Fursa na Huduma', 'Oportunidades y Servicios')}
-            </span>
-            <span
-              className={`font-mono text-xs font-bold ${
-                opportunityQuota.allowed ? 'text-gold' : 'text-[#f59c8a]'
-              }`}
-            >
-              {opportunityQuota.used} /{' '}
-              {opportunityQuota.limit >= 999
-                ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                : opportunityQuota.limit}
-            </span>
-          </div>
-
-          <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-paper/10">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                opportunityQuota.allowed ? 'bg-ochre-light' : 'bg-danger'
-              }`}
-              style={{ width: `${opportunityQuota.usagePercent}%` }}
-            />
-          </div>
-
-          <p className="mt-2 text-[11px] text-paper/65">
-            {ui(
-              `Active tenders, consultancies & technical service listings (${opportunitiesUsed} opp, ${servicesUsed} srv).`,
-              `Zabuni, ushauri na huduma za kitaalamu (${opportunitiesUsed} fursa, ${servicesUsed} huduma).`,
-              `Licitaciones y servicios publicados (${opportunitiesUsed} op, ${servicesUsed} srv).`
-            )}
-          </p>
+              {entitlements.can_access_data_room ? (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-[#9de4b4]">
+                  <CheckCircle2 size={11} /> {ui('UNLOCKED', 'IMEFUNGULIWA', 'ACTIVO')}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-paper/50">
+                  <Lock size={11} /> Institutional
+                </span>
+              )}
+            </li>
+            <li className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-paper/80">
+                <Download size={13} className="text-gold" />
+                {ui('Markets CSV Export', 'Pakua Takwimu (CSV)', 'Exportación CSV')}
+              </span>
+              {entitlements.can_export_markets ? (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-[#9de4b4]">
+                  <CheckCircle2 size={11} /> {ui('UNLOCKED', 'IMEFUNGULIWA', 'ACTIVO')}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-paper/50">
+                  <Lock size={11} /> Operator Pro+
+                </span>
+              )}
+            </li>
+          </ul>
         </div>
       </div>
 
-      {/* Bottom Row: Tier Feature Entitlements */}
-      <div className="mt-6 flex flex-col justify-between gap-4 rounded-xl border border-paper/10 bg-paper/[0.04] p-4 lg:flex-row lg:items-center">
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-gold">
-            <CheckCircle2 size={12} className="mr-1 inline" />
-            {ui('Tier Entitlements:', 'Haki za Mpango:', 'Permisos del Nivel:')}
-          </span>
-
-          {[
-            {
-              label: ui('Project Publishing', 'Kusajili Miradi', 'Publicar Proyectos'),
-              enabled: tierConfig.permissions.canListProject,
-            },
-            {
-              label: ui('Document Hosting', 'Uhifadhi wa Nyaraka', 'Alojamiento Docs'),
-              enabled: tierConfig.permissions.canHostDocuments,
-            },
-            {
-              label: ui('Listing Analytics', 'Takwimu za Miradi', 'Analítica'),
-              enabled: tierConfig.permissions.canViewAnalytics,
-            },
-            {
-              label: ui('Deal-Room Access', 'Chumba cha Mikataba', 'Sala de Acuerdos'),
-              enabled: tierConfig.permissions.canAccessDealRoom,
-            },
-            {
-              label: ui('Advanced GIS Map Filters', 'Vichujio vya Ramani', 'Filtros GIS Avanzados'),
-              enabled: tierConfig.permissions.canUseAdvancedMapFilters,
-            },
-          ].map((item) => (
-            <span
-              key={item.label}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[10px] ${
-                item.enabled
-                  ? 'border-moss/40 bg-moss/25 text-[#9de4b4]'
-                  : 'border-paper/12 bg-paper/5 text-paper/45'
-              }`}
-            >
-              {item.enabled ? <CheckCircle2 size={11} /> : <Lock size={11} />}
-              {item.label}
-            </span>
-          ))}
+      {/* Recent Payment Verification Log (when user has submitted transfers/payments) */}
+      {payments.length > 0 && (
+        <div className="mt-5 border-t border-paper/10 pt-4">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
+            {ui('Recent Subscription Payments', 'Malipo ya Hivi Karibuni', 'Pagos Recientes')}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {payments.slice(0, 3).map((pay) => (
+              <div
+                key={pay.id}
+                className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-paper/12 bg-ink-2 px-3 py-1.5 font-mono text-[10.5px]"
+              >
+                <span className="font-bold text-gold uppercase">{pay.plan_id}</span>
+                <span className="text-paper/75">
+                  {pay.currency} {Number(pay.amount).toLocaleString('en-US')}
+                </span>
+                <span className="text-paper/50">Ref: {pay.reference_code}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase ${
+                    pay.status === 'approved' || pay.status === 'settled'
+                      ? 'bg-moss/30 text-[#9de4b4]'
+                      : pay.status === 'rejected' || pay.status === 'failed'
+                        ? 'bg-danger/25 text-[#f59c8a]'
+                        : 'bg-ochre/30 text-gold'
+                  }`}
+                >
+                  {pay.status.replace('_', ' ')}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-paper/70">
-          <ShieldCheck size={13} className="text-gold" />
-          <span>
-            {ui('Next Tier:', 'Ngazi Inayofuata:', 'Siguiente Nivel:')}{' '}
-            <strong className="text-gold">
-              {nextRecommendedTier} (
-              {currency === 'TZS'
-                ? `TSh ${nextTierConfig.monthlyTzs.toLocaleString('en-US')}`
-                : formatPrice(nextTierConfig.monthlyUsd)}
-              /mo)
-            </strong>
-          </span>
-        </div>
-      </div>
+      )}
     </section>
   );
 }

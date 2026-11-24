@@ -58,7 +58,11 @@ export function formatSafeUserError(
  */
 export async function verifyTurnstileForForm(
   token: string,
-  action: 'list-project' | 'request-quote' | 'compliance-complaint',
+  action:
+    | 'list-project'
+    | 'request-quote'
+    | 'compliance-complaint'
+    | 'subscription-payment',
 ): Promise<ClientTurnstileVerificationResult> {
   if (!isTurnstileEnabled()) {
     return { ok: true }

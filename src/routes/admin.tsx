@@ -8,6 +8,7 @@ import {
   Clock,
   Coins,
   Compass,
+  CreditCard,
   EyeOff,
   FileText,
   LayoutDashboard,
@@ -38,6 +39,11 @@ import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
+import AdminSubscriptionsTab, {
+  type AdminBillingPaymentRow,
+  type AdminBillingSubRow,
+} from '../components/AdminSubscriptionsTab'
+import { fetchAdminBillingData } from '../lib/subscriptions'
 import {
   adminSyncLiveMarketBenchmarks,
   adminUpdateMineralPrice,
@@ -50,6 +56,7 @@ import type {
   ComplianceComplaintStatus,
   MineralPriceRecord,
   QuoteRequestRecord,
+  SubscriptionPlanRecord,
   UserListedProject,
   UserOpportunityRecord,
   UserProfile,
@@ -67,6 +74,7 @@ export type MasterAdminSection =
   | 'opportunities'
   | 'quotes_audit'
   | 'complaints'
+  | 'billing'
   | 'minerals'
 
 export const Route = createFileRoute('/admin')({
@@ -75,7 +83,7 @@ export const Route = createFileRoute('/admin')({
 
 function mapInitialTab(
   section: MasterAdminSection
-): 'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'minerals' {
+): 'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'billing' | 'minerals' {
   if (section === 'approvals') return 'opportunities'
   if (section === 'content') return 'services'
   if (
@@ -85,6 +93,7 @@ function mapInitialTab(
     section === 'opportunities' ||
     section === 'quotes_audit' ||
     section === 'complaints' ||
+    section === 'billing' ||
     section === 'minerals'
   ) {
     return section
@@ -168,7 +177,7 @@ export function MasterAdminDashboard({
   const [authorized, setAuthorized] = useState(false)
   const [loadingGovernance, setLoadingGovernance] = useState(true)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'minerals'
+    'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'billing' | 'minerals'
   >(() => mapInitialTab(initialSection))
 
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -216,6 +225,10 @@ export function MasterAdminDashboard({
   const [complaintStatusFilter, setComplaintStatusFilter] = useState<'ALL' | ComplianceComplaintStatus>('ALL')
   const [complaintNotesMap, setComplaintNotesMap] = useState<Record<string, string>>({})
   const [complaintsWarning, setComplaintsWarning] = useState<string | null>(null)
+  const [billingPlans, setBillingPlans] = useState<SubscriptionPlanRecord[]>([])
+  const [billingPayments, setBillingPayments] = useState<AdminBillingPaymentRow[]>([])
+  const [billingSubs, setBillingSubs] = useState<AdminBillingSubRow[]>([])
+  const [billingWarning, setBillingWarning] = useState<string | null>(null)
 
   useEffect(() => {
     setActiveTab(mapInitialTab(initialSection))
@@ -224,9 +237,10 @@ export function MasterAdminDashboard({
   const loadGovernanceTelemetry = useCallback(async () => {
     setLoadingGovernance(true)
     try {
-      const [data, complaintsRes] = await Promise.all([
+      const [data, complaintsRes, billingRes] = await Promise.all([
         fetchAdminGovernanceData(),
         fetchAdminComplianceComplaints(),
+        fetchAdminBillingData(),
       ])
       setAuthorized(Boolean(data?.authorized))
       setUsers(data?.users ?? [])
@@ -238,6 +252,10 @@ export function MasterAdminDashboard({
       setDbLatencyMs(data?.dbLatencyMs ?? 0)
       setComplaints(complaintsRes?.complaints ?? [])
       setComplaintsWarning(complaintsRes?.error ?? null)
+      setBillingPlans(billingRes?.plans ?? [])
+      setBillingPayments(billingRes?.payments ?? [])
+      setBillingSubs(billingRes?.subscriptions ?? [])
+      setBillingWarning(billingRes?.error ?? null)
       if (data.dbError) {
         setFeedback({
           type: 'error',
@@ -677,6 +695,12 @@ export function MasterAdminDashboard({
       badge: kpis.pendingOpportunities + kpis.pendingProjects,
     },
     { id: 'quotes_audit' as const, label: 'Quotes & Audit Trail', icon: Activity, badge: kpis.pendingQuotes },
+    {
+      id: 'billing' as const,
+      label: 'Subscriptions & Billing',
+      icon: CreditCard,
+      badge: billingPayments.filter((p) => p.status === 'pending_verification').length,
+    },
     { id: 'complaints' as const, label: 'Complaints & Compliance', icon: ShieldAlert, badge: openComplaintsCount },
     { id: 'minerals' as const, label: 'Mineral Prices', icon: Coins, badge: 0 },
   ]
@@ -1683,7 +1707,19 @@ export function MasterAdminDashboard({
           </section>
         )}
 
-        {/* TAB 7: MINERAL PRICES BENCHMARK GOVERNANCE */}
+        {/* TAB 7: SUBSCRIPTIONS & BILLING GOVERNANCE */}
+        {activeTab === 'billing' && (
+          <AdminSubscriptionsTab
+            plans={billingPlans}
+            payments={billingPayments}
+            subscriptions={billingSubs}
+            warning={billingWarning}
+            onRefresh={loadGovernanceTelemetry}
+            onFeedback={setFeedback}
+          />
+        )}
+
+        {/* TAB 8: MINERAL PRICES BENCHMARK GOVERNANCE */}
         {activeTab === 'minerals' && (
           <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
