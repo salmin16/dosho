@@ -15,8 +15,7 @@ import {
 import { useLocalization } from '../context/LocalizationContext'
 import {
   CHART_TIMEFRAMES,
-  buildMineralTrendSeries,
-  buildMineralYearSeries,
+  buildMineralYearDrilldownSeries,
   computeNiceAxisTicks,
   convertToChartUnitUsd,
   detectTimelineScale,
@@ -67,17 +66,18 @@ export default function MineralTrendChart({
     null,
   )
 
+  const selectableYears = useMemo(() => getSelectableYears(), [])
   const [chartWidth, setChartWidth] = useState<number>(880)
   const [internalSymbol, setInternalSymbol] = useState<string>(
     () => minerals[0]?.symbol ?? 'XAU',
   )
-  const [timeframe, setTimeframe] = useState<ChartTimeframe>('30D')
-  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [selectedYear, setSelectedYear] = useState<number>(() => selectableYears[0] ?? 2026)
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('1Mo')
+  const [focusTimestampMs, setFocusTimestampMs] = useState<number | null>(null)
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
-  const selectableYears = useMemo(() => getSelectableYears(), [])
 
   const handleSymbolChange = useCallback(
     (symbol: string) => {
@@ -92,20 +92,11 @@ export default function MineralTrendChart({
     [onSelectSymbol],
   )
 
-  const handleTimeframeChange = useCallback((tf: ChartTimeframe) => {
-    setTimeframe(tf)
-    setHoverIndex(null)
-    setZoomWindow(null)
-    if (tf !== '1Y') {
-      setSelectedYear(null)
-    }
-  }, [])
-
-  const handleYearSelect = useCallback((year: number | null) => {
-    setTimeframe('1Y')
+  const handleYearChange = useCallback((year: number) => {
     setSelectedYear(year)
-    setHoverIndex(null)
+    setFocusTimestampMs(null)
     setZoomWindow(null)
+    setHoverIndex(null)
   }, [])
 
   const activeMineral = useMemo(() => {
@@ -144,11 +135,14 @@ export default function MineralTrendChart({
 
   const fullSeries = useMemo(() => {
     if (!activeMineral) return null
-    if (timeframe === '1Y' && selectedYear !== null) {
-      return buildMineralYearSeries(activeMineral, selectedYear, unitBasis)
-    }
-    return buildMineralTrendSeries(activeMineral, timeframe, unitBasis)
-  }, [activeMineral, timeframe, selectedYear, unitBasis])
+    return buildMineralYearDrilldownSeries(
+      activeMineral,
+      selectedYear,
+      timeframe,
+      unitBasis,
+      focusTimestampMs,
+    )
+  }, [activeMineral, selectedYear, timeframe, unitBasis, focusTimestampMs])
 
   // Resolve active zoomed index bounds safely
   const totalPoints = fullSeries?.points.length ?? 0
@@ -201,7 +195,22 @@ export default function MineralTrendChart({
     }
   }, [visiblePoints])
 
-  // Zoom / Pan helpers anchored smoothly to focal fraction (hover point or center)
+  // Switching timeframe preserves zoomed focal point when drilling down inside a chosen year
+  const handleTimeframeChange = useCallback(
+    (nextTf: ChartTimeframe) => {
+      if (nextTf === '1Y') {
+        setFocusTimestampMs(null)
+      } else if (isZoomed && visiblePoints.length > 0) {
+        const focalPt = visiblePoints[visiblePoints.length - 1]
+        setFocusTimestampMs(focalPt.timestampMs)
+      }
+      setTimeframe(nextTf)
+      setZoomWindow(null)
+      setHoverIndex(null)
+    },
+    [isZoomed, visiblePoints],
+  )
+
   const applyZoom = useCallback(
     (direction: 'in' | 'out', anchorRatio?: number) => {
       if (totalPoints < MIN_VISIBLE_POINTS) return
@@ -250,16 +259,16 @@ export default function MineralTrendChart({
 
   const handleResetZoom = useCallback(() => {
     setZoomWindow(null)
+    setFocusTimestampMs(null)
     setHoverIndex(null)
   }, [])
 
-  // Non-passive wheel listener for smooth zoom in/out over the SVG canvas
+  // Smooth non-passive mouse-wheel zoom over the chart canvas
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
 
     const onWheel = (e: WheelEvent) => {
-      // Zoom smoothly when scrolling vertically over the chart canvas
       if (Math.abs(e.deltaY) < 2) return
       e.preventDefault()
       const rect = svg.getBoundingClientRect()
@@ -349,7 +358,7 @@ export default function MineralTrendChart({
     if (!visibleStats || visiblePoints.length < 2) return null
 
     const isCompact = chartWidth < 600
-    const height = isCompact ? 256 : 348
+    const height = isCompact ? 256 : 344
     const convertedValues = visiblePoints.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
@@ -398,7 +407,6 @@ export default function MineralTrendChart({
     const openY =
       padTop + (1 - (convertedValues[0] - yMin) / ySpan) * plotHeight
 
-    // Auto-adjusted tick density (max 4 on mobile, 5–6 on desktop)
     const xTickCount = isCompact ? 4 : visibleStats.scale === 'min' ? 5 : 6
     const xTicks: Array<{ x: number; label: string; idx: number }> = []
     for (let i = 0; i < xTickCount; i++) {
@@ -470,7 +478,6 @@ export default function MineralTrendChart({
     [chartGeometry, visiblePoints.length],
   )
 
-  // Two-finger pinch zoom support on touchscreens
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<SVGSVGElement>) => {
       if (e.touches.length === 2) {
@@ -517,6 +524,24 @@ export default function MineralTrendChart({
   const handleTouchEnd = useCallback(() => {
     pinchStartRef.current = null
   }, [])
+
+  const handleScrubBarClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isZoomed || totalPoints < MIN_VISIBLE_POINTS) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      if (rect.width <= 0) return
+      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+      const curLen = endIdx - startIdx + 1
+      const centerIdx = Math.round(frac * (totalPoints - 1))
+      const nextStart = Math.max(
+        0,
+        Math.min(totalPoints - curLen, Math.round(centerIdx - curLen / 2)),
+      )
+      setHoverIndex(null)
+      setZoomWindow([nextStart, nextStart + curLen - 1])
+    },
+    [isZoomed, totalPoints, startIdx, endIdx],
+  )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<SVGSVGElement>) => {
@@ -566,7 +591,6 @@ export default function MineralTrendChart({
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.25 : 0.22
 
-  // Statutory reference benchmarks in active master unit mode
   const sokoTier = convertToChartUnitUsd(
     activeMineral.local_market_price_usd,
     activeMineral.unit,
@@ -578,25 +602,25 @@ export default function MineralTrendChart({
     unitBasis,
   )
 
-  const isLocalUnits = unitBasis === 'metric_local'
   const visibleDateWindowLabel = formatVisibleDateWindow(
     visibleStats.startMs,
     visibleStats.endMs,
     visibleStats.scale,
     language,
   )
-  const activeTimeframeBadge =
-    timeframe === '1Y' && selectedYear !== null ? String(selectedYear) : timeframe
+
+  const activeRangeBadge =
+    timeframe === '1Y' ? String(selectedYear) : `${selectedYear} · ${timeframe}`
 
   const tooltipAlignRight =
     activeCoord.x > chartGeometry.padLeft + chartGeometry.plotWidth * 0.62
 
-  // Range scrub thumb geometry when zoomed
   const scrubLeftPct = totalPoints > 1 ? (startIdx / (totalPoints - 1)) * 100 : 0
   const scrubWidthPct =
     totalPoints > 1 ? ((endIdx - startIdx) / (totalPoints - 1)) * 100 : 100
 
-  const yearSummary = fullSeries.yearSummary
+  const { yearSummary } = fullSeries
+  const showYearEvaluationCard = timeframe === '1Y' || !yearSummary.isYtd
 
   return (
     <section
@@ -611,51 +635,34 @@ export default function MineralTrendChart({
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
       {/* Top Masthead Bar */}
-      <div className="flex flex-col justify-between gap-2.5 border-b border-ink/10 bg-paper-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5 lg:px-6">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
-              <TrendingUp size={13} />
-              {ui(
-                'Interactive Mineral Trend',
-                'Mwenendo wa Bei ya Madini',
-                'Tendencia Histórica Mineral',
-              )}
-            </span>
-            <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
-              {ui(
-                `World Spot Parity (${fullSeries.unitSuffix})`,
-                `Soko la Dunia (${fullSeries.unitSuffix})`,
-                `Paridad Spot Mundial (${fullSeries.unitSuffix})`,
-              )}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-stone">
-            {isLocalUnits
-              ? ui(
-                  `Plotting World Spot Parity in local units (${currency}${fullSeries.unitSuffix}) · Scroll or use zoom controls to inspect intervals.`,
-                  `Inaonyesha bei za Soko la Dunia kwa kipimo cha ndani (${currency}${fullSeries.unitSuffix}) · Tumia vidhibiti vya kukuza kuchambua muda.`,
-                  `Paridad Spot Mundial en unidades locales (${currency}${fullSeries.unitSuffix}) · Usa el zoom para inspeccionar intervalos.`,
-                )
-              : ui(
-                  `Plotting World Spot Parity in global spot units (${currency}${fullSeries.unitSuffix}) · Scroll or use zoom controls to inspect intervals.`,
-                  `Inaonyesha bei za Soko la Dunia kwa kipimo cha kimataifa (${currency}${fullSeries.unitSuffix}) · Tumia vidhibiti vya kukuza kuchambua muda.`,
-                  `Paridad Spot Mundial en unidades globales (${currency}${fullSeries.unitSuffix}) · Usa el zoom para inspeccionar intervalos.`,
-                )}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-semibold text-ink">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: strokeColor }}
-              aria-hidden="true"
-            />
-            {currencyMeta.flag} {currency}
-            {fullSeries.unitSuffix}
+      <div className="flex flex-col justify-between gap-2 border-b border-ink/10 bg-paper-2 px-4 py-3 sm:flex-row sm:items-center sm:px-5 lg:px-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
+            <TrendingUp size={13} />
+            {ui(
+              'Interactive Mineral Trend',
+              'Mwenendo wa Bei ya Madini',
+              'Tendencia Histórica Mineral',
+            )}
+          </span>
+          <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+            {ui(
+              `World Spot Parity (${fullSeries.unitSuffix})`,
+              `Soko la Dunia (${fullSeries.unitSuffix})`,
+              `Paridad Spot Mundial (${fullSeries.unitSuffix})`,
+            )}
           </span>
         </div>
+
+        <span className="inline-flex shrink-0 self-start items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-semibold text-ink sm:self-center">
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: strokeColor }}
+            aria-hidden="true"
+          />
+          {currencyMeta.flag} {currency}
+          {fullSeries.unitSuffix}
+        </span>
       </div>
 
       {/* Mineral Selector Strip */}
@@ -695,18 +702,15 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Headline Price Readout & Single-Row Timeframe Pills */}
+      {/* Headline Price Readout + Unified Year Selector & 5-Pill Timeframe Strip */}
       <div className="flex flex-col justify-between gap-3.5 px-4 pt-4 pb-3 sm:px-5 lg:flex-row lg:items-end lg:px-6">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-display text-2xl font-medium text-ink sm:text-[26px]">
               {activeMineral.mineral_name}
             </h3>
             <span className="rounded border border-ink/15 bg-ink px-2 py-0.5 font-mono text-[11px] font-bold text-gold">
               {activeMineral.symbol}
-            </span>
-            <span className="font-mono text-[11px] text-stone">
-              {activeMineral.purity_note}
             </span>
           </div>
 
@@ -747,50 +751,82 @@ export default function MineralTrendChart({
                     language,
                   )}
                 </span>{' '}
-                ·{' '}
-                {ui(
-                  `Change in visible ${activeTimeframeBadge} window`,
-                  `Mabadiliko ndani ya muda wa ${activeTimeframeBadge}`,
-                  `Cambio en la ventana ${activeTimeframeBadge}`,
-                )}
+                · {activeRangeBadge}
               </>
             ) : (
               <>
-                {ui(
-                  'World Spot Parity rate ·',
-                  'Bei ya Soko la Dunia ·',
-                  'Tasa de Paridad Spot Mundial ·',
-                )}{' '}
+                {yearSummary.isYtd
+                  ? ui(
+                      'World Spot Parity rate ·',
+                      'Bei ya Soko la Dunia ·',
+                      'Tasa de Paridad Spot Mundial ·',
+                    )
+                  : ui(
+                      `${selectedYear} Historical Benchmark ·`,
+                      `Bei ya Kihistoria ${selectedYear} ·`,
+                      `Referencia Histórica ${selectedYear} ·`,
+                    )}{' '}
                 {activeMineral.exchange_desk ?? 'LBMA / Tume ya Madini'}
               </>
             )}
           </p>
         </div>
 
-        {/* Classic Single-Row Timeframe Selector Pills (1M, 1H, 1D, 7D, 30D, 90D, 1Y) */}
-        <div
-          role="group"
-          aria-label={ui('Chart timeframe', 'Muda wa chati', 'Período del gráfico')}
-          className="grid w-full grid-cols-7 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto sm:gap-1 lg:self-end"
-        >
-          {CHART_TIMEFRAMES.map((tf) => {
-            const active = tf === timeframe
-            return (
-              <button
-                key={tf}
-                type="button"
-                aria-pressed={active}
-                onClick={() => handleTimeframeChange(tf)}
-                className={`rounded-md px-1 py-1.5 text-center font-mono text-[10.5px] font-semibold transition sm:px-3 sm:text-xs ${
-                  active
-                    ? 'bg-ink text-gold shadow-xs'
-                    : 'text-ink-3 hover:text-ink'
-                }`}
-              >
-                {tf}
-              </button>
-            )
-          })}
+        {/* Unified Compact Year Selector + 5-Pill Multipurpose Timeframe Strip */}
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center lg:self-end">
+          {/* Compact Year Selector (2026, 2025, 2024, 2023) */}
+          <div className="flex items-center gap-1.5">
+            <div
+              role="group"
+              aria-label={ui('Select year', 'Chagua mwaka', 'Seleccionar año')}
+              className="grid w-full grid-cols-4 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto"
+            >
+              {selectableYears.map((yr) => {
+                const active = selectedYear === yr
+                return (
+                  <button
+                    key={yr}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => handleYearChange(yr)}
+                    className={`rounded-md px-2 py-1.5 text-center font-mono text-[11px] font-semibold transition tabular-nums sm:px-2.5 sm:text-xs ${
+                      active
+                        ? 'bg-ochre text-paper shadow-xs'
+                        : 'text-ink-3 hover:text-ink'
+                    }`}
+                  >
+                    {yr}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Minimal 5-Pill Granularity Strip (1M | 1H | 1D | 1Mo | 1Y) */}
+          <div
+            role="group"
+            aria-label={ui('Chart timeframe', 'Muda wa chati', 'Período del gráfico')}
+            className="grid w-full grid-cols-5 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto sm:gap-1"
+          >
+            {CHART_TIMEFRAMES.map((tf) => {
+              const active = tf === timeframe
+              return (
+                <button
+                  key={tf}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => handleTimeframeChange(tf)}
+                  className={`rounded-md px-2 py-1.5 text-center font-mono text-[11px] font-semibold transition sm:px-3 sm:text-xs ${
+                    active
+                      ? 'bg-ink text-gold shadow-xs'
+                      : 'text-ink-3 hover:text-ink'
+                  }`}
+                >
+                  {tf}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -857,7 +893,7 @@ export default function MineralTrendChart({
             <ZoomOut size={12} />
             <span className="hidden sm:inline">{ui('Zoom Out', 'Punguza', 'Alejar')}</span>
           </button>
-          {isZoomed && (
+          {(isZoomed || focusTimestampMs !== null) && (
             <button
               type="button"
               onClick={handleResetZoom}
@@ -872,55 +908,6 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Year Selector Strip (Visible in 1Y / Yearly Assessment View) */}
-      {timeframe === '1Y' && (
-        <div className="mx-4 mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-white/80 px-3 py-2 sm:mx-5 lg:mx-6">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
-            {ui(
-              'Assess Calendar Year:',
-              'Tathmini Mwaka Maalum:',
-              'Evaluar Año Calendario:',
-            )}
-          </span>
-          <div
-            role="group"
-            aria-label={ui('Select assessment year', 'Chagua mwaka wa tathmini', 'Seleccionar año')}
-            className="flex flex-wrap items-center gap-1"
-          >
-            <button
-              type="button"
-              aria-pressed={selectedYear === null}
-              onClick={() => handleYearSelect(null)}
-              className={`rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition ${
-                selectedYear === null
-                  ? 'bg-ink text-gold shadow-xs'
-                  : 'border border-ink/12 bg-paper text-ink-3 hover:border-ochre/45 hover:text-ink'
-              }`}
-            >
-              {ui('Rolling 1Y', 'Mwaka 1', '1A Móvil')}
-            </button>
-            {selectableYears.map((yr) => {
-              const active = selectedYear === yr
-              return (
-                <button
-                  key={yr}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => handleYearSelect(yr)}
-                  className={`rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition tabular-nums ${
-                    active
-                      ? 'bg-ochre text-paper shadow-xs'
-                      : 'border border-ink/12 bg-paper text-ink-3 hover:border-ochre/45 hover:text-ink'
-                  }`}
-                >
-                  {yr}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Interactive Financial Area/Line Chart */}
       <div className="relative px-2 pb-3 sm:px-6 sm:pb-4">
         <div ref={chartContainerRef} className="relative w-full select-none">
@@ -931,7 +918,7 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${activeTimeframeBadge} World Spot Parity ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${fullSeries.unitSuffix})`}
+            aria-label={`${activeMineral.mineral_name} ${activeRangeBadge} World Spot Parity ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${fullSeries.unitSuffix})`}
             className="block w-full cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ochre/40"
             onPointerMove={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerDown={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
@@ -1103,12 +1090,12 @@ export default function MineralTrendChart({
             </g>
           </svg>
 
-          {/* Interactive Floating Scrub Tooltip (Always Includes Exact Date + EAT Time) */}
+          {/* Interactive Floating Scrub Tooltip (Exact Date + EAT Time) */}
           {safeHoverIdx !== null && (
             <div
               role="status"
               aria-live="polite"
-              className="pointer-events-none absolute top-2 z-20 min-w-[205px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
+              className="pointer-events-none absolute top-2 z-20 min-w-[200px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
               style={
                 tooltipAlignRight
                   ? {
@@ -1119,7 +1106,7 @@ export default function MineralTrendChart({
                     }
                   : {
                       left: `${Math.min(
-                        Math.max(10, chartGeometry.width - 216),
+                        Math.max(10, chartGeometry.width - 210),
                         Math.max(chartGeometry.padLeft + 6, activeCoord.x + 12),
                       )}px`,
                     }
@@ -1146,23 +1133,29 @@ export default function MineralTrendChart({
               >
                 {formatSignedDelta(displayedDeltaUsd)} (
                 {displayedPositive ? '+' : ''}
-                {displayedDeltaPct.toFixed(2)}%) · {activeTimeframeBadge}
+                {displayedDeltaPct.toFixed(2)}%) · {activeRangeBadge}
               </div>
             </div>
           )}
 
-          {/* Compact Zoom Position Scrub Track (Shown When Zoomed) */}
+          {/* Interactive Zoom Position Scrub Track (Shown When Zoomed) */}
           {isZoomed && (
             <div className="mt-2 px-1">
               <div
-                aria-label={ui('Visible zoom range', 'Sehemu iliyokuzwa', 'Rango visible')}
-                className="relative h-1.5 w-full overflow-hidden rounded-full bg-ink/10"
+                role="slider"
+                aria-label={ui('Pan visible zoom window', 'Sogeza sehemu iliyokuzwa', 'Desplazar rango visible')}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(scrubLeftPct)}
+                tabIndex={0}
+                onClick={handleScrubBarClick}
+                className="relative h-2 w-full cursor-pointer overflow-hidden rounded-full bg-ink/10"
               >
                 <div
                   className="absolute top-0 h-full rounded-full bg-ochre transition-all duration-150"
                   style={{
                     left: `${scrubLeftPct}%`,
-                    width: `${Math.max(6, scrubWidthPct)}%`,
+                    width: `${Math.max(8, scrubWidthPct)}%`,
                   }}
                 />
               </div>
@@ -1171,8 +1164,8 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Selected Year Breakdown Card (Cleanly Shown Below Canvas When Inspecting a Specific Year) */}
-      {yearSummary && (
+      {/* Year Evaluation Card (Shown on 1Y or Any Selected Historical Year) */}
+      {showYearEvaluationCard && (
         <div className="mx-4 mb-4 rounded-xl border border-ink/12 bg-white px-4 py-3.5 shadow-xs sm:mx-5 sm:px-5 lg:mx-6">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/8 pb-2.5">
             <div className="flex items-center gap-2">
@@ -1182,12 +1175,12 @@ export default function MineralTrendChart({
               <span className="font-display text-sm font-medium text-ink sm:text-base">
                 {yearSummary.isYtd
                   ? ui(
-                      `${yearSummary.year} Year-to-Date Assessment`,
+                      `${yearSummary.year} Year-to-Date Evaluation`,
                       `Tathmini ya Mwaka ${yearSummary.year} Hadi Sasa`,
                       `Evaluación Acumulada ${yearSummary.year}`,
                     )
                   : ui(
-                      `${yearSummary.year} Full-Year Assessment`,
+                      `${yearSummary.year} Full-Year Evaluation`,
                       `Tathmini ya Mwaka Kamili ${yearSummary.year}`,
                       `Evaluación Anual ${yearSummary.year}`,
                     )}
@@ -1199,10 +1192,20 @@ export default function MineralTrendChart({
             </span>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-5">
             <div className="min-w-0">
               <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-                {yearSummary.year} {ui('High', 'Juu Zaidi', 'Máximo')} ({fullSeries.unitSuffix})
+                {ui('Opening', 'Kufungua', 'Apertura')}
+              </span>
+              <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+                {formatPrice(yearSummary.openUnitUsd)}
+                <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+                {yearSummary.year} {ui('High', 'Juu Zaidi', 'Máximo')}
               </span>
               <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
                 {formatPrice(yearSummary.highUnitUsd)}
@@ -1212,7 +1215,7 @@ export default function MineralTrendChart({
 
             <div className="min-w-0">
               <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-                {yearSummary.year} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({fullSeries.unitSuffix})
+                {yearSummary.year} {ui('Low', 'Chini Zaidi', 'Mínimo')}
               </span>
               <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
                 {formatPrice(yearSummary.lowUnitUsd)}
@@ -1223,9 +1226,8 @@ export default function MineralTrendChart({
             <div className="min-w-0">
               <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
                 {yearSummary.isYtd
-                  ? ui('Live Benchmark', 'Bei Hai', 'Referencia Actual')
-                  : ui('Year Close', 'Bei ya Kufunga', 'Cierre Anual')}{' '}
-                ({fullSeries.unitSuffix})
+                  ? ui('Latest', 'Ya Sasa', 'Actual')
+                  : ui('Year-End', 'Mwisho wa Mwaka', 'Cierre')}
               </span>
               <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
                 {formatPrice(yearSummary.closeUnitUsd)}
@@ -1233,9 +1235,9 @@ export default function MineralTrendChart({
               </span>
             </div>
 
-            <div className="min-w-0">
+            <div className="col-span-2 min-w-0 sm:col-span-1">
               <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-                {ui('YoY Change', 'Mabadiliko YoY', 'Variación Anual')}
+                {ui('Annual Move', 'Mabadiliko', 'Variación')}
               </span>
               <span
                 className={`mt-0.5 inline-flex items-center gap-0.5 whitespace-nowrap font-mono text-[12px] font-bold tabular-nums sm:text-xs ${
@@ -1243,18 +1245,18 @@ export default function MineralTrendChart({
                 }`}
               >
                 {yearSummary.yoyChangeUsd >= 0 ? '+' : ''}
-                {yearSummary.yoyChangePct.toFixed(2)}% ({formatSignedDelta(yearSummary.yoyChangeUsd)})
+                {yearSummary.yoyChangePct.toFixed(2)}%
               </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Mode-Matched Benchmark Summary Strip */}
+      {/* Mode-Matched Statutory Benchmark Summary Strip */}
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-ink/10 bg-paper-2/70 px-4 py-3.5 sm:grid-cols-4 sm:px-5 lg:px-6">
         <div className="min-w-0">
           <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {activeTimeframeBadge} {ui('High', 'Juu Zaidi', 'Máximo')} ({fullSeries.unitSuffix})
+            {timeframe} {ui('High', 'Juu Zaidi', 'Máximo')} ({fullSeries.unitSuffix})
           </span>
           <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
             {formatPrice(visibleStats.maxUnitUsd)}
@@ -1264,7 +1266,7 @@ export default function MineralTrendChart({
 
         <div className="min-w-0">
           <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {activeTimeframeBadge} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({fullSeries.unitSuffix})
+            {timeframe} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({fullSeries.unitSuffix})
           </span>
           <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
             {formatPrice(visibleStats.minUnitUsd)}

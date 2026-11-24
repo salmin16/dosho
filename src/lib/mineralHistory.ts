@@ -6,7 +6,7 @@ import {
 import type { LanguageCode } from '../i18n'
 import type { MineralPriceRecord } from '../types/database'
 
-export type ChartTimeframe = '1M' | '1H' | '1D' | '7D' | '30D' | '90D' | '1Y'
+export type ChartTimeframe = '1M' | '1H' | '1D' | '1Mo' | '1Y'
 
 export type ChartPricingMode = 'metric_local' | 'standard'
 
@@ -16,9 +16,7 @@ export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
   '1M',
   '1H',
   '1D',
-  '7D',
-  '30D',
-  '90D',
+  '1Mo',
   '1Y',
 ] as const
 
@@ -51,6 +49,7 @@ export interface YearlyAssessmentSummary {
 export interface MineralTrendSeries {
   mode: ChartPricingMode
   timeframe: ChartTimeframe
+  selectedYear: number
   points: MineralTrendPoint[]
   unitSuffix: ChartUnitSuffix
   unitSingular: string
@@ -60,7 +59,7 @@ export interface MineralTrendSeries {
   maxUnitUsd: number
   changeUnitUsd: number
   changePct: number
-  yearSummary?: YearlyAssessmentSummary
+  yearSummary: YearlyAssessmentSummary
 }
 
 /**
@@ -144,11 +143,11 @@ export function convertToChartUnitUsd(
 }
 
 interface HistoricalProfile {
-  /** Net fractional change over multi-day horizons */
-  drift: Record<Exclude<ChartTimeframe, '1M' | '1H' | '1D'>, number>
-  /** Annual returns for multi-year assessment (year offset 0 = YTD, 1 = prev year, 2 = -2y, 3 = -3y) */
+  /** Annual returns for multi-year assessment (offset 0 = current YTD, 1 = -1y, 2 = -2y, 3 = -3y) */
   annualReturns: [number, number, number, number]
-  /** Relative noise/oscillation amplitude for realistic commodity price discovery */
+  /** Monthly drift signature */
+  monthlyDrift: number
+  /** Relative noise/oscillation amplitude per granularity */
   volatility: Record<ChartTimeframe, number>
   /** Multi-cycle wave signature */
   cyclePhase: number
@@ -156,71 +155,71 @@ interface HistoricalProfile {
 
 const MINERAL_PROFILES: Record<string, HistoricalProfile> = {
   XAU: {
-    drift: { '7D': 0.026, '30D': 0.058, '90D': 0.118, '1Y': 0.285 },
     annualReturns: [0.245, 0.272, 0.131, 0.048],
-    volatility: { '1M': 0.00042, '1H': 0.0014, '1D': 0.0042, '7D': 0.01, '30D': 0.018, '90D': 0.028, '1Y': 0.042 },
+    monthlyDrift: 0.058,
+    volatility: { '1M': 0.00042, '1H': 0.0014, '1D': 0.0042, '1Mo': 0.018, '1Y': 0.044 },
     cyclePhase: 0.4,
   },
   XAG: {
-    drift: { '7D': 0.038, '30D': 0.074, '90D': 0.152, '1Y': 0.34 },
     annualReturns: [0.294, 0.215, 0.082, -0.034],
-    volatility: { '1M': 0.00068, '1H': 0.0022, '1D': 0.0075, '7D': 0.017, '30D': 0.032, '90D': 0.048, '1Y': 0.068 },
+    monthlyDrift: 0.074,
+    volatility: { '1M': 0.00068, '1H': 0.0022, '1D': 0.0075, '1Mo': 0.032, '1Y': 0.07 },
     cyclePhase: 1.1,
   },
   HG: {
-    drift: { '7D': 0.019, '30D': 0.034, '90D': 0.078, '1Y': 0.145 },
     annualReturns: [0.128, 0.104, 0.052, -0.068],
-    volatility: { '1M': 0.00055, '1H': 0.0018, '1D': 0.0055, '7D': 0.014, '30D': 0.026, '90D': 0.04, '1Y': 0.058 },
+    monthlyDrift: 0.034,
+    volatility: { '1M': 0.00055, '1H': 0.0018, '1D': 0.0055, '1Mo': 0.026, '1Y': 0.06 },
     cyclePhase: 2.0,
   },
   TZN: {
-    drift: { '7D': 0.024, '30D': 0.046, '90D': 0.088, '1Y': 0.165 },
     annualReturns: [0.148, 0.118, 0.095, 0.072],
-    volatility: { '1M': 0.00032, '1H': 0.001, '1D': 0.0032, '7D': 0.0075, '30D': 0.014, '90D': 0.022, '1Y': 0.032 },
+    monthlyDrift: 0.046,
+    volatility: { '1M': 0.00032, '1H': 0.001, '1D': 0.0032, '1Mo': 0.014, '1Y': 0.034 },
     cyclePhase: 0.85,
   },
   RBY: {
-    drift: { '7D': 0.03, '30D': 0.054, '90D': 0.105, '1Y': 0.21 },
     annualReturns: [0.186, 0.142, 0.114, 0.088],
-    volatility: { '1M': 0.00036, '1H': 0.0011, '1D': 0.0036, '7D': 0.0082, '30D': 0.016, '90D': 0.024, '1Y': 0.036 },
+    monthlyDrift: 0.054,
+    volatility: { '1M': 0.00036, '1H': 0.0011, '1D': 0.0036, '1Mo': 0.016, '1Y': 0.038 },
     cyclePhase: 1.55,
   },
   GRF: {
-    drift: { '7D': 0.04, '30D': 0.068, '90D': 0.112, '1Y': 0.19 },
     annualReturns: [0.162, 0.084, -0.052, 0.118],
-    volatility: { '1M': 0.00046, '1H': 0.0015, '1D': 0.005, '7D': 0.012, '30D': 0.024, '90D': 0.036, '1Y': 0.052 },
+    monthlyDrift: 0.068,
+    volatility: { '1M': 0.00046, '1H': 0.0015, '1D': 0.005, '1Mo': 0.024, '1Y': 0.054 },
     cyclePhase: 2.6,
   },
   NI: {
-    drift: { '7D': -0.013, '30D': -0.028, '90D': -0.045, '1Y': -0.065 },
     annualReturns: [-0.054, -0.082, -0.185, 0.224],
-    volatility: { '1M': 0.0006, '1H': 0.002, '1D': 0.0062, '7D': 0.016, '30D': 0.032, '90D': 0.05, '1Y': 0.074 },
+    monthlyDrift: -0.028,
+    volatility: { '1M': 0.0006, '1H': 0.002, '1D': 0.0062, '1Mo': 0.032, '1Y': 0.076 },
     cyclePhase: 3.3,
   },
   LI: {
-    drift: { '7D': 0.035, '30D': 0.062, '90D': 0.082, '1Y': 0.115 },
     annualReturns: [0.098, -0.164, -0.285, 0.41],
-    volatility: { '1M': 0.00065, '1H': 0.0021, '1D': 0.0068, '7D': 0.018, '30D': 0.035, '90D': 0.056, '1Y': 0.082 },
+    monthlyDrift: 0.062,
+    volatility: { '1M': 0.00065, '1H': 0.0021, '1D': 0.0068, '1Mo': 0.035, '1Y': 0.084 },
     cyclePhase: 4.1,
   },
   CO: {
-    drift: { '7D': 0.017, '30D': 0.029, '90D': -0.012, '1Y': -0.042 },
     annualReturns: [-0.036, -0.112, -0.145, 0.092],
-    volatility: { '1M': 0.00048, '1H': 0.0016, '1D': 0.0052, '7D': 0.013, '30D': 0.025, '90D': 0.042, '1Y': 0.064 },
+    monthlyDrift: 0.029,
+    volatility: { '1M': 0.00048, '1H': 0.0016, '1D': 0.0052, '1Mo': 0.025, '1Y': 0.066 },
     cyclePhase: 4.9,
   },
   SN: {
-    drift: { '7D': -0.015, '30D': -0.021, '90D': 0.048, '1Y': 0.125 },
     annualReturns: [0.112, 0.168, 0.064, -0.125],
-    volatility: { '1M': 0.00058, '1H': 0.0019, '1D': 0.0058, '7D': 0.015, '30D': 0.028, '90D': 0.044, '1Y': 0.062 },
+    monthlyDrift: -0.021,
+    volatility: { '1M': 0.00058, '1H': 0.0019, '1D': 0.0058, '1Mo': 0.028, '1Y': 0.064 },
     cyclePhase: 5.5,
   },
 }
 
 const DEFAULT_PROFILE: HistoricalProfile = {
-  drift: { '7D': 0.018, '30D': 0.035, '90D': 0.072, '1Y': 0.14 },
   annualReturns: [0.12, 0.09, 0.06, 0.04],
-  volatility: { '1M': 0.00045, '1H': 0.0015, '1D': 0.005, '7D': 0.012, '30D': 0.022, '90D': 0.035, '1Y': 0.05 },
+  monthlyDrift: 0.035,
+  volatility: { '1M': 0.00045, '1H': 0.0015, '1D': 0.005, '1Mo': 0.022, '1Y': 0.052 },
   cyclePhase: 1.7,
 }
 
@@ -243,37 +242,21 @@ function createPrng(seed: number): () => number {
   }
 }
 
-interface TimeframeConfig {
-  count: number
-  spanMs: number
-}
-
 const MINUTE_MS = 60_000
 const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
-// Rich point density across all windows so deep zooming stays smooth and triggers finer scales
-const TIMEFRAME_CONFIG: Record<ChartTimeframe, TimeframeConfig> = {
+const SUB_YEAR_CONFIG: Record<
+  Exclude<ChartTimeframe, '1Y'>,
+  { count: number; spanMs: number }
+> = {
   '1M': { count: 61, spanMs: MINUTE_MS }, // 1-second ticks over 60 seconds
   '1H': { count: 61, spanMs: HOUR_MS }, // 1-minute ticks over 60 minutes
   '1D': { count: 49, spanMs: 24 * HOUR_MS }, // 30-minute ticks over 24 hours
-  '7D': { count: 57, spanMs: 7 * DAY_MS }, // 3-hour ticks over 7 days
-  '30D': { count: 61, spanMs: 30 * DAY_MS }, // 12-hour ticks over 30 days
-  '90D': { count: 91, spanMs: 90 * DAY_MS }, // Daily ticks over 90 days
-  '1Y': { count: 105, spanMs: 365 * DAY_MS }, // ~3.5-day ticks over 1 year
+  '1Mo': { count: 61, spanMs: 30 * DAY_MS }, // 12-hour ticks over 30 days
 }
 
-function sampleNormalizedArray(values: number[], t: number): number {
-  if (values.length === 0) return 0
-  if (values.length === 1) return values[0]
-  const scaled = Math.max(0, Math.min(1, t)) * (values.length - 1)
-  const idx = Math.floor(scaled)
-  const frac = scaled - idx
-  const next = Math.min(values.length - 1, idx + 1)
-  return values[idx] + (values[next] - values[idx]) * frac
-}
-
-function resolveAnchorEndMs(mineral: MineralPriceRecord, anchorNowMs?: number): number {
+function resolveAnchorNowMs(mineral: MineralPriceRecord, anchorNowMs?: number): number {
   if (anchorNowMs !== undefined) return anchorNowMs
   const parsedUpdated = Date.parse(mineral.updated_at)
   if (Number.isFinite(parsedUpdated) && Math.abs(Date.now() - parsedUpdated) < 30 * DAY_MS) {
@@ -300,207 +283,54 @@ export function detectTimelineScale(visibleSpanMs: number): TimelineScale {
   return 'years'
 }
 
-/**
- * Generates a deterministic, realistic historical + live trend series for a mineral
- * anchored to its World Spot Parity benchmark (`world_market_price_usd`).
- */
-export function buildMineralTrendSeries(
-  mineral: MineralPriceRecord,
-  timeframe: ChartTimeframe,
-  mode: ChartPricingMode = 'metric_local',
-  anchorNowMs?: number,
-): MineralTrendSeries {
-  const { unitUsd: currentUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
+function sampleSeriesAtTimestamp(points: MineralTrendPoint[], targetMs: number): number {
+  if (points.length === 0) return 0
+  if (targetMs <= points[0].timestampMs) return points[0].unitUsd
+  const last = points[points.length - 1]
+  if (targetMs >= last.timestampMs) return last.unitUsd
 
-  const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
-  const { count, spanMs } = TIMEFRAME_CONFIG[timeframe]
-
-  const endMs = resolveAnchorEndMs(mineral, anchorNowMs)
-  const startMs = endMs - spanMs
-
-  let startUnitUsd: number
-  if (timeframe === '1M') {
-    const minuteDrift = ((mineral.trend_percentage || 0) / 100) * 0.025
-    const denom = 1 + minuteDrift
-    startUnitUsd = denom > 0.5 ? currentUnitUsd / denom : currentUnitUsd
-  } else if (timeframe === '1H') {
-    const hourlyDrift = ((mineral.trend_percentage || 0) / 100) * 0.16
-    const denom = 1 + hourlyDrift
-    startUnitUsd = denom > 0.5 ? currentUnitUsd / denom : currentUnitUsd
-  } else if (timeframe === '1D') {
-    if (mineral.day_open_usd && mineral.day_open_usd > 0) {
-      startUnitUsd = convertToChartUnitUsd(
-        mineral.day_open_usd,
-        mineral.unit,
-        mode,
-      ).unitUsd
-    } else {
-      const denom = 1 + (mineral.trend_percentage || 0) / 100
-      startUnitUsd = denom > 0.2 ? currentUnitUsd / denom : currentUnitUsd
-    }
-  } else {
-    const horizonDrift = profile.drift[timeframe]
-    const liveTilt =
-      timeframe === '7D'
-        ? ((mineral.trend_percentage || 0) / 100) * 0.45
-        : timeframe === '30D'
-          ? ((mineral.trend_percentage || 0) / 100) * 0.2
-          : 0
-    const effectiveDrift = Math.max(-0.55, Math.min(2.2, horizonDrift + liveTilt))
-    startUnitUsd = currentUnitUsd / (1 + effectiveDrift)
+  let lo = 0
+  let hi = points.length - 1
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1
+    if (points[mid].timestampMs <= targetMs) lo = mid
+    else hi = mid
   }
-
-  const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v3`))
-  const vol = profile.volatility[timeframe]
-
-  const walk: number[] = [0]
-  for (let i = 1; i < count; i++) {
-    const z = (rng() + rng() + rng() - 1.5) * 1.15
-    walk.push(walk[i - 1] + z)
-  }
-
-  const walkEnd = walk[count - 1]
-  const bridge = walk.map((v, i) => {
-    const t = i / (count - 1)
-    return v - t * walkEnd
-  })
-  const maxAbsBridge = Math.max(0.0001, ...bridge.map((v) => Math.abs(v)))
-
-  const sparkConverted =
-    mineral.sparkline_points && mineral.sparkline_points.length >= 2
-      ? mineral.sparkline_points.map(
-          (p) => convertToChartUnitUsd(p, mineral.unit, mode).unitUsd,
-        )
-      : null
-
-  const dayLowUnit =
-    mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToChartUnitUsd(mineral.day_low_usd, mineral.unit, mode).unitUsd
-      : null
-  const dayHighUnit =
-    mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToChartUnitUsd(mineral.day_high_usd, mineral.unit, mode).unitUsd
-      : null
-
-  const points: MineralTrendPoint[] = []
-  const meanLevel = (startUnitUsd + currentUnitUsd) / 2
-
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1)
-    const timestampMs = Math.round(startMs + t * spanMs)
-
-    if (i === 0) {
-      points.push({ timestampMs, unitUsd: startUnitUsd })
-      continue
-    }
-    if (i === count - 1) {
-      points.push({ timestampMs, unitUsd: currentUnitUsd })
-      continue
-    }
-
-    const linear = startUnitUsd + (currentUnitUsd - startUnitUsd) * t
-    const envelope = Math.sin(Math.PI * t)
-
-    const macroWave =
-      timeframe === '1M'
-        ? Math.sin(t * Math.PI * 3.2 + profile.cyclePhase) * 0.18
-        : timeframe === '1H'
-          ? Math.sin(t * Math.PI * 2.2 + profile.cyclePhase) * 0.22
-          : timeframe === '1D'
-            ? Math.sin(t * Math.PI * 2.5 + profile.cyclePhase) * 0.25
-            : timeframe === '7D'
-              ? Math.sin(t * Math.PI * 3.0 + profile.cyclePhase) * 0.3
-              : Math.sin(t * Math.PI * 2.4 + profile.cyclePhase) * 0.45 +
-                Math.cos(t * Math.PI * 5.2 + profile.cyclePhase * 1.4) * 0.2
-
-    const bridgeNorm = bridge[i] / maxAbsBridge
-    let value =
-      linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.55)
-
-    if ((timeframe === '1D' || timeframe === '7D') && sparkConverted) {
-      const sparkVal = sampleNormalizedArray(sparkConverted, t)
-      const sparkSpan = sparkConverted[sparkConverted.length - 1] - sparkConverted[0]
-      const expectedLinearSpark = sparkConverted[0] + sparkSpan * t
-      const sparkResidual = sparkVal - expectedLinearSpark
-      value += sparkResidual * (timeframe === '1D' ? 0.45 : 0.3) * envelope
-    }
-
-    if (timeframe === '1D' && dayLowUnit !== null && dayHighUnit !== null) {
-      const lowGuard = Math.min(dayLowUnit, startUnitUsd, currentUnitUsd)
-      const highGuard = Math.max(dayHighUnit, startUnitUsd, currentUnitUsd)
-      value = Math.max(lowGuard, Math.min(highGuard, value))
-    }
-
-    const positiveFloor = Math.max(0.0001, Math.min(startUnitUsd, currentUnitUsd) * 0.35)
-    points.push({
-      timestampMs,
-      unitUsd: Math.max(positiveFloor, value),
-    })
-  }
-
-  let minUnitUsd = points[0].unitUsd
-  let maxUnitUsd = points[0].unitUsd
-  for (const pt of points) {
-    if (pt.unitUsd < minUnitUsd) minUnitUsd = pt.unitUsd
-    if (pt.unitUsd > maxUnitUsd) maxUnitUsd = pt.unitUsd
-  }
-
-  const changeUnitUsd = currentUnitUsd - startUnitUsd
-  const changePct =
-    startUnitUsd > 0 ? (changeUnitUsd / startUnitUsd) * 100 : 0
-
-  return {
-    mode,
-    timeframe,
-    points,
-    unitSuffix,
-    unitSingular,
-    startUnitUsd,
-    currentUnitUsd,
-    minUnitUsd,
-    maxUnitUsd,
-    changeUnitUsd,
-    changePct,
-  }
+  const a = points[lo]
+  const b = points[hi]
+  const span = Math.max(1, b.timestampMs - a.timestampMs)
+  const frac = (targetMs - a.timestampMs) / span
+  return a.unitUsd + (b.unitUsd - a.unitUsd) * frac
 }
 
-/**
- * Generates a complete, continuous calendar-year series (e.g., 2026 YTD, 2025, 2024, 2023)
- * for per-year assessment and breakdown inspection, anchored smoothly to the live price.
- */
-export function buildMineralYearSeries(
-  mineral: MineralPriceRecord,
-  year: number,
-  mode: ChartPricingMode = 'metric_local',
-  anchorNowMs?: number,
-): MineralTrendSeries {
-  const { unitUsd: liveUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
+function generateBridgeSeries(params: {
+  seedKey: string
+  count: number
+  startMs: number
+  endMs: number
+  startUsd: number
+  endUsd: number
+  vol: number
+  phase: number
+  waveCount: number
+  guardLow?: number | null
+  guardHigh?: number | null
+}): MineralTrendPoint[] {
+  const {
+    seedKey,
+    count,
+    startMs,
+    endMs,
+    startUsd,
+    endUsd,
+    vol,
+    phase,
+    waveCount,
+    guardLow,
+    guardHigh,
+  } = params
 
-  const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
-  const nowMs = resolveAnchorEndMs(mineral, anchorNowMs)
-  const currentYear = new Date(nowMs).getUTCFullYear()
-  const yearOffset = Math.max(0, Math.min(3, currentYear - year))
-  const isYtd = year >= currentYear
-
-  // Walk backwards continuously from liveUnitUsd so each calendar year's close matches the next year's open
-  let endUnitUsd = liveUnitUsd
-  for (let o = 0; o < yearOffset; o++) {
-    const r = profile.annualReturns[o] ?? 0.08
-    endUnitUsd = endUnitUsd / (1 + r)
-  }
-  const annualReturn = profile.annualReturns[yearOffset] ?? 0.08
-  const startUnitUsd = endUnitUsd / (1 + annualReturn)
-
-  const startMs = Date.UTC(year, 0, 1, 0, 0, 0)
-  const endMs = isYtd ? nowMs : Date.UTC(year, 11, 31, 20, 59, 0)
-  const spanMs = Math.max(DAY_MS, endMs - startMs)
-  const count = 97 // ~3.8-day resolution for smooth zooming inside any calendar year
-
-  const rng = createPrng(hashSeed(`${mineral.symbol}:YEAR:${year}:mineconnect-v3`))
-  const vol = profile.volatility['1Y'] * 1.05
-
+  const rng = createPrng(hashSeed(seedKey))
   const walk: number[] = [0]
   for (let i = 1; i < count; i++) {
     const z = (rng() + rng() + rng() - 1.5) * 1.15
@@ -510,71 +340,230 @@ export function buildMineralYearSeries(
   const bridge = walk.map((v, i) => v - (i / (count - 1)) * walkEnd)
   const maxAbsBridge = Math.max(0.0001, ...bridge.map((v) => Math.abs(v)))
 
+  const meanLevel = (startUsd + endUsd) / 2
+  const spanMs = Math.max(1, endMs - startMs)
   const points: MineralTrendPoint[] = []
-  const meanLevel = (startUnitUsd + endUnitUsd) / 2
-  const phase = profile.cyclePhase + yearOffset * 1.35
 
   for (let i = 0; i < count; i++) {
     const t = i / (count - 1)
     const timestampMs = Math.round(startMs + t * spanMs)
 
     if (i === 0) {
-      points.push({ timestampMs, unitUsd: startUnitUsd })
+      points.push({ timestampMs, unitUsd: startUsd })
       continue
     }
     if (i === count - 1) {
-      points.push({ timestampMs, unitUsd: endUnitUsd })
+      points.push({ timestampMs, unitUsd: endUsd })
       continue
     }
 
-    const linear = startUnitUsd + (endUnitUsd - startUnitUsd) * t
+    const linear = startUsd + (endUsd - startUsd) * t
     const envelope = Math.sin(Math.PI * t)
     const macroWave =
-      Math.sin(t * Math.PI * 2.3 + phase) * 0.45 +
-      Math.cos(t * Math.PI * 4.8 + phase * 1.2) * 0.22
+      Math.sin(t * Math.PI * waveCount + phase) * 0.42 +
+      Math.cos(t * Math.PI * (waveCount * 2.1) + phase * 1.2) * 0.18
     const bridgeNorm = bridge[i] / maxAbsBridge
 
-    const value =
-      linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.55)
-    const positiveFloor = Math.max(0.0001, Math.min(startUnitUsd, endUnitUsd) * 0.35)
+    let value = linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.52)
+
+    if (guardLow != null && guardHigh != null) {
+      const loGuard = Math.min(guardLow, startUsd, endUsd)
+      const hiGuard = Math.max(guardHigh, startUsd, endUsd)
+      value = Math.max(loGuard, Math.min(hiGuard, value))
+    }
+
+    const positiveFloor = Math.max(0.0001, Math.min(startUsd, endUsd) * 0.35)
     points.push({
       timestampMs,
       unitUsd: Math.max(positiveFloor, value),
     })
   }
 
-  let minUnitUsd = points[0].unitUsd
-  let maxUnitUsd = points[0].unitUsd
-  for (const pt of points) {
-    if (pt.unitUsd < minUnitUsd) minUnitUsd = pt.unitUsd
-    if (pt.unitUsd > maxUnitUsd) maxUnitUsd = pt.unitUsd
+  return points
+}
+
+/**
+ * Unified Year + Granularity Drill-Down engine:
+ * Always computes the authoritative full-year baseline for `selectedYear` (continuous
+ * across 2023 -> 2024 -> 2025 -> 2026 live spot) and slices cleanly into `1Y`, `1Mo`,
+ * `1D`, `1H`, or `1M` anchored inside that chosen year.
+ */
+export function buildMineralYearDrilldownSeries(
+  mineral: MineralPriceRecord,
+  selectedYear: number,
+  timeframe: ChartTimeframe,
+  mode: ChartPricingMode = 'metric_local',
+  focusTimestampMs?: number | null,
+  anchorNowMs?: number,
+): MineralTrendSeries {
+  const { unitUsd: liveUnitUsd, unitSuffix, unitSingular } =
+    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
+
+  const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
+  const nowMs = resolveAnchorNowMs(mineral, anchorNowMs)
+  const currentYear = new Date(nowMs).getUTCFullYear()
+  const yearOffset = Math.max(0, Math.min(3, currentYear - selectedYear))
+  const isYtd = selectedYear >= currentYear
+
+  // Walk backwards continuously from liveUnitUsd so 2023 -> 2024 -> 2025 -> 2026 seamlessly chain
+  let yearEndUnitUsd = liveUnitUsd
+  for (let o = 0; o < yearOffset; o++) {
+    const r = profile.annualReturns[o] ?? 0.08
+    yearEndUnitUsd = yearEndUnitUsd / (1 + r)
+  }
+  const annualReturn = profile.annualReturns[yearOffset] ?? 0.08
+  const yearStartUnitUsd = yearEndUnitUsd / (1 + annualReturn)
+
+  const yearStartMs = Date.UTC(selectedYear, 0, 1, 0, 0, 0)
+  // Historical years close on Dec 31 17:00 EAT (14:00 UTC)
+  const yearEndMs = isYtd ? nowMs : Date.UTC(selectedYear, 11, 31, 14, 0, 0)
+
+  // Always compute full-year trajectory first so Year Evaluation stats remain consistent across drill-downs
+  const yearPoints = generateBridgeSeries({
+    seedKey: `${mineral.symbol}:YEAR:${selectedYear}:mineconnect-v4`,
+    count: 105,
+    startMs: yearStartMs,
+    endMs: yearEndMs,
+    startUsd: yearStartUnitUsd,
+    endUsd: yearEndUnitUsd,
+    vol: profile.volatility['1Y'],
+    phase: profile.cyclePhase + yearOffset * 1.35,
+    waveCount: 2.3,
+  })
+
+  let yearLowUsd = yearPoints[0].unitUsd
+  let yearHighUsd = yearPoints[0].unitUsd
+  for (const pt of yearPoints) {
+    if (pt.unitUsd < yearLowUsd) yearLowUsd = pt.unitUsd
+    if (pt.unitUsd > yearHighUsd) yearHighUsd = pt.unitUsd
   }
 
-  const changeUnitUsd = endUnitUsd - startUnitUsd
-  const changePct = startUnitUsd > 0 ? (changeUnitUsd / startUnitUsd) * 100 : 0
+  const yoyChangeUsd = yearEndUnitUsd - yearStartUnitUsd
+  const yoyChangePct =
+    yearStartUnitUsd > 0 ? (yoyChangeUsd / yearStartUnitUsd) * 100 : 0
+
+  const yearSummary: YearlyAssessmentSummary = {
+    year: selectedYear,
+    isYtd,
+    openUnitUsd: yearStartUnitUsd,
+    highUnitUsd: yearHighUsd,
+    lowUnitUsd: yearLowUsd,
+    closeUnitUsd: yearEndUnitUsd,
+    yoyChangeUsd,
+    yoyChangePct,
+  }
+
+  if (timeframe === '1Y') {
+    return {
+      mode,
+      timeframe,
+      selectedYear,
+      points: yearPoints,
+      unitSuffix,
+      unitSingular,
+      startUnitUsd: yearStartUnitUsd,
+      currentUnitUsd: yearEndUnitUsd,
+      minUnitUsd: yearLowUsd,
+      maxUnitUsd: yearHighUsd,
+      changeUnitUsd: yoyChangeUsd,
+      changePct: yoyChangePct,
+      yearSummary,
+    }
+  }
+
+  // Drill down into `1Mo`, `1D`, `1H`, or `1M` strictly inside `selectedYear`
+  const { count, spanMs } = SUB_YEAR_CONFIG[timeframe]
+  const rawSliceEnd =
+    focusTimestampMs != null &&
+    focusTimestampMs >= yearStartMs &&
+    focusTimestampMs <= yearEndMs
+      ? focusTimestampMs
+      : yearEndMs
+
+  const sliceEndMs = Math.max(
+    Math.min(yearEndMs, yearStartMs + spanMs),
+    Math.min(yearEndMs, rawSliceEnd),
+  )
+  const sliceStartMs = Math.max(yearStartMs, sliceEndMs - spanMs)
+
+  // Anchor endpoints seamlessly onto the chosen year's trajectory (or live 1D open/low/high for current YTD latest)
+  const isLiveTail = isYtd && Math.abs(yearEndMs - sliceEndMs) < HOUR_MS
+  const sliceEndUsd = isLiveTail
+    ? liveUnitUsd
+    : sampleSeriesAtTimestamp(yearPoints, sliceEndMs)
+
+  let sliceStartUsd: number
+  let guardLow: number | null = null
+  let guardHigh: number | null = null
+
+  if (isLiveTail && timeframe === '1D') {
+    if (mineral.day_open_usd && mineral.day_open_usd > 0) {
+      sliceStartUsd = convertToChartUnitUsd(
+        mineral.day_open_usd,
+        mineral.unit,
+        mode,
+      ).unitUsd
+    } else {
+      const denom = 1 + (mineral.trend_percentage || 0) / 100
+      sliceStartUsd = denom > 0.2 ? sliceEndUsd / denom : sliceEndUsd
+    }
+    if (mineral.day_low_usd && mineral.day_low_usd > 0) {
+      guardLow = convertToChartUnitUsd(mineral.day_low_usd, mineral.unit, mode).unitUsd
+    }
+    if (mineral.day_high_usd && mineral.day_high_usd > 0) {
+      guardHigh = convertToChartUnitUsd(mineral.day_high_usd, mineral.unit, mode).unitUsd
+    }
+  } else if (timeframe === '1Mo') {
+    sliceStartUsd = sampleSeriesAtTimestamp(yearPoints, sliceStartMs)
+  } else {
+    // Sub-day / intraday slice inside the chosen year
+    const driftScale =
+      timeframe === '1M' ? 0.025 : timeframe === '1H' ? 0.16 : 0.85
+    const baseTrendPct = isLiveTail
+      ? mineral.trend_percentage || 0
+      : Math.max(-2.5, Math.min(2.5, yoyChangePct / 12))
+    const denom = 1 + (baseTrendPct / 100) * driftScale
+    sliceStartUsd = denom > 0.5 ? sliceEndUsd / denom : sliceEndUsd
+  }
+
+  const points = generateBridgeSeries({
+    seedKey: `${mineral.symbol}:YEAR:${selectedYear}:${timeframe}:${Math.round(sliceEndMs / DAY_MS)}:v4`,
+    count,
+    startMs: sliceStartMs,
+    endMs: sliceEndMs,
+    startUsd: sliceStartUsd,
+    endUsd: sliceEndUsd,
+    vol: profile.volatility[timeframe],
+    phase: profile.cyclePhase + yearOffset * 0.9,
+    waveCount: timeframe === '1M' ? 3.1 : timeframe === '1H' ? 2.4 : 2.6,
+    guardLow,
+    guardHigh,
+  })
+
+  let minUsd = points[0].unitUsd
+  let maxUsd = points[0].unitUsd
+  for (const pt of points) {
+    if (pt.unitUsd < minUsd) minUsd = pt.unitUsd
+    if (pt.unitUsd > maxUsd) maxUsd = pt.unitUsd
+  }
+
+  const changeUsd = sliceEndUsd - sliceStartUsd
+  const changePct = sliceStartUsd > 0 ? (changeUsd / sliceStartUsd) * 100 : 0
 
   return {
     mode,
-    timeframe: '1Y',
+    timeframe,
+    selectedYear,
     points,
     unitSuffix,
     unitSingular,
-    startUnitUsd,
-    currentUnitUsd: endUnitUsd,
-    minUnitUsd,
-    maxUnitUsd,
-    changeUnitUsd,
+    startUnitUsd: sliceStartUsd,
+    currentUnitUsd: sliceEndUsd,
+    minUnitUsd: minUsd,
+    maxUnitUsd: maxUsd,
+    changeUnitUsd: changeUsd,
     changePct,
-    yearSummary: {
-      year,
-      isYtd,
-      openUnitUsd: startUnitUsd,
-      highUnitUsd: maxUnitUsd,
-      lowUnitUsd: minUnitUsd,
-      closeUnitUsd: endUnitUsd,
-      yoyChangeUsd: changeUnitUsd,
-      yoyChangePct: changePct,
-    },
+    yearSummary,
   }
 }
 
@@ -707,7 +696,7 @@ export function formatChartTooltipDateByScale(
 
 /**
  * Formats an explicit human-readable calendar date (and EAT time window for intraday views)
- * e.g. `24 Nov 2026 · 07:20–08:20 EAT` or `25 Oct 2026 – 24 Nov 2026`.
+ * e.g. `24 Nov 2026 · 07:35–08:35 EAT` or `1 Jan 2024 – 31 Dec 2024`.
  */
 export function formatVisibleDateWindow(
   startMs: number,
