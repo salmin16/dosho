@@ -18,6 +18,8 @@ import {
   verifyTurnstileForForm,
 } from './verifyTurnstileClient';
 import type {
+  AccountBillingState,
+  AdminAccountLedgerRow,
   BillingCycle,
   ClickPesaProviderCode,
   ClickPesaRail,
@@ -495,6 +497,7 @@ function createDefaultEntitlements(isAdmin = false): UserEntitlements {
       plan_id: 'enterprise',
       plan_name: 'Institutional / JV Desk',
       status: 'active',
+      account_state: 'active',
       is_paid_active: true,
       starts_at: now.toISOString(),
       expires_at: expires,
@@ -510,6 +513,7 @@ function createDefaultEntitlements(isAdmin = false): UserEntitlements {
     plan_id: 'free',
     plan_name: 'Explorer',
     status: 'active',
+    account_state: 'free',
     is_paid_active: false,
     starts_at: null,
     expires_at: null,
@@ -648,15 +652,36 @@ export async function fetchUserSubscriptionFromSupabase(
     ? (txRes.data as PaymentTransactionRecord[])
     : [];
 
+  const hasPaidHistory =
+    resolvedPlanId !== 'free' ||
+    payments.some(
+      (p) =>
+        p.plan_id !== 'free' &&
+        (p.status === 'settled' || p.status === 'approved'),
+    );
+
   let entitlements: UserEntitlements;
 
   if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object') {
     const raw = rpcRes.data as Record<string, unknown>;
+    const isPaidActive = Boolean(raw.is_paid_active);
+    const derivedAccountState: AccountBillingState =
+      raw.account_state === 'active' ||
+      raw.account_state === 'dormant' ||
+      raw.account_state === 'free'
+        ? raw.account_state
+        : isPaidActive
+          ? 'active'
+          : hasPaidHistory || raw.status === 'expired'
+            ? 'dormant'
+            : 'free';
+
     entitlements = {
       plan_id: normalizePlanId(String(raw.plan_id ?? 'free')),
       plan_name: String(raw.plan_name ?? 'Explorer'),
       status: (raw.status as UserEntitlements['status']) ?? 'active',
-      is_paid_active: Boolean(raw.is_paid_active),
+      account_state: derivedAccountState,
+      is_paid_active: isPaidActive,
       starts_at: typeof raw.starts_at === 'string' ? raw.starts_at : null,
       expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : null,
       max_active_listings: Number(raw.max_active_listings ?? 0),
@@ -713,10 +738,17 @@ export async function fetchUserSubscriptionFromSupabase(
           ? 'expired'
           : subscription.status;
 
+      const derivedAccountState: AccountBillingState = isPaidActive
+        ? 'active'
+        : hasPaidHistory
+          ? 'dormant'
+          : 'free';
+
       entitlements = {
         plan_id: matchedPlan.id,
         plan_name: matchedPlan.name,
         status: effectiveStatus,
+        account_state: derivedAccountState,
         is_paid_active: isPaidActive,
         starts_at: subscription.starts_at ?? subscription.created_at,
         expires_at: subscription.expires_at,
@@ -849,6 +881,133 @@ export async function submitManualSubscriptionPayment(params: {
 }
 
 /**
+ * Direct 2-Step Automatic Subscription Activation (`verify-subscription` Edge Function):
+ * Supports Local Mobile Money (M-Pesa, Tigo Pesa, Airtel Money, Halopesa) and Bank/Card Transfer.
+ * Automatically activates `status = 'active'` for 30 days, logs payment in `subscription_payments`,
+ * and unlocks paid entitlements immediately with zero receipt-upload friction.
+ */
+export async function activateSubscriptionDirect(params: {
+  planId: Exclude<SubscriptionPlanId, 'free'>;
+  channel: 'mobile_money' | 'bank_card';
+  provider: string;
+  accountInput: string;
+  currency: SupportedCurrency;
+  turnstileToken?: string;
+}): Promise<{
+  ok: boolean;
+  planName?: string;
+  referenceCode?: string;
+  paymentMethod?: string;
+  amount?: number;
+  currency?: string;
+  startsAt?: string;
+  expiresAt?: string;
+  message?: string;
+  error?: string;
+}> {
+  const session = await waitForAuthReady();
+  if (!session) {
+    return { ok: false, error: 'Please sign in before activating a subscription.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { ok: false, error: 'Billing service is temporarily unavailable.' };
+  }
+
+  const cleanInput = params.accountInput.trim();
+  if (params.channel === 'mobile_money') {
+    const digits = cleanInput.replace(/[^0-9]/g, '');
+    if (digits.length < 9 || digits.length > 13) {
+      return {
+        ok: false,
+        error: 'Enter a valid Tanzania mobile money number (e.g. 07XX XXX XXX).',
+      };
+    }
+  } else if (cleanInput.length < 4) {
+    return {
+      ok: false,
+      error: 'Enter a valid bank account, card, or transfer reference (at least 4 characters).',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      ok?: boolean;
+      activated?: boolean;
+      planName?: string;
+      referenceCode?: string;
+      paymentMethod?: string;
+      amount?: number;
+      currency?: string;
+      startsAt?: string;
+      expiresAt?: string;
+      message?: string;
+      error?: string;
+    }>('verify-subscription', {
+      body: {
+        mode: 'activate',
+        planId: params.planId,
+        channel: params.channel,
+        provider: params.provider,
+        accountInput: cleanInput,
+        currency: params.currency,
+        turnstileToken: params.turnstileToken || undefined,
+      },
+    });
+
+    if (error || !data?.ok || !data?.activated) {
+      return {
+        ok: false,
+        error: formatSafeUserError(
+          data?.error || error?.message,
+          'Could not complete instant payment activation right now. Please try again.',
+        ),
+      };
+    }
+
+    recordAuditActivity({
+      userId: session.user.id,
+      action: 'SUBSCRIPTION_DIRECT_ACTIVATED',
+      metadata: {
+        planId: params.planId,
+        channel: params.channel,
+        provider: params.provider,
+        referenceCode: data.referenceCode,
+        expiresAt: data.expiresAt,
+      },
+    });
+
+    await fetchUserSubscriptionFromSupabase(
+      session.user.id,
+      session.user.email,
+      session.user.role === 'admin',
+    );
+    broadcastSubscriptionUpdate();
+
+    return {
+      ok: true,
+      planName: data.planName,
+      referenceCode: data.referenceCode,
+      paymentMethod: data.paymentMethod,
+      amount: data.amount,
+      currency: data.currency,
+      startsAt: data.startsAt,
+      expiresAt: data.expiresAt,
+      message: data.message,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: formatSafeUserError(
+        err instanceof Error ? err.message : undefined,
+        'Unable to reach the billing activation service. Please retry.',
+      ),
+    };
+  }
+}
+
+/**
  * Instant Payment Hook (AzamPay / Stripe / ClickPesa via `verify-subscription` Edge Function)
  */
 export async function initiateInstantSubscriptionCheckout(params: {
@@ -927,6 +1086,7 @@ export async function fetchAdminBillingData(): Promise<{
   plans: SubscriptionPlanRecord[];
   payments: Array<SubscriptionPaymentRecord & { user_email?: string; user_name?: string }>;
   subscriptions: Array<UserSubscriptionRecord & { user_email?: string; user_name?: string }>;
+  accountsLedger: AdminAccountLedgerRow[];
   error?: string;
 }> {
   const session = await waitForAuthReady();
@@ -935,6 +1095,7 @@ export async function fetchAdminBillingData(): Promise<{
       plans: cachedPlans,
       payments: [],
       subscriptions: [],
+      accountsLedger: [],
       error: '403 Forbidden: Administrative clearance required.',
     };
   }
@@ -945,32 +1106,42 @@ export async function fetchAdminBillingData(): Promise<{
       plans: cachedPlans,
       payments: [],
       subscriptions: [],
+      accountsLedger: [],
       error: 'Supabase client unavailable.',
     };
   }
 
-  const [plansRes, paymentsRes, subsRes, profilesRes] = await Promise.all([
-    supabase
-      .from('subscription_plans')
-      .select('*')
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('subscription_payments')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100),
-    supabase
-      .from('user_subscriptions')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .limit(100),
-    supabase.from('profiles').select('id, email, full_name').limit(500),
-  ]);
+  const [plansRes, paymentsRes, subsRes, profilesRes, ledgerRes] =
+    await Promise.all([
+      supabase
+        .from('subscription_plans')
+        .select('*')
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('subscription_payments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('user_subscriptions')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(100),
+      supabase.from('profiles').select('id, email, full_name, created_at').limit(500),
+      supabase.rpc('get_accounts_billing_ledger'),
+    ]);
 
-  const profileMap = new Map<string, { email: string; full_name: string | null }>();
+  const profileMap = new Map<
+    string,
+    { email: string; full_name: string | null; created_at?: string }
+  >();
   if (Array.isArray(profilesRes.data)) {
     for (const p of profilesRes.data) {
-      profileMap.set(p.id, { email: p.email, full_name: p.full_name });
+      profileMap.set(p.id, {
+        email: p.email,
+        full_name: p.full_name,
+        created_at: p.created_at,
+      });
     }
   }
 
@@ -1005,6 +1176,91 @@ export async function fetchAdminBillingData(): Promise<{
     };
   });
 
+  // Authoritative Active / Dormant / Free Accounts Ledger (RPC with clean client-join fallback)
+  let accountsLedger: AdminAccountLedgerRow[];
+  if (!ledgerRes.error && Array.isArray(ledgerRes.data)) {
+    accountsLedger = (ledgerRes.data as AdminAccountLedgerRow[]).map((row) => ({
+      ...row,
+      plan_id: normalizePlanId(row.plan_id),
+      account_state:
+        row.account_state === 'active' ||
+        row.account_state === 'dormant' ||
+        row.account_state === 'free'
+          ? row.account_state
+          : 'free',
+      total_payments: Number(row.total_payments) || 0,
+    }));
+  } else {
+    const subByUser = new Map<string, UserSubscriptionRecord>();
+    subscriptions.forEach((s) => subByUser.set(s.user_id, s));
+    const paysByUser = new Map<string, SubscriptionPaymentRecord[]>();
+    payments.forEach((p) => {
+      const list = paysByUser.get(p.user_id) ?? [];
+      list.push(p);
+      paysByUser.set(p.user_id, list);
+    });
+
+    const planNameMap = new Map<string, string>(plans.map((p) => [p.id, p.name]));
+
+    accountsLedger = Array.from(profileMap.entries()).map(([uid, prof]) => {
+      const sub = subByUser.get(uid);
+      const userPays = paysByUser.get(uid) ?? [];
+      const paidPays = userPays.filter(
+        (p) =>
+          p.plan_id !== 'free' &&
+          (p.status === 'settled' || p.status === 'approved'),
+      );
+      const subPlanId = sub
+        ? normalizePlanId(sub.plan_id ?? sub.tier_name)
+        : paidPays[0]
+          ? normalizePlanId(paidPays[0].plan_id)
+          : 'free';
+      const expiresMs = sub?.expires_at ? Date.parse(sub.expires_at) : 0;
+      const isUnexpired = Number.isFinite(expiresMs) && expiresMs > Date.now();
+
+      const account_state: AccountBillingState =
+        sub && subPlanId !== 'free' && sub.status === 'active' && isUnexpired
+          ? 'active'
+          : (sub && subPlanId !== 'free') || paidPays.length > 0
+            ? 'dormant'
+            : 'free';
+
+      return {
+        user_id: uid,
+        email: prof.email,
+        full_name: prof.full_name,
+        account_state,
+        plan_id: subPlanId,
+        plan_name:
+          planNameMap.get(subPlanId) ??
+          sub?.tier_name ??
+          (subPlanId === 'enterprise'
+            ? 'Institutional / JV Desk'
+            : subPlanId === 'pro'
+              ? 'Operator Pro'
+              : 'Explorer'),
+        payment_method:
+          sub?.payment_method ??
+          userPays[0]?.payment_method ??
+          'Free Tier',
+        payment_reference:
+          sub?.payment_reference ?? userPays[0]?.reference_code ?? null,
+        starts_at: sub?.starts_at ?? sub?.created_at ?? null,
+        expires_at: sub?.expires_at ?? null,
+        total_payments: paidPays.length,
+      };
+    });
+
+    const stateOrder: Record<AccountBillingState, number> = {
+      active: 0,
+      dormant: 1,
+      free: 2,
+    };
+    accountsLedger.sort(
+      (a, b) => stateOrder[a.account_state] - stateOrder[b.account_state],
+    );
+  }
+
   const warningError =
     plansRes.error?.message ||
     paymentsRes.error?.message ||
@@ -1014,6 +1270,7 @@ export async function fetchAdminBillingData(): Promise<{
     plans,
     payments,
     subscriptions,
+    accountsLedger,
     error: warningError,
   };
 }
@@ -1452,8 +1709,9 @@ export function useSubscription() {
     payments,
     tierConfig,
     tierName: headerTierLabel,
+    accountState: entitlements.account_state,
     isPaidActive: entitlements.is_paid_active,
-    isExpired: entitlements.status === 'expired',
+    isExpired: entitlements.account_state === 'dormant' || entitlements.status === 'expired',
     canCreateListing,
     canSubmitRfq,
     canAccessDataRoom: entitlements.can_access_data_room,

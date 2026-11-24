@@ -394,10 +394,13 @@ export interface SubscriptionPaymentRecord {
   created_at: string;
 }
 
+export type AccountBillingState = 'active' | 'dormant' | 'free';
+
 export interface UserEntitlements {
   plan_id: SubscriptionPlanId;
   plan_name: string;
   status: SubscriptionStatus;
+  account_state: AccountBillingState;
   is_paid_active: boolean;
   starts_at: string | null;
   expires_at: string | null;
@@ -407,6 +410,20 @@ export interface UserEntitlements {
   monthly_rfqs_count: number;
   can_access_data_room: boolean;
   can_export_markets: boolean;
+}
+
+export interface AdminAccountLedgerRow {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  account_state: AccountBillingState;
+  plan_id: SubscriptionPlanId;
+  plan_name: string;
+  payment_method: string;
+  payment_reference: string | null;
+  starts_at: string | null;
+  expires_at: string | null;
+  total_payments: number;
 }
 
 export type ClickPesaRail =
@@ -1059,6 +1076,10 @@ export type Database = {
           p_notes?: string | null;
         };
         Returns: Json;
+      };
+      get_accounts_billing_ledger: {
+        Args: Record<PropertyKey, never>;
+        Returns: AdminAccountLedgerRow[];
       };
     };
     Enums: Record<string, never>;

@@ -5,12 +5,12 @@ import {
   Building2,
   Check,
   CheckCircle2,
-  Clock,
   CreditCard,
   Crown,
   Lock,
   ShieldCheck,
   Smartphone,
+  X,
   Zap,
 } from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
@@ -20,9 +20,8 @@ import TurnstileWidget, {
 } from '../components/TurnstileWidget'
 import {
   PLAN_FEATURE_BULLETS,
-  initiateInstantSubscriptionCheckout,
+  activateSubscriptionDirect,
   normalizePlanId,
-  submitManualSubscriptionPayment,
   useSubscription,
 } from '../lib/subscriptions'
 import { useAuthState } from '../lib/supabaseAuth'
@@ -31,88 +30,95 @@ import type { SubscriptionPlanId } from '../types/database'
 export const Route = createFileRoute('/pricing')({
   validateSearch: (
     s: Record<string, unknown>,
-  ): { plan?: SubscriptionPlanId } => {
+  ): { plan?: SubscriptionPlanId; checkout?: string } => {
     const raw = typeof s.plan === 'string' ? s.plan.toLowerCase() : ''
-    if (raw === 'free' || raw === 'pro' || raw === 'enterprise') {
-      return { plan: raw }
-    }
-    return {}
+    const plan =
+      raw === 'free' || raw === 'pro' || raw === 'enterprise' ? raw : undefined
+    const checkout = typeof s.checkout === 'string' ? s.checkout : undefined
+    return { plan, checkout }
   },
   head: () => ({ meta: [{ title: 'Membership & pricing — MineConnect' }] }),
   component: Pricing,
 })
 
-const MANUAL_PAYMENT_METHODS = [
-  'M-Pesa Tanzania (Vodacom)',
-  'Airtel Money Tanzania',
-  'Mixx by Yas (Tigo Pesa)',
-  'NMB Bank Corporate EFT',
-  'CRDB Bank Corporate EFT',
+const MOBILE_MONEY_NETWORKS = [
+  'M-Pesa',
+  'Tigo Pesa',
+  'Airtel Money',
+  'Halopesa',
 ] as const
 
+const BANK_CARD_PROVIDERS = [
+  'NMB Bank',
+  'CRDB Bank',
+  'NBC Bank',
+  'Visa / Mastercard',
+] as const
+
+interface ActivationReceipt {
+  planName: string
+  referenceCode: string
+  paymentMethod: string
+  amount: number
+  currency: string
+  expiresAt: string
+}
+
 function Pricing() {
-  const { plan: initialPlanParam } = Route.useSearch()
+  const { plan: initialPlanParam, checkout: checkoutParam } = Route.useSearch()
   const { session } = useAuthState()
   const {
     plans,
     plan: activePlan,
     planId: activePlanId,
+    accountState,
     isPaidActive,
-    isExpired,
-    pendingPayment,
-    refreshSubscription,
   } = useSubscription()
   const { t, fixtures, currency, formatPrice, convertText, ui } =
     useLocalization()
 
-  const [selectedPlanId, setSelectedPlanId] = useState<
-    Exclude<SubscriptionPlanId, 'free'>
-  >(() => (initialPlanParam === 'enterprise' ? 'enterprise' : 'pro'))
-  const [activationMode, setActivationMode] = useState<'manual' | 'instant'>(
-    'manual',
+  const [checkoutPlanId, setCheckoutPlanId] = useState<
+    Exclude<SubscriptionPlanId, 'free'> | null
+  >(() =>
+    initialPlanParam === 'pro' || initialPlanParam === 'enterprise'
+      ? initialPlanParam
+      : checkoutParam === '1'
+        ? 'pro'
+        : null,
   )
 
-  // Instant Gateway Hook State (AzamPay / Stripe -> verify-subscription Edge Function)
-  const [instantProvider, setInstantProvider] = useState<'azampay' | 'stripe'>(
-    'azampay',
+  const [channel, setChannel] = useState<'mobile_money' | 'bank_card'>(
+    'mobile_money',
   )
-  const [instantContact, setInstantContact] = useState('')
-  const [instantBusy, setInstantBusy] = useState(false)
-  const [instantResult, setInstantResult] = useState<{
-    referenceCode?: string
-    message: string
-    gatewayReady?: boolean
-  } | null>(null)
-
-  // Manual Corporate Mobile Money / NMB-CRDB EFT Verification Form State
-  const [paymentMethod, setPaymentMethod] = useState<string>(
-    MANUAL_PAYMENT_METHODS[0],
+  const [mobileNetwork, setMobileNetwork] = useState<string>(
+    MOBILE_MONEY_NETWORKS[0],
   )
-  const [referenceCode, setReferenceCode] = useState('')
-  const [receiptUrl, setReceiptUrl] = useState('')
-  const [payerNotes, setPayerNotes] = useState('')
+  const [bankProvider, setBankProvider] = useState<string>(
+    BANK_CARD_PROVIDERS[0],
+  )
+  const [accountInput, setAccountInput] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
-  const [submittingManual, setSubmittingManual] = useState(false)
-  const [manualFeedback, setManualFeedback] = useState<{
-    type: 'success' | 'error'
-    message: string
-  } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<ActivationReceipt | null>(null)
 
-  const checkoutSectionRef = useRef<HTMLDivElement | null>(null)
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
   useEffect(() => {
     if (initialPlanParam === 'pro' || initialPlanParam === 'enterprise') {
-      setSelectedPlanId(initialPlanParam)
+      setCheckoutPlanId(initialPlanParam)
+      setReceipt(null)
+      setErrorMsg(null)
     }
   }, [initialPlanParam])
 
-  const selectedPlan =
-    plans.find((p) => p.id === selectedPlanId) ??
-    plans.find((p) => p.id === 'pro') ??
-    plans[0]
+  const selectedPlan = checkoutPlanId
+    ? (plans.find((p) => p.id === checkoutPlanId) ??
+      plans.find((p) => p.id === 'pro') ??
+      plans[0])
+    : null
 
   const formatPlanPrice = (priceTzs: number, priceUsd: number) => {
     if (priceTzs === 0 && priceUsd === 0) {
@@ -124,99 +130,77 @@ function Pricing() {
     return formatPrice(priceUsd)
   }
 
-  const handleSelectPlan = (id: SubscriptionPlanId) => {
-    if (id === 'free') return
-    setSelectedPlanId(id)
-    setManualFeedback(null)
-    setInstantResult(null)
-    window.setTimeout(() => {
-      checkoutSectionRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    }, 50)
+  const openCheckoutSheet = (planSlug: Exclude<SubscriptionPlanId, 'free'>) => {
+    setCheckoutPlanId(planSlug)
+    setErrorMsg(null)
+    setReceipt(null)
+    setAccountInput('')
   }
 
-  const handleInstantInitiate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setInstantBusy(true)
-    setInstantResult(null)
-    try {
-      const res = await initiateInstantSubscriptionCheckout({
-        planId: selectedPlanId,
-        provider: instantProvider,
-        phoneOrEmail: instantContact,
-      })
-      if (!res.ok) {
-        setInstantResult({
-          message: res.error || 'Unable to initiate checkout right now.',
-        })
-        return
-      }
-      if (res.referenceCode) {
-        setReferenceCode(res.referenceCode)
-      }
-      setInstantResult({
-        referenceCode: res.referenceCode,
-        gatewayReady: res.gatewayReady,
-        message:
-          res.message ||
-          'Checkout reference prepared. Complete settlement and verify below.',
-      })
-    } finally {
-      setInstantBusy(false)
-    }
+  const closeCheckoutSheet = () => {
+    setCheckoutPlanId(null)
+    setErrorMsg(null)
+    setReceipt(null)
   }
 
-  const handleSubmitManualPayment = async (e: React.FormEvent) => {
+  const handlePayAndActivate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setManualFeedback(null)
+    if (!checkoutPlanId || !selectedPlan) return
+    setErrorMsg(null)
 
     if (turnstileEnabled && !captchaToken) {
-      setManualFeedback({
-        type: 'error',
-        message:
-          'Please complete the security verification check before submitting your payment reference.',
-      })
+      setErrorMsg(
+        ui(
+          'Please complete the security check before activating.',
+          'Tafadhali kamilisha uthibitisho wa usalama kabla ya kuendelea.',
+          'Por favor completa la verificación de seguridad antes de continuar.',
+        ),
+      )
       return
     }
 
-    setSubmittingManual(true)
+    setSubmitting(true)
     try {
-      const amount =
-        currency === 'TZS' ? selectedPlan.price_tzs : selectedPlan.price_usd
-      const payCurrency = currency === 'TZS' ? 'TZS' : 'USD'
+      const activeProvider =
+        channel === 'mobile_money' ? mobileNetwork : bankProvider
+      const payCurrency =
+        currency === 'TZS' || currency === 'USD' || currency === 'EUR'
+          ? currency
+          : 'TZS'
 
-      const res = await submitManualSubscriptionPayment({
-        planId: selectedPlanId,
+      const res = await activateSubscriptionDirect({
+        planId: checkoutPlanId,
+        channel,
+        provider: activeProvider,
+        accountInput,
         currency: payCurrency,
-        amount,
-        paymentMethod,
-        referenceCode,
-        receiptUrl,
-        notes: payerNotes,
-        turnstileToken: captchaToken,
+        turnstileToken: captchaToken || undefined,
       })
 
       if (!res.ok) {
-        setManualFeedback({
-          type: 'error',
-          message:
-            res.error || 'Could not record your payment reference. Please retry.',
-        })
+        setErrorMsg(
+          res.error || 'Could not activate subscription. Please try again.',
+        )
         return
       }
 
-      setManualFeedback({
-        type: 'success',
-        message: `Payment reference ${referenceCode.trim()} received for ${selectedPlan.name}. Status: Pending Admin Verification — your tier will activate immediately once verified.`,
+      setReceipt({
+        planName: res.planName || selectedPlan.name,
+        referenceCode: res.referenceCode || 'MC-ACTIVE',
+        paymentMethod: res.paymentMethod || activeProvider,
+        amount:
+          res.amount ??
+          (payCurrency === 'TZS'
+            ? selectedPlan.price_tzs
+            : selectedPlan.price_usd),
+        currency: res.currency || payCurrency,
+        expiresAt:
+          res.expiresAt ||
+          new Date(Date.now() + 30 * 86_400_000).toISOString(),
       })
-      setReferenceCode('')
-      setReceiptUrl('')
-      setPayerNotes('')
-      await refreshSubscription()
+      setAccountInput('')
     } finally {
-      setSubmittingManual(false)
+      setSubmitting(false)
       setCaptchaToken('')
       setTurnstileResetKey((k) => k + 1)
       turnstileRef.current?.reset()
@@ -240,50 +224,39 @@ function Pricing() {
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-base text-stone sm:text-lg">
           {ui(
-            'Database-enforced quotas and verified membership access across Tanzania’s mineral markets, tenement listings, and JV deal rooms.',
-            'Viwango vilivyothibitishwa vya ufikiaji wa soko la madini, usajili wa miradi, na vyumba vya nyaraka za uwekezaji.',
-            'Cuotas verificadas y acceso institucional a los mercados minerales, proyectos y salas de datos de Tanzania.',
+            'Select a plan, enter your Mobile Money or Bank/Card details, and activate immediately for 30 days.',
+            'Chagua mpango, weka taarifa za Simu au Benki/Kadi, na uwashe papo hapo kwa siku 30.',
+            'Elige tu plan, ingresa tus datos de Dinero Móvil o Banco/Tarjeta y actívalo de inmediato por 30 días.',
           )}
         </p>
 
-        {/* Active Plan Status Pill */}
+        {/* Active / Dormant / Free Account Status Pill */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-full border border-ochre/30 bg-ochre/10 px-4 py-1.5 font-mono text-xs text-ochre">
             <Crown size={13} />
-            {ui('Your Active Plan:', 'Mpango Wako wa Sasa:', 'Tu Plan Activo:')}{' '}
+            {ui('Account Tier:', 'Mpango Wako:', 'Plan Actual:')}{' '}
             <strong>{activePlan.name}</strong>
-            {isPaidActive && (
-              <span className="rounded bg-moss px-1.5 py-0.5 text-[10px] font-bold text-paper">
-                ACTIVE
-              </span>
-            )}
-            {isExpired && (
-              <span className="rounded bg-danger px-1.5 py-0.5 text-[10px] font-bold text-paper">
-                EXPIRED
-              </span>
-            )}
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                accountState === 'active'
+                  ? 'bg-moss text-paper'
+                  : accountState === 'dormant'
+                    ? 'bg-danger text-paper'
+                    : 'bg-ink text-gold'
+              }`}
+            >
+              {accountState}
+            </span>
           </div>
-
-          {pendingPayment && (
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-gold/50 bg-ink px-3.5 py-1.5 font-mono text-[11px] text-gold">
-              <Clock size={12} />
-              {ui(
-                `Pending Verification: Ref ${pendingPayment.reference_code}`,
-                `Inasubiri Uhakiki: Ref ${pendingPayment.reference_code}`,
-                `Pendiente: Ref ${pendingPayment.reference_code}`,
-              )}
-            </div>
-          )}
         </div>
       </section>
 
-      {/* 3-Tier Editorial Pricing Grid */}
-      <section className="px-5 pb-14 lg:px-8">
+      {/* 3-Tier Editorial Pricing Cards */}
+      <section className="px-5 pb-16 lg:px-8">
         <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-3">
           {plans.map((p) => {
             const planSlug = normalizePlanId(p.id)
             const isHighlighted = planSlug === 'pro'
-            const isSelected = selectedPlanId === planSlug
             const isCurrent =
               activePlanId === planSlug && (planSlug === 'free' || isPaidActive)
             const bullets = PLAN_FEATURE_BULLETS[planSlug]
@@ -296,9 +269,7 @@ function Pricing() {
                 className={`relative flex min-w-0 flex-col rounded-2xl border p-6 transition duration-200 sm:p-7 ${
                   isHighlighted
                     ? 'border-ink bg-ink text-paper shadow-lg'
-                    : isSelected
-                      ? 'border-ochre bg-white shadow-md ring-1 ring-ochre/40'
-                      : 'border-ink/15 bg-white shadow-xs hover:border-ochre/50'
+                    : 'border-ink/15 bg-white shadow-xs hover:border-ochre/50'
                 }`}
               >
                 {isHighlighted && (
@@ -362,7 +333,6 @@ function Pricing() {
                   </p>
                 )}
 
-                {/* Key Quotas Summary */}
                 <dl
                   className={`mt-5 grid grid-cols-2 gap-2 rounded-xl border p-3 font-mono text-[11px] ${
                     isHighlighted
@@ -425,22 +395,21 @@ function Pricing() {
                       className="btn-ghost w-full justify-center"
                     >
                       {session
-                        ? ui('Included with Account', 'Imejumuishwa', 'Incluido')
+                        ? ui('Included Free', 'Imejumuishwa Bure', 'Incluido Gratis')
                         : ui('Create Free Account', 'Fungua Akaunti Bure', 'Crear Cuenta Gratis')}
                     </Link>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleSelectPlan(planSlug)}
+                      onClick={() => openCheckoutSheet(planSlug)}
                       className={`${
-                        isHighlighted || isSelected
-                          ? 'btn-primary'
-                          : 'btn-ghost'
+                        isHighlighted ? 'btn-primary' : 'btn-ghost'
                       } w-full justify-center`}
                     >
+                      <Zap size={14} />
                       {isCurrent
-                        ? ui('Renew / Extend Plan', 'Huisha Mpango', 'Renovar Plan')
-                        : ui(`Activate ${p.name}`, `Washa ${p.name}`, `Activar ${p.name}`)}
+                        ? ui('Extend 30 Days', 'Ongeza Siku 30', 'Extender 30 Días')
+                        : ui(`Select ${p.name}`, `Chagua ${p.name}`, `Elegir ${p.name}`)}
                       <ArrowRight size={14} />
                     </button>
                   )}
@@ -451,477 +420,8 @@ function Pricing() {
         </div>
       </section>
 
-      {/* Dual Activation Checkout Section */}
-      <section
-        ref={checkoutSectionRef}
-        id="subscription-checkout"
-        className="scroll-mt-24 border-y border-ink/15 bg-paper-2 px-5 py-14 lg:px-8"
-      >
-        <div className="mx-auto max-w-5xl">
-          <div className="flex flex-col justify-between gap-4 border-b border-ink/10 pb-6 sm:flex-row sm:items-end">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-ochre/30 bg-ochre/10 px-3 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-wider text-ochre">
-                <Lock size={11} />
-                {ui(
-                  'Verified Subscription Activation',
-                  'Uwezeshaji wa Mpango Uliohakikiwa',
-                  'Activación Verificada de Suscripción',
-                )}
-              </span>
-              <h2 className="mt-2 font-display text-3xl font-light text-ink">
-                {ui('Activate', 'Washa', 'Activar')}{' '}
-                <em className="italic text-ochre">{selectedPlan.name}</em>{' '}
-                <span className="font-mono text-lg font-semibold text-ink tabular-nums">
-                  ({formatPlanPrice(selectedPlan.price_tzs, selectedPlan.price_usd)}
-                  {ui('/mo', '/mwezi', '/mes')})
-                </span>
-              </h2>
-            </div>
-
-            {/* Plan Switcher Pill */}
-            <div className="inline-flex rounded-lg border border-ink/15 bg-white p-1">
-              {(['pro', 'enterprise'] as const).map((pid) => {
-                const candidate = plans.find((x) => x.id === pid)
-                if (!candidate) return null
-                const active = selectedPlanId === pid
-                return (
-                  <button
-                    key={pid}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPlanId(pid)
-                      setManualFeedback(null)
-                      setInstantResult(null)
-                    }}
-                    className={`rounded-md px-3.5 py-1.5 font-mono text-xs font-semibold transition ${
-                      active ? 'bg-ink text-gold' : 'text-stone hover:text-ink'
-                    }`}
-                  >
-                    {candidate.name}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {!session ? (
-            <div className="mt-6 rounded-2xl border border-ochre/30 bg-white p-8 text-center shadow-xs">
-              <Lock size={26} className="mx-auto text-ochre" />
-              <h3 className="mt-3 font-display text-2xl text-ink">
-                {ui(
-                  'Sign In to Activate Your Subscription',
-                  'Ingia ili Kuwezesha Mpango Wako',
-                  'Inicia Sesión para Activar tu Suscripción',
-                )}
-              </h3>
-              <p className="mx-auto mt-2 max-w-md text-sm text-stone">
-                {ui(
-                  'Sign in to bind verified entitlements, project listing quotas, and monthly RFQs directly to your MineConnect account.',
-                  'Ingia kwenye akaunti yako ili kuunganisha haki za mpango na kikomo cha miradi moja kwa moja.',
-                  'Inicia sesión para vincular los permisos y cuotas directamente a tu cuenta de MineConnect.',
-                )}
-              </p>
-              <Link
-                to="/login"
-                search={{ next: '/pricing', reason: 'membership_required' } as unknown as undefined}
-                className="btn-primary mt-5 inline-flex"
-              >
-                {ui('Sign In to Continue', 'Ingia Kuendelea', 'Iniciar Sesión')}
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-6 space-y-5">
-              {/* Two Clean Activation Paths Switcher */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setActivationMode('manual')}
-                  className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
-                    activationMode === 'manual'
-                      ? 'border-ink bg-ink text-paper shadow-sm'
-                      : 'border-ink/15 bg-white text-ink hover:border-ochre/50'
-                  }`}
-                >
-                  <Building2
-                    size={18}
-                    className={
-                      activationMode === 'manual'
-                        ? 'mt-0.5 shrink-0 text-gold'
-                        : 'mt-0.5 shrink-0 text-ochre'
-                    }
-                  />
-                  <div>
-                    <div className="font-semibold text-sm">
-                      {ui(
-                        'Corporate Mobile Money / NMB-CRDB EFT',
-                        'Simu (M-Pesa / Airtel) au Benki (NMB / CRDB)',
-                        'Dinero Móvil / Transferencia NMB-CRDB',
-                      )}
-                    </div>
-                    <p
-                      className={`mt-0.5 text-xs ${
-                        activationMode === 'manual' ? 'text-paper/70' : 'text-stone'
-                      }`}
-                    >
-                      {ui(
-                        'Submit transfer reference + receipt (Turnstile-verified) for immediate Admin approval.',
-                        'Wasilisha kumbukumbu ya malipo na risiti kwa uhakiki wa haraka wa Utawala.',
-                        'Envía tu referencia y recibo para activación rápida por el administrador.',
-                      )}
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActivationMode('instant')}
-                  className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
-                    activationMode === 'instant'
-                      ? 'border-ink bg-ink text-paper shadow-sm'
-                      : 'border-ink/15 bg-white text-ink hover:border-ochre/50'
-                  }`}
-                >
-                  <Zap
-                    size={18}
-                    className={
-                      activationMode === 'instant'
-                        ? 'mt-0.5 shrink-0 text-gold'
-                        : 'mt-0.5 shrink-0 text-ochre'
-                    }
-                  />
-                  <div>
-                    <div className="font-semibold text-sm">
-                      {ui(
-                        'Instant Gateway Hook (AzamPay / Stripe)',
-                        'Malipo ya Papo Hapo (AzamPay / Stripe)',
-                        'Pasarela Instantánea (AzamPay / Stripe)',
-                      )}
-                    </div>
-                    <p
-                      className={`mt-0.5 text-xs ${
-                        activationMode === 'instant' ? 'text-paper/70' : 'text-stone'
-                      }`}
-                    >
-                      {ui(
-                        'Automated webhook verification via Supabase verify-subscription Edge Function.',
-                        'Uthibitishaji wa moja kwa moja kupitia Edge Function ya verify-subscription.',
-                        'Verificación automática mediante la función Edge verify-subscription.',
-                      )}
-                    </p>
-                  </div>
-                </button>
-              </div>
-
-              {/* Path A: Corporate Mobile Money / NMB-CRDB EFT Verification Form */}
-              {activationMode === 'manual' ? (
-                <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-                  {/* Official Tanzania Settlement Instructions */}
-                  <div className="rounded-2xl border border-ink/12 bg-ink p-5 text-paper sm:p-6">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-gold">
-                      {ui('Settlement Accounts', 'Akaunti za Malipo', 'Cuentas de Liquidación')}
-                    </span>
-                    <h3 className="mt-1.5 font-display text-2xl font-light">
-                      {ui(
-                        'Tanzania Corporate Settlement Desk',
-                        'Dawati la Malipo Tanzania',
-                        'Mesa de Liquidación Tanzania',
-                      )}
-                    </h3>
-
-                    <div className="mt-4 space-y-3 font-mono text-xs">
-                      <div className="rounded-xl border border-paper/12 bg-ink-2 p-3.5">
-                        <div className="flex items-center gap-1.5 text-[10px] uppercase text-gold">
-                          <Smartphone size={12} /> Mobile Money Lipa / Paybill
-                        </div>
-                        <div className="mt-1.5 text-paper">
-                          M-Pesa / Airtel Money / Mixx by Yas
-                        </div>
-                        <div className="mt-0.5 text-paper/75">
-                          Merchant: <strong className="text-paper">MineConnect Tanzania Ltd</strong>
-                        </div>
-                        <div className="mt-0.5 text-paper/75">
-                          Amount:{' '}
-                          <strong className="text-gold">
-                            TSh {selectedPlan.price_tzs.toLocaleString('en-US')}
-                          </strong>{' '}
-                          (US${selectedPlan.price_usd})
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-paper/12 bg-ink-2 p-3.5">
-                        <div className="flex items-center gap-1.5 text-[10px] uppercase text-gold">
-                          <Building2 size={12} /> NMB / CRDB Corporate EFT
-                        </div>
-                        <div className="mt-1.5 text-paper/80">
-                          Bank: <strong className="text-paper">NMB Bank Plc / CRDB Bank Plc</strong>
-                        </div>
-                        <div className="mt-0.5 text-paper/75">
-                          Beneficiary: <strong className="text-paper">MineConnect Mining Desk</strong>
-                        </div>
-                        <div className="mt-0.5 text-paper/75">
-                          Narrative:{' '}
-                          <strong className="text-gold">
-                            {selectedPlan.id.toUpperCase()} · {session.user.email}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-paper/65">
-                      <ShieldCheck size={14} className="mt-0.5 shrink-0 text-gold" />
-                      <span>
-                        {ui(
-                          'Once submitted, your payment enters Pending Verification in our Admin Billing Console. Verified transfers activate immediately for 30 days.',
-                          'Ukishawasilisha, malipo yako yanaingia kwenye foleni ya Uhakiki wa Utawala na kuwashwa mara moja kwa siku 30.',
-                          'Al enviar, el pago pasa a verificación administrativa y se activa de inmediato por 30 días.',
-                        )}
-                      </span>
-                    </p>
-                  </div>
-
-                  {/* Turnstile-Protected Verification Submission Form */}
-                  <form
-                    onSubmit={handleSubmitManualPayment}
-                    className="rounded-2xl border border-ink/15 bg-white p-5 shadow-xs sm:p-6"
-                  >
-                    <h3 className="font-display text-2xl text-ink">
-                      {ui(
-                        'Submit Payment Reference for Activation',
-                        'Wasilisha Kumbukumbu ya Malipo',
-                        'Enviar Referencia de Pago',
-                      )}
-                    </h3>
-                    <p className="mt-1 text-xs text-stone">
-                      {ui(
-                        'Enter your M-Pesa/Airtel transaction ID or NMB/CRDB bank EFT reference code.',
-                        'Weka namba ya muamala wa M-Pesa/Airtel au kumbukumbu ya benki NMB/CRDB.',
-                        'Ingresa el código de transacción móvil o referencia bancaria.',
-                      )}
-                    </p>
-
-                    <div className="mt-4 space-y-3.5">
-                      <div>
-                        <label className="label" htmlFor="pay-method">
-                          {ui('Payment Channel', 'Njia ya Malipo', 'Canal de Pago')}
-                        </label>
-                        <select
-                          id="pay-method"
-                          value={paymentMethod}
-                          onChange={(e) => setPaymentMethod(e.target.value)}
-                          className="field"
-                        >
-                          {MANUAL_PAYMENT_METHODS.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="label" htmlFor="pay-ref">
-                          {ui(
-                            'Transaction Reference / EFT Slip Code *',
-                            'Namba ya Muamala / Kumbukumbu *',
-                            'Código de Referencia *',
-                          )}
-                        </label>
-                        <input
-                          id="pay-ref"
-                          type="text"
-                          required
-                          minLength={4}
-                          value={referenceCode}
-                          onChange={(e) => setReferenceCode(e.target.value)}
-                          placeholder="e.g. QK82M94X21 or NMB-EFT-2026-8841"
-                          className="field font-mono text-xs"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="label" htmlFor="pay-receipt">
-                          {ui(
-                            'Receipt / Bank Slip URL (Optional)',
-                            'Kiungo cha Risiti (Si Lazima)',
-                            'URL del Comprobante (Opcional)',
-                          )}
-                        </label>
-                        <input
-                          id="pay-receipt"
-                          type="url"
-                          value={receiptUrl}
-                          onChange={(e) => setReceiptUrl(e.target.value)}
-                          placeholder="https://..."
-                          className="field text-xs"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="label" htmlFor="pay-notes">
-                          {ui('Payer Name / Company Note (Optional)', 'Jina la Mlipaji / Kampuni', 'Nombre / Empresa (Opcional)')}
-                        </label>
-                        <input
-                          id="pay-notes"
-                          type="text"
-                          value={payerNotes}
-                          onChange={(e) => setPayerNotes(e.target.value)}
-                          placeholder={session.user.fullName || 'Company or sender phone'}
-                          className="field text-xs"
-                        />
-                      </div>
-
-                      {turnstileEnabled && (
-                        <TurnstileWidget
-                          ref={turnstileRef}
-                          action="subscription-payment"
-                          resetKey={turnstileResetKey}
-                          onVerify={setCaptchaToken}
-                          onExpire={() => setCaptchaToken('')}
-                        />
-                      )}
-
-                      {manualFeedback && (
-                        <div
-                          role="status"
-                          className={`flex items-start gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-medium ${
-                            manualFeedback.type === 'success'
-                              ? 'border-moss/40 bg-moss-light text-moss'
-                              : 'border-danger/40 bg-danger/10 text-danger'
-                          }`}
-                        >
-                          {manualFeedback.type === 'success' && (
-                            <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
-                          )}
-                          <span>{manualFeedback.message}</span>
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={submittingManual}
-                        className="btn-primary w-full justify-center disabled:opacity-60"
-                      >
-                        {submittingManual
-                          ? ui('Submitting Verification...', 'Inawasilisha...', 'Enviando...')
-                          : ui(
-                              `Submit ${selectedPlan.name} Payment Reference`,
-                              `Wasilisha Malipo ya ${selectedPlan.name}`,
-                              `Enviar Referencia (${selectedPlan.name})`,
-                            )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                /* Path B: Instant AzamPay / Stripe Webhook Hook */
-                <form
-                  onSubmit={handleInstantInitiate}
-                  className="rounded-2xl border border-ink/15 bg-white p-6 shadow-xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="font-display text-2xl text-ink">
-                        {ui(
-                          'Instant Gateway Activation (AzamPay / Stripe)',
-                          'Malipo ya Papo Hapo (AzamPay / Stripe)',
-                          'Activación Instantánea (AzamPay / Stripe)',
-                        )}
-                      </h3>
-                      <p className="mt-1 text-xs text-stone">
-                        {ui(
-                          'Connected to the Supabase verify-subscription Edge Function for cryptographic webhook activation.',
-                          'Imeunganishwa na Supabase verify-subscription Edge Function kwa uthibitishaji wa kiotomatiki.',
-                          'Conectado a la función Edge verify-subscription para activación automática por webhook.',
-                        )}
-                      </p>
-                    </div>
-                    <div className="inline-flex rounded-lg border border-ink/15 bg-paper-2 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setInstantProvider('azampay')}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs font-semibold transition ${
-                          instantProvider === 'azampay'
-                            ? 'bg-ink text-gold'
-                            : 'text-stone hover:text-ink'
-                        }`}
-                      >
-                        <Smartphone size={12} /> AzamPay (TZS)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInstantProvider('stripe')}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs font-semibold transition ${
-                          instantProvider === 'stripe'
-                            ? 'bg-ink text-gold'
-                            : 'text-stone hover:text-ink'
-                        }`}
-                      >
-                        <CreditCard size={12} /> Stripe (USD/EUR)
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <div>
-                      <label className="label" htmlFor="instant-contact">
-                        {instantProvider === 'azampay'
-                          ? ui('Tanzania Mobile Money Number (+255)', 'Namba ya Simu (+255)', 'Teléfono Móvil (+255)')
-                          : ui('Billing Email for Card Receipt', 'Barua Pepe ya Risiti', 'Correo de Facturación')}
-                      </label>
-                      <input
-                        id="instant-contact"
-                        type={instantProvider === 'azampay' ? 'tel' : 'email'}
-                        required
-                        value={instantContact}
-                        onChange={(e) => setInstantContact(e.target.value)}
-                        placeholder={
-                          instantProvider === 'azampay'
-                            ? '+255 7XX XXX XXX'
-                            : session.user.email
-                        }
-                        className="field"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={instantBusy}
-                      className="btn-primary h-11 px-6 disabled:opacity-60"
-                    >
-                      <Zap size={14} />
-                      {instantBusy
-                        ? ui('Connecting...', 'Inaunganisha...', 'Conectando...')
-                        : ui('Initialize Checkout', 'Anza Malipo', 'Iniciar Pago')}
-                    </button>
-                  </div>
-
-                  {instantResult && (
-                    <div className="mt-4 rounded-xl border border-ochre/30 bg-paper p-4 text-xs text-ink">
-                      <p className="font-medium">{instantResult.message}</p>
-                      {instantResult.referenceCode && !instantResult.gatewayReady && (
-                        <button
-                          type="button"
-                          onClick={() => setActivationMode('manual')}
-                          className="mt-2.5 inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-ochre underline"
-                        >
-                          {ui(
-                            `Continue with Reference ${instantResult.referenceCode} via Mobile Money / Bank EFT`,
-                            `Endelea na Kumbukumbu ${instantResult.referenceCode}`,
-                            `Continuar con Referencia ${instantResult.referenceCode}`,
-                          )}
-                          <ArrowRight size={12} />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </form>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
       {/* Platform Fees & Statutory Distinction Table */}
-      <section className="bg-paper px-5 py-16 lg:px-8">
+      <section className="border-t border-ink/10 bg-paper-2 px-5 py-16 lg:px-8">
         <div className="mx-auto max-w-5xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -975,6 +475,309 @@ function Pricing() {
           </Link>
         </div>
       </section>
+
+      {/* DIRECT 2-STEP SINGLE-SCREEN CHECKOUT SHEET (Select Plan -> Enter Details -> Pay & Activate Now) */}
+      {selectedPlan && checkoutPlanId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Activate ${selectedPlan.name}`}
+          className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-4"
+        >
+          <div
+            className="absolute inset-0 bg-ink/70 backdrop-blur-xs animate-fade"
+            onClick={closeCheckoutSheet}
+          />
+          <div className="relative z-10 max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-ink/15 bg-paper text-ink shadow-2xl animate-rise sm:max-w-lg sm:rounded-2xl">
+            {/* Sheet Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-ink/10 bg-ink px-5 py-4 text-paper sm:px-6">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-gold">
+                  <Zap size={11} />
+                  {ui('Direct Instant Activation', 'Uwezeshaji wa Papo Hapo', 'Activación Directa')}
+                </div>
+                <h2 className="mt-0.5 font-display text-2xl font-medium">
+                  {selectedPlan.name}
+                </h2>
+                <p className="mt-0.5 font-mono text-xs text-paper/75 tabular-nums">
+                  {formatPlanPrice(selectedPlan.price_tzs, selectedPlan.price_usd)}
+                  {ui(' / 30 days', ' / siku 30', ' / 30 días')}
+                  {currency !== 'TZS' &&
+                    ` · TSh ${selectedPlan.price_tzs.toLocaleString('en-US')}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCheckoutSheet}
+                aria-label="Close checkout"
+                className="rounded-full border border-paper/15 bg-paper/10 p-1.5 text-paper/80 transition hover:border-gold hover:text-gold"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6">
+              {!session ? (
+                <div className="py-4 text-center">
+                  <Lock size={28} className="mx-auto text-ochre" />
+                  <h3 className="mt-3 font-display text-2xl text-ink">
+                    {ui('Sign In to Activate', 'Ingia ili Kuwezesha', 'Inicia Sesión')}
+                  </h3>
+                  <p className="mt-1.5 text-sm text-stone">
+                    {ui(
+                      'Sign in to your MineConnect account so your 30-day entitlements unlock immediately.',
+                      'Ingia kwenye akaunti yako ya MineConnect ili haki zako zifunguliwe papo hapo.',
+                      'Inicia sesión para activar tus permisos de 30 días al instante.',
+                    )}
+                  </p>
+                  <Link
+                    to="/login"
+                    search={{
+                      next: `/pricing?plan=${checkoutPlanId}&checkout=1`,
+                      reason: 'membership_required',
+                    } as unknown as undefined}
+                    className="btn-primary mt-5 w-full justify-center"
+                  >
+                    {ui('Sign In & Continue', 'Ingia Kuendelea', 'Iniciar Sesión')}
+                  </Link>
+                </div>
+              ) : receipt ? (
+                /* Instant Activation Success Confirmation */
+                <div className="py-2 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-moss-light text-moss">
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <span className="mt-3 inline-block rounded-full bg-moss-light px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-moss">
+                    {ui('Subscription Active · 30 Days', 'Mpango Hai · Siku 30', 'Suscripción Activa · 30 Días')}
+                  </span>
+                  <h3 className="mt-2 font-display text-3xl font-medium text-ink">
+                    {receipt.planName} {ui('Unlocked!', 'Imefunguliwa!', '¡Activado!')}
+                  </h3>
+                  <p className="mt-1 text-xs text-stone">
+                    {ui(
+                      'Your entitlements are live across MineConnect immediately.',
+                      'Haki zako za mpango zinafanya kazi mara moja kwenye MineConnect.',
+                      'Tus permisos ya están activos en toda la plataforma.',
+                    )}
+                  </p>
+
+                  <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-paper-2 p-4 text-left font-mono text-xs">
+                    <div>
+                      <dt className="text-[10px] uppercase text-stone">Reference</dt>
+                      <dd className="mt-0.5 font-bold text-ink">{receipt.referenceCode}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase text-stone">Channel</dt>
+                      <dd className="mt-0.5 truncate text-ink">{receipt.paymentMethod}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase text-stone">Amount</dt>
+                      <dd className="mt-0.5 font-bold text-moss tabular-nums">
+                        {receipt.currency} {receipt.amount.toLocaleString('en-US')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase text-stone">Valid Until</dt>
+                      <dd className="mt-0.5 font-bold text-ink tabular-nums">
+                        {new Date(receipt.expiresAt).toLocaleDateString()}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <Link
+                      to="/list-a-project"
+                      onClick={closeCheckoutSheet}
+                      className="btn-primary justify-center text-xs"
+                    >
+                      {ui('List a Project', 'Sajili Mradi', 'Publicar Proyecto')}
+                      <ArrowRight size={14} />
+                    </Link>
+                    <Link
+                      to="/dashboard"
+                      onClick={closeCheckoutSheet}
+                      className="btn-ghost justify-center text-xs"
+                    >
+                      {ui('Open Workspace', 'Fungua Dashibodi', 'Abrir Panel')}
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                /* Clean 2-Option Payment Form (No Receipt Uploads, Single Pay & Activate Button) */
+                <form onSubmit={handlePayAndActivate} className="space-y-4">
+                  {/* Switch between Option A (Mobile Money) and Option B (Bank / Card) */}
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink/12 bg-paper-2 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChannel('mobile_money')
+                        setAccountInput('')
+                        setErrorMsg(null)
+                      }}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition ${
+                        channel === 'mobile_money'
+                          ? 'bg-ink text-gold shadow-xs'
+                          : 'text-stone hover:text-ink'
+                      }`}
+                    >
+                      <Smartphone size={13} />
+                      {ui('Mobile Money', 'Pesa za Simu', 'Dinero Móvil')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChannel('bank_card')
+                        setAccountInput('')
+                        setErrorMsg(null)
+                      }}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition ${
+                        channel === 'bank_card'
+                          ? 'bg-ink text-gold shadow-xs'
+                          : 'text-stone hover:text-ink'
+                      }`}
+                    >
+                      <CreditCard size={13} />
+                      {ui('Bank / Card', 'Benki / Kadi', 'Banco / Tarjeta')}
+                    </button>
+                  </div>
+
+                  {channel === 'mobile_money' ? (
+                    <>
+                      <div>
+                        <span className="label">
+                          {ui('Select Network (Tanzania)', 'Chagua Mtandao', 'Seleccionar Red')}
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          {MOBILE_MONEY_NETWORKS.map((net) => {
+                            const active = mobileNetwork === net
+                            return (
+                              <button
+                                key={net}
+                                type="button"
+                                onClick={() => setMobileNetwork(net)}
+                                className={`rounded-lg border px-3 py-2.5 text-left font-mono text-xs font-semibold transition ${
+                                  active
+                                    ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
+                                    : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
+                                }`}
+                              >
+                                {net}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="label" htmlFor="mm-phone">
+                          {ui('Mobile Money Phone Number', 'Namba ya Simu ya Malipo', 'Número de Teléfono')}
+                        </label>
+                        <input
+                          id="mm-phone"
+                          type="tel"
+                          required
+                          autoComplete="tel"
+                          value={accountInput}
+                          onChange={(e) => setAccountInput(e.target.value)}
+                          placeholder="07XX XXX XXX"
+                          className="field font-mono text-sm"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <span className="label">
+                          {ui('Select Bank or Card', 'Chagua Benki au Kadi', 'Banco o Tarjeta')}
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          {BANK_CARD_PROVIDERS.map((prov) => {
+                            const active = bankProvider === prov
+                            return (
+                              <button
+                                key={prov}
+                                type="button"
+                                onClick={() => setBankProvider(prov)}
+                                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-left font-mono text-xs font-semibold transition ${
+                                  active
+                                    ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
+                                    : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
+                                }`}
+                              >
+                                <Building2 size={12} className="shrink-0 text-ochre" />
+                                <span className="truncate">{prov}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="label" htmlFor="bank-ref">
+                          {ui(
+                            'Account, Card, or Transfer Reference',
+                            'Namba ya Akaunti, Kadi, au Kumbukumbu',
+                            'Cuenta, Tarjeta o Referencia',
+                          )}
+                        </label>
+                        <input
+                          id="bank-ref"
+                          type="text"
+                          required
+                          minLength={4}
+                          value={accountInput}
+                          onChange={(e) => setAccountInput(e.target.value)}
+                          placeholder="e.g. NMB-EFT-88412 or 4532 •••• 9910"
+                          className="field font-mono text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {turnstileEnabled && (
+                    <TurnstileWidget
+                      ref={turnstileRef}
+                      action="subscription-payment"
+                      resetKey={turnstileResetKey}
+                      onVerify={setCaptchaToken}
+                      onExpire={() => setCaptchaToken('')}
+                    />
+                  )}
+
+                  {errorMsg && (
+                    <div
+                      role="alert"
+                      className="rounded-xl border border-danger/35 bg-danger/10 px-3.5 py-2.5 text-xs font-medium text-danger"
+                    >
+                      {errorMsg}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="btn-primary w-full justify-center py-3 text-sm disabled:opacity-60"
+                  >
+                    <Zap size={15} />
+                    {submitting
+                      ? ui('Activating Subscription...', 'Inawasha Mpango...', 'Activando...')
+                      : ui('Pay & Activate Now', 'Lipa na Uwashe Sasa', 'Pagar y Activar Ahora')}
+                  </button>
+
+                  <p className="flex items-center justify-center gap-1.5 text-center font-mono text-[10px] text-stone">
+                    <ShieldCheck size={12} className="text-moss" />
+                    {ui(
+                      'Activates immediately for 30 days · Logged securely in Supabase',
+                      'Inawashwa papo hapo kwa siku 30 · Inarekodiwa kwa usalama',
+                      'Activación inmediata por 30 días · Registro seguro en Supabase',
+                    )}
+                  </p>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

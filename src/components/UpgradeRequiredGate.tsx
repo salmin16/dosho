@@ -103,9 +103,9 @@ export default function UpgradeRequiredGate({
         <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-paper/60">
           <ShieldCheck size={13} className="text-gold" />
           {ui(
-            'Verified via Mobile Money, NMB/CRDB EFT, or Instant Gateway',
-            'Lipa kupitia Simu, Benki (NMB/CRDB), au Lango la Papo Hapo',
-            'Verificado vía Dinero Móvil, Transferencia Bancaria o Pasarela',
+            'Instant activation via M-Pesa, Tigo Pesa, Airtel Money, Halopesa, or Bank/Card',
+            'Washa papo hapo kwa M-Pesa, Tigo Pesa, Airtel Money, Halopesa, au Benki/Kadi',
+            'Activación inmediata vía Dinero Móvil o Banco/Tarjeta',
           )}
         </span>
 
@@ -121,7 +121,7 @@ export default function UpgradeRequiredGate({
           )}
           <Link
             to="/pricing"
-            search={{ plan: requiredPlan } as unknown as undefined}
+            search={{ plan: requiredPlan, checkout: '1' } as unknown as undefined}
             onClick={onClose}
             className="btn-primary !py-2.5 !px-5 text-xs"
           >

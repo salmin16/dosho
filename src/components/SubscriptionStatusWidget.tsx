@@ -33,6 +33,7 @@ export default function SubscriptionStatusWidget({
     plan,
     planId,
     entitlements,
+    accountState,
     pendingPayment,
     payments,
     isPaidActive,
@@ -111,27 +112,27 @@ export default function SubscriptionStatusWidget({
 
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider ${
-                isExpired
+                accountState === 'dormant' || isExpired
                   ? 'border-danger/50 bg-danger/25 text-[#f59c8a]'
-                  : isPaidActive
+                  : accountState === 'active' || isPaidActive
                     ? 'border-moss/50 bg-moss/30 text-[#9de4b4]'
                     : 'border-paper/20 bg-paper/10 text-paper/80'
               }`}
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  isExpired
+                  accountState === 'dormant' || isExpired
                     ? 'bg-[#f59c8a]'
-                    : isPaidActive
+                    : accountState === 'active' || isPaidActive
                       ? 'bg-[#9de4b4]'
                       : 'bg-gold'
                 }`}
               />
-              {isExpired
-                ? ui('EXPIRED', 'IMEISHA MUDA', 'EXPIRADO')
-                : isPaidActive
-                  ? ui('VERIFIED ACTIVE', 'HAI ILIYOTHIBITISHWA', 'ACTIVO VERIFICADO')
-                  : ui('FREE TIER', 'BURE', 'GRATUITO')}
+              {accountState === 'dormant' || isExpired
+                ? ui('DORMANT · EXPIRED', 'IMEISHA MUDA (DORMANT)', 'INACTIVO · EXPIRADO')
+                : accountState === 'active' || isPaidActive
+                  ? ui('ACTIVE SUBSCRIPTION', 'MPANGO HAI (ACTIVE)', 'ACTIVO')
+                  : ui('FREE ACCOUNT', 'AKAUNTI BURE (FREE)', 'CUENTA GRATUITA')}
             </span>
 
             {pendingPayment && (
@@ -184,7 +185,7 @@ export default function SubscriptionStatusWidget({
           {planId !== 'enterprise' && (
             <Link
               to="/pricing"
-              search={{ plan: nextRecommendedPlan } as unknown as undefined}
+              search={{ plan: nextRecommendedPlan, checkout: '1' } as unknown as undefined}
               className="btn-primary !py-2.5 !px-4 text-xs"
             >
               <Zap size={14} />

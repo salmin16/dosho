@@ -52,6 +52,7 @@ import {
 } from '../data/mineralPrices'
 import type {
   AdminAuditLogRecord,
+  AdminAccountLedgerRow,
   ComplianceComplaintRecord,
   ComplianceComplaintStatus,
   MineralPriceRecord,
@@ -228,6 +229,7 @@ export function MasterAdminDashboard({
   const [billingPlans, setBillingPlans] = useState<SubscriptionPlanRecord[]>([])
   const [billingPayments, setBillingPayments] = useState<AdminBillingPaymentRow[]>([])
   const [billingSubs, setBillingSubs] = useState<AdminBillingSubRow[]>([])
+  const [billingLedger, setBillingLedger] = useState<AdminAccountLedgerRow[]>([])
   const [billingWarning, setBillingWarning] = useState<string | null>(null)
 
   useEffect(() => {
@@ -255,6 +257,7 @@ export function MasterAdminDashboard({
       setBillingPlans(billingRes?.plans ?? [])
       setBillingPayments(billingRes?.payments ?? [])
       setBillingSubs(billingRes?.subscriptions ?? [])
+      setBillingLedger(billingRes?.accountsLedger ?? [])
       setBillingWarning(billingRes?.error ?? null)
       if (data.dbError) {
         setFeedback({
@@ -1713,6 +1716,7 @@ export function MasterAdminDashboard({
             plans={billingPlans}
             payments={billingPayments}
             subscriptions={billingSubs}
+            accountsLedger={billingLedger}
             warning={billingWarning}
             onRefresh={loadGovernanceTelemetry}
             onFeedback={setFeedback}
