@@ -115,17 +115,17 @@ export default function MineralTrendChart({
 
       if (compactMobile) {
         if (absVal >= 1_000_000) {
-          const decimals = step < 100_000 ? 2 : 1
+          const decimals = step < 10_000 ? 3 : step < 100_000 ? 2 : 1
           return `${(displayValue / 1_000_000).toFixed(decimals)}M`
         }
         if (absVal >= 10_000) {
-          const decimals = step < 1_000 ? 1 : 0
+          const decimals = step < 100 ? 2 : step < 1_000 ? 1 : 0
           return `${(displayValue / 1_000).toFixed(decimals)}k`
         }
         if (absVal >= 1_000) {
-          return `${(displayValue / 1_000).toFixed(step < 500 ? 2 : 1)}k`
+          return `${(displayValue / 1_000).toFixed(step < 100 ? 2 : step < 500 ? 2 : 1)}k`
         }
-        const decimals = isZeroDecimal ? 0 : step < 0.1 ? 2 : step < 1 ? 1 : 0
+        const decimals = isZeroDecimal ? 0 : step < 0.05 ? 3 : step < 0.5 ? 2 : step < 1 ? 1 : 0
         return displayValue.toLocaleString('en-US', {
           minimumFractionDigits: decimals,
           maximumFractionDigits: decimals,
@@ -163,10 +163,12 @@ export default function MineralTrendChart({
   const timeframeLabel = useCallback(
     (tf: ChartTimeframe): string => {
       switch (tf) {
+        case '1M':
+          return ui('past 1 minute (EAT)', 'dakika 1 iliyopita (EAT)', 'último minuto (EAT)')
         case '1H':
-          return ui('past 1 hour', 'saa 1 iliyopita', 'última hora')
+          return ui('past 1 hour (EAT)', 'saa 1 iliyopita (EAT)', 'última hora (EAT)')
         case '1D':
-          return ui('past 24 hours', 'saa 24 zilizopita', 'últimas 24 horas')
+          return ui('past 24 hours (EAT)', 'saa 24 zilizopita (EAT)', 'últimas 24 horas (EAT)')
         case '7D':
           return ui('past 7 days', 'siku 7 zilizopita', 'últimos 7 días')
         case '30D':
@@ -533,11 +535,11 @@ export default function MineralTrendChart({
           </p>
         </div>
 
-        {/* Classic Single-Row Timeframe Selector Pills (1H, 1D, 7D, 30D, 90D, 1Y) */}
+        {/* Classic Single-Row Timeframe Selector Pills (1M, 1H, 1D, 7D, 30D, 90D, 1Y) */}
         <div
           role="group"
           aria-label={ui('Chart timeframe', 'Muda wa chati', 'Período del gráfico')}
-          className="grid w-full grid-cols-6 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto sm:gap-1 lg:self-end"
+          className="grid w-full grid-cols-7 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto sm:gap-1 lg:self-end"
         >
           {CHART_TIMEFRAMES.map((tf) => {
             const active = tf === timeframe
@@ -547,7 +549,7 @@ export default function MineralTrendChart({
                 type="button"
                 aria-pressed={active}
                 onClick={() => setTimeframe(tf)}
-                className={`rounded-md px-1.5 py-1.5 text-center font-mono text-[11px] font-semibold transition sm:px-3.5 sm:text-xs ${
+                className={`rounded-md px-1 py-1.5 text-center font-mono text-[10.5px] font-semibold transition sm:px-3 sm:text-xs ${
                   active
                     ? 'bg-ink text-gold shadow-xs'
                     : 'text-ink-3 hover:text-ink'
