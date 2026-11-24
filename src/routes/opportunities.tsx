@@ -29,6 +29,7 @@ import {
 } from '../data/fixtures'
 import { useSavedProjects } from '../lib/saved'
 import { fetchApprovedPublicOpportunities } from '../lib/supabaseAuth'
+import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
@@ -434,56 +435,56 @@ function OpportunityStreamsHub({
             return (
               <article
                 key={stream.id}
-                className={`group relative flex flex-col justify-between rounded-xl border p-6 transition duration-200 ${
+                className={`group relative flex min-w-0 max-w-full flex-col justify-between overflow-hidden rounded-xl border p-4 transition duration-200 sm:p-6 ${
                   isSelected
                     ? 'border-ochre bg-white shadow-sm ring-1 ring-ochre/30'
                     : 'border-ink/12 bg-white shadow-xs hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-md'
                 }`}
               >
-                <div>
+                <div className="min-w-0">
                   {/* Top bar */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold">
-                      <span>{stream.code}</span>
-                      <span className="text-paper/40">·</span>
-                      <span>{stream.badge}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold">
+                      <span className="shrink-0">{stream.code}</span>
+                      <span className="text-paper/40" aria-hidden="true">·</span>
+                      <span className="break-words">{stream.badge}</span>
                     </span>
-                    <span className="rounded-full border border-moss/25 bg-moss-light px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-moss">
+                    <span className="max-w-full rounded-full border border-moss/25 bg-moss-light px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-moss">
                       {stream.complianceTag}
                     </span>
                   </div>
 
                   {/* Title & Summary */}
-                  <div className="mt-5 flex items-start gap-3.5">
-                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-ochre/20 bg-ochre/10 text-ochre">
-                      <Icon size={22} />
+                  <div className="mt-5 flex min-w-0 items-start gap-3 sm:gap-3.5">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-ochre/20 bg-ochre/10 text-ochre sm:h-12 sm:w-12">
+                      <Icon size={20} />
                     </div>
-                    <div>
-                      <h3 className="font-display text-2xl font-medium leading-snug text-ink">{stream.title}</h3>
-                      <p className="mt-1 font-mono text-[11px] text-stone">{stream.contractModel}</p>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display break-words text-xl font-medium leading-snug text-ink sm:text-2xl">{stream.title}</h3>
+                      <p className="mt-1 break-words font-mono text-[11px] text-stone">{stream.contractModel}</p>
                     </div>
                   </div>
 
                   <p className="mt-4 text-sm leading-relaxed text-stone">{stream.summary}</p>
 
-                  {/* Analytical KPI strip */}
-                  <dl className="mt-5 grid grid-cols-3 gap-2 rounded-xl border border-ink/10 bg-paper-2/70 p-3 text-center">
-                    <div>
-                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.activeListings')}</dt>
-                      <dd className="font-display mt-0.5 text-2xl font-medium text-ink">{matchingProjects.length}</dd>
+                  {/* Analytical KPI strip — responsive 2-col on mobile so Typical Scope Value never clips */}
+                  <dl className="mt-5 grid grid-cols-2 gap-x-2 gap-y-2.5 rounded-xl border border-ink/10 bg-paper-2/70 p-3 text-center sm:grid-cols-3 sm:gap-y-0">
+                    <div className="min-w-0">
+                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.activeListings')}</dt>
+                      <dd className="font-display mt-0.5 text-xl font-medium text-ink tabular-nums sm:text-2xl">{matchingProjects.length}</dd>
                     </div>
-                    <div className="border-x border-ink/10 px-1">
-                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.pipelineValue')}</dt>
-                      <dd className="font-display mt-0.5 text-2xl font-medium text-ochre">{formatUsd(totalPipelineUsd)}</dd>
+                    <div className="min-w-0 border-l border-ink/10 pl-2 sm:border-x sm:px-2">
+                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.pipelineValue')}</dt>
+                      <dd className="font-display mt-0.5 truncate text-xl font-medium text-ochre tabular-nums sm:text-2xl">{formatUsd(totalPipelineUsd)}</dd>
                     </div>
-                    <div>
-                      <dt className="font-mono text-[10px] uppercase tracking-wider text-stone">{t('opp.streams.typicalTicket')}</dt>
-                      <dd className="mt-1.5 font-mono text-[11px] font-semibold text-ink">{stream.typicalValue}</dd>
+                    <div className="col-span-2 min-w-0 border-t border-ink/10 pt-2.5 sm:col-span-1 sm:border-t-0 sm:pt-0 sm:pl-1">
+                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.typicalTicket')}</dt>
+                      <dd className="mt-1 break-words font-mono text-[11px] font-semibold leading-snug text-ink tabular-nums">{convertInlineUsdText(stream.typicalValue)}</dd>
                     </div>
                   </dl>
 
                   {/* Visual Demand Breakdown Bars */}
-                  <div className="mt-5">
+                  <div className="mt-5 min-w-0">
                     <div className="mb-2.5 flex items-center justify-between">
                       <span className="font-mono text-[10px] uppercase tracking-wider text-stone">
                         {t('opp.streams.demandBreakdown')}
@@ -491,10 +492,10 @@ function OpportunityStreamsHub({
                     </div>
                     <ul className="space-y-2.5">
                       {stream.subCategories.map((sub) => (
-                        <li key={sub.name} className="text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate font-medium text-ink/90">{sub.name}</span>
-                            <span className=" flex shrink-0 items-center gap-1.5 font-mono text-[10px]">
+                        <li key={sub.name} className="min-w-0 text-xs">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="min-w-0 flex-1 truncate font-medium text-ink/90">{sub.name}</span>
+                            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
                               <span
                                 className={`rounded px-1.5 py-0.5 ${
                                   sub.demand === 'High'
@@ -512,7 +513,7 @@ function OpportunityStreamsHub({
                           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink/10">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-ochre to-gold transition-all duration-500"
-                              style={{ width: `${sub.share * 2.2}%` }}
+                              style={{ width: `${Math.min(100, sub.share * 2.2)}%` }}
                             />
                           </div>
                         </li>
@@ -529,14 +530,14 @@ function OpportunityStreamsHub({
                       {stream.requirements.map((req) => (
                         <span
                           key={req}
-                          className="inline-flex items-center gap-1 rounded-md border border-sand bg-paper/60 px-2 py-1 text-[11px] text-ink/85"
+                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-sand bg-paper/60 px-2 py-1 text-[11px] text-ink/85"
                         >
                           <CheckCircle2 size={11} className="shrink-0 text-moss" />
-                          {req}
+                          <span className="break-words">{req}</span>
                         </span>
                       ))}
                     </div>
-                    <p className="mt-3 text-xs text-stone">
+                    <p className="mt-3 break-words text-xs text-stone">
                       <strong className="font-semibold text-ink">{t('opp.streams.targetAudience')}:</strong> {stream.targetAudience}
                     </p>
                   </div>
@@ -547,14 +548,14 @@ function OpportunityStreamsHub({
                   type="button"
                   onClick={() => onSelectType(stream.type)}
                   aria-pressed={isSelected}
-                  className={`mt-6 flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                  className={`mt-6 flex w-full max-w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
                     isSelected
                       ? 'bg-ochre text-paper shadow-sm'
                       : 'bg-ink text-paper hover:bg-ink-2'
                   }`}
                 >
-                  <span>{isSelected ? t('opp.streams.showingStream') : t('opp.streams.filterStream')}</span>
-                  <span className="inline-flex items-center gap-1 font-mono text-xs opacity-90">
+                  <span className="min-w-0 flex-1 truncate sm:whitespace-normal">{isSelected ? t('opp.streams.showingStream') : t('opp.streams.filterStream')}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums opacity-90">
                     {matchingProjects.length} <ArrowUpRight size={15} />
                   </span>
                 </button>

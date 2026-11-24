@@ -384,7 +384,8 @@ export function createContinuousMineralModel(
 
   const maxSpanMs = Math.max(DAY_MS, historyEndMs - historyStartMs)
   const minSpanMs = 2 * MINUTE_MS
-  const defaultSpanMs = Math.min(maxSpanMs, 30 * DAY_MS)
+  // Default to the full continuous multi-year range (2023 -> present) so all years are visible immediately
+  const defaultSpanMs = maxSpanMs
 
   const sampleWindow = (
     rawViewStartMs: number,
@@ -735,7 +736,7 @@ export function computeNiceTimeTicks(params: {
   const { viewStartMs, viewEndMs, scale, padLeft, plotWidth, isCompact, language } =
     params
   const spanMs = Math.max(1, viewEndMs - viewStartMs)
-  const minSpacingPx = isCompact ? 64 : 88
+  const minSpacingPx = scale === 'years' ? (isCompact ? 50 : 72) : isCompact ? 62 : 86
   const targetTicks = Math.max(
     3,
     Math.min(isCompact ? 4 : 7, Math.floor(plotWidth / minSpacingPx)),
@@ -743,7 +744,18 @@ export function computeNiceTimeTicks(params: {
 
   const candidates: number[] = []
 
-  if (spanMs > 55 * DAY_MS) {
+  if (scale === 'years') {
+    // Anchor cleanly on Jan 1 of each whole calendar year (2023, 2024, 2025, 2026)
+    const startYear = new Date(viewStartMs + EAT_OFFSET_MS).getUTCFullYear()
+    const endYear = new Date(viewEndMs + EAT_OFFSET_MS).getUTCFullYear()
+    for (let yr = startYear; yr <= endYear; yr++) {
+      const jan1Ms = Date.UTC(yr, 0, 1, 0, 0, 0) - EAT_OFFSET_MS
+      const clampedTs = Math.max(viewStartMs, jan1Ms)
+      if (clampedTs <= viewEndMs) {
+        candidates.push(clampedTs)
+      }
+    }
+  } else if (spanMs > 55 * DAY_MS) {
     // Calendar month / quarter / year boundaries in EAT (UTC+3)
     const approxMonths = spanMs / (30.4375 * DAY_MS)
     const rawMonthStep = approxMonths / targetTicks
@@ -800,20 +812,30 @@ export function computeNiceTimeTicks(params: {
   }
 
   // Filter for clean edge margins & non-overlapping labels
-  const edgeMargin = isCompact ? 26 : 34
+  const edgeMargin = scale === 'years' ? (isCompact ? 12 : 18) : isCompact ? 24 : 32
   const ticks: TimeAxisTick[] = []
   let lastX = -Infinity
 
   for (const ts of candidates) {
-    const x = padLeft + ((ts - viewStartMs) / spanMs) * plotWidth
-    if (x < padLeft + edgeMargin || x > padLeft + plotWidth - edgeMargin) {
+    const rawX = padLeft + ((ts - viewStartMs) / spanMs) * plotWidth
+    const x =
+      scale === 'years'
+        ? Math.max(padLeft + edgeMargin, Math.min(padLeft + plotWidth - edgeMargin, rawX))
+        : rawX
+    if (
+      scale !== 'years' &&
+      (x < padLeft + edgeMargin || x > padLeft + plotWidth - edgeMargin)
+    ) {
       continue
     }
     if (x - lastX < minSpacingPx) continue
     ticks.push({
       timestampMs: ts,
       x,
-      label: formatChartAxisDateByScale(ts, scale, spanMs, language),
+      label:
+        scale === 'years'
+          ? String(new Date(ts + EAT_OFFSET_MS).getUTCFullYear())
+          : formatChartAxisDateByScale(ts, scale, spanMs, language),
     })
     lastX = x
   }
