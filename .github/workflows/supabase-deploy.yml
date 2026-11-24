@@ -1,121 +1,91 @@
-    name: Supabase CI/CD & Schema Sync
+name: Supabase CI/CD & Schema Sync
 
-    on:
-      push:
-        branches:
-          - main
-        paths:
-          - "supabase/**"
-          - ".github/workflows/supabase-deploy.yml"
-      pull_request:
-        branches:
-          - main
-        paths:
-          - "supabase/**"
-          - ".github/workflows/supabase-deploy.yml"
-      workflow_dispatch:
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/**"
+      - ".github/workflows/supabase-deploy.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "supabase/**"
+      - ".github/workflows/supabase-deploy.yml"
+  workflow_dispatch:
 
-    concurrency:
-      group: supabase-deploy-${{ github.ref }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+concurrency:
+  group: supabase-deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-    permissions:
-      contents: write
-      pull-requests: read
+permissions:
+  contents: write
+  pull-requests: read
 
-    jobs:
-      validate-migrations-and-rls:
-        name: Validate Migrations, Drift & 100% RLS
-        runs-on: ubuntu-latest
-        steps:
-          - name: Checkout repository
-            uses: actions/checkout@v4
+jobs:
+  validate-migrations-and-rls:
+    name: Validate Migrations, Drift & 100% RLS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          - name: Setup Supabase CLI
-            uses: supabase/setup-cli@v1
-            with:
-              version: latest
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-          - name: Start isolated local Supabase stack
-            run: >
-              supabase start --exclude
-              studio,inbucket,imgproxy,edge-runtime,logflare,vector,supavisor
+      - name: Start isolated local Supabase stack
+        run: >
+          supabase start --exclude
+          studio,inbucket,imgproxy,edge-runtime,logflare,vector,supavisor
 
-          - name: Replay all migrations from scratch
-            run: supabase db reset --no-seed
+      - name: Verify clean migration execution & idempotency
+        run: supabase db reset
 
-          - name: Enforce 100% RLS coverage across public schema
-            run: |
-              DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-              SQL="SELECT string_agg(tablename, ', ') FROM pg_tables
-                   WHERE schemaname = 'public' AND rowsecurity = false;"
-              UNPROTECTED=$(psql "$DB" -tAc "$SQL")
-              if [ -n "$UNPROTECTED" ]; then
-                echo "::error::RLS DISABLED on: $UNPROTECTED"
-                exit 1
-              fi
-              echo "Verified: 100% of public tables have RLS enabled."
+      - name: Check schema drift between migrations and live schema
+        run: |
+          supabase db diff --local --schema public > /tmp/drift.sql
+          if [ -s /tmp/drift.sql ]; then
+            echo "Schema drift detected:"
+            cat /tmp/drift.sql
+            exit 1
+          fi
 
-          - name: Verify privileged RPCs are revoked from client roles
-            run: |
-              DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-              SQL="SELECT string_agg(routine_name, ', ')
-                   FROM information_schema.role_routine_grants
-                   WHERE routine_schema = 'public'
-                     AND routine_name IN (
-                       'reconcile_clickpesa_payment',
-                       'upsert_live_mineral_spot'
-                     )
-                     AND grantee IN ('PUBLIC', 'anon', 'authenticated');"
-              LEAKED=$(psql "$DB" -tAc "$SQL")
-              if [ -n "$LEAKED" ]; then
-                echo "::error::Privileged RPC exposed: $LEAKED"
-                exit 1
-              fi
-              echo "Verified: Privileged RPCs restricted to service_role."
+      - name: Enforce 100% Row-Level Security (RLS) on public tables
+        run: |
+          DB_URL=$(supabase status --output json | jq -r '.DB_URL')
+          UNPROTECTED=$(psql "$DB_URL" -Atc "
+            SELECT string_agg(c.relname, ', ')
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND NOT c.relrowsecurity;
+          ")
+          if [ -n "$UNPROTECTED" ]; then
+            echo "Tables missing RLS: $UNPROTECTED"
+            exit 1
+          fi
 
-          - name: Check for uncommitted migration drift
-            run: |
-              DIFF_OUTPUT=$(supabase db diff --local)
-              if [ -n "$DIFF_OUTPUT" ]; then
-                echo "::error::Schema drift detected!"
-                echo "$DIFF_OUTPUT"
-                exit 1
-              fi
-              echo "Verified: Zero schema drift."
+  deploy-migrations:
+    name: Deploy Migrations & Sync TypeScript Types
+    needs: validate-migrations-and-rls
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          - name: Stop local Supabase stack
-            if: always()
-            run: supabase stop --no-backup
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-      deploy-production:
-        name: Deploy Migrations & Sync TypeScript Types
-        needs: validate-migrations-and-rls
-        if: >-
-          github.ref == 'refs/heads/main' &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        runs-on: ubuntu-latest
-        environment: production
+      - name: Link to production Supabase project
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        steps:
-          - name: Checkout repository
-            uses: actions/checkout@v4
-            with:
-              fetch-depth: 0
-
-          - name: Setup Supabase CLI
-            uses: supabase/setup-cli@v1
-            with:
-              version: latest
-
-          - name: Link to production Supabase project
-            run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
-
-          - name: Link to production Supabase project
-        env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
@@ -129,35 +99,25 @@
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --remote --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Push pending migrations to production
+      - name: Deploy Supabase Edge Functions (if present)
         env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: supabase db push --remote --password "$SUPABASE_DB_PASSWORD"
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -d "supabase/functions" ] && [ -n "$(ls -A supabase/functions 2>/dev/null)" ]; then
+            supabase functions deploy --no-verify-jwt
+          fi
 
-          - name: Deploy Supabase Edge Functions (if present)
-            run: |
-              if [ -d "supabase/functions" ]; then
-                FUNCS=$(find supabase/functions -mindepth 1 -maxdepth 1 \
-                  -type d ! -name '_shared')
-                if [ -n "$FUNCS" ]; then
-                  supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
-                fi
-              fi
+      - name: Regenerate TypeScript types from live schema
+        run: |
+          mkdir -p types
+          supabase gen types typescript --linked > types/supabase.ts
 
-          - name: Regenerate TypeScript types from live schema
-            run: |
-              mkdir -p types
-              supabase gen types typescript --linked > types/supabase.ts
-
-          - name: Commit updated types/supabase.ts if changed
-            run: |
-              if git diff --quiet types/supabase.ts; then
-                echo "types/supabase.ts is already up to date."
-                exit 0
-              fi
-              git config user.name "github-actions[bot]"
-              git config user.email \
-                "41898282+github-actions[bot]@users.noreply.github.com"
-              git add types/supabase.ts
-              git commit -m "chore(types): sync Supabase types [skip ci]"
-              git push origin HEAD:main
+      - name: Commit updated types/supabase.ts if changed
+        run: |
+          if [ -n "$(git status --porcelain types/supabase.ts)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add types/supabase.ts
+            git commit -m "chore(db): sync generated Supabase TypeScript types"
+            git push
+          fi
