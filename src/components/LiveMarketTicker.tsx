@@ -9,7 +9,9 @@ import {
   ArrowUpRight,
   Check,
   Clock,
+  Download,
   Globe,
+  Lock,
   Radio,
   RefreshCw,
   Search,
@@ -62,6 +64,12 @@ export interface LiveMarketTickerProps {
   telemetryOverride?: MarketSyncTelemetry
   /** Clicking a mineral card's trend CTA jumps directly to the Interactive Mineral Trend tab */
   onInspectTrend?: (symbol: string) => void
+  /** Export Valuation CSV callback from parent Markets board */
+  onExportValuationCsv?: (visibleMinerals: MineralPriceRecord[]) => void
+  /** Whether current subscriber is entitled to immediate CSV export */
+  canExportMarkets?: boolean
+  /** Brief confirmation state after CSV download */
+  csvDownloaded?: boolean
 }
 
 function matchesSpotFilterGroup(
@@ -99,6 +107,9 @@ export default function LiveMarketTicker({
   mineralsOverride,
   telemetryOverride,
   onInspectTrend,
+  onExportValuationCsv,
+  canExportMarkets = false,
+  csvDownloaded = false,
 }: LiveMarketTickerProps) {
   const {
     currency,
@@ -561,6 +572,30 @@ export default function LiveMarketTicker({
                 {ui('Sort: A – Z', 'Panga: A – Z', 'Orden: A – Z')}
               </option>
             </select>
+
+            {onExportValuationCsv && (
+              <button
+                type="button"
+                onClick={() =>
+                  onExportValuationCsv(computedCards.map((c) => c.mineral))
+                }
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gold/45 bg-gold/15 px-3 font-mono text-[11px] font-semibold text-gold transition hover:bg-gold hover:text-ink"
+              >
+                {csvDownloaded ? (
+                  <>
+                    <Check size={13} />
+                    <span>{ui('CSV Downloaded', 'CSV Imepakuliwa', 'CSV Descargado')}</span>
+                  </>
+                ) : (
+                  <>
+                    {canExportMarkets ? <Download size={13} /> : <Lock size={12} />}
+                    <span>
+                      {ui('Export Valuation CSV', 'Pakua CSV ya Thamani', 'Exportar CSV')}
+                    </span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}

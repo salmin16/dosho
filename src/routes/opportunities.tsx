@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   ArrowUpRight,
   Star,
+  FileCheck2,
+  Unlock,
 } from 'lucide-react'
 import {
   INVESTMENT_BANDS,
@@ -33,7 +35,14 @@ import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
+import TenementDossierGate from '../components/TenementDossierGate'
 import VerificationBadge from '../components/VerificationBadge'
+import {
+  buildLiveOpportunityDossier,
+  buildLiveProjectDossier,
+  type CounterpartyDossierData,
+} from '../lib/counterpartyDossier'
+import { useSubscription } from '../lib/subscriptions'
 import type { UserListedProject, UserOpportunityRecord } from '../types/database'
 
 type Search = {
@@ -129,10 +138,13 @@ function Opportunities() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: '/opportunities' })
   const { saved, isSaved, toggle } = useSavedProjects()
+  const { isPaidActive, canAccessDataRoom } = useSubscription()
   const [drawer, setDrawer] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [liveOpportunities, setLiveOpportunities] = useState<UserOpportunityRecord[]>([])
   const [liveProjects, setLiveProjects] = useState<UserListedProject[]>([])
+  const [activeLiveDossier, setActiveLiveDossier] = useState<CounterpartyDossierData | null>(null)
+  const hasDossierUnlocked = isPaidActive || canAccessDataRoom
 
   useEffect(() => {
     void fetchApprovedPublicOpportunities().then((res) => {
@@ -217,9 +229,19 @@ function Opportunities() {
                   <h3 className="mt-2 font-display text-lg font-semibold text-ink">{opp.title}</h3>
                   <p className="text-xs text-ochre">{opp.organization} · {opp.location}</p>
                   <p className="mt-2 line-clamp-3 text-xs text-stone">{opp.description}</p>
-                  <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 font-mono text-[11px] text-stone">
-                    <span>{opp.compensation_usd > 0 ? formatUsd(opp.compensation_usd) : 'Schedule'}</span>
-                    <span>Due {opp.deadline}</span>
+                  <div className="mt-auto space-y-2.5 border-t border-ink/10 pt-3">
+                    <div className="flex items-center justify-between font-mono text-[11px] text-stone">
+                      <span>{opp.compensation_usd > 0 ? formatUsd(opp.compensation_usd) : 'Schedule'}</span>
+                      <span>Due {opp.deadline}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveLiveDossier(buildLiveOpportunityDossier(opp))}
+                      className="btn-ghost w-full justify-center !py-2 text-xs"
+                    >
+                      {hasDossierUnlocked ? <Unlock size={13} className="text-moss" /> : <FileCheck2 size={13} className="text-ochre" />}
+                      Tenement Dossier &amp; Contact
+                    </button>
                   </div>
                 </article>
               ))}
@@ -232,9 +254,19 @@ function Opportunities() {
                   <h3 className="mt-2 font-display text-lg font-semibold text-ink">{proj.title}</h3>
                   <p className="text-xs text-stone">{proj.licence_type} ({proj.licence_reference})</p>
                   <p className="mt-2 line-clamp-3 text-xs text-stone">{proj.summary}</p>
-                  <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 font-mono text-[11px] text-stone">
-                    <span className="font-semibold text-ink">{formatUsd(proj.investment_usd)}</span>
-                    <span>{new Date(proj.created_at).toLocaleDateString()}</span>
+                  <div className="mt-auto space-y-2.5 border-t border-ink/10 pt-3">
+                    <div className="flex items-center justify-between font-mono text-[11px] text-stone">
+                      <span className="font-semibold text-ink">{formatUsd(proj.investment_usd)}</span>
+                      <span>{new Date(proj.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveLiveDossier(buildLiveProjectDossier(proj))}
+                      className="btn-ghost w-full justify-center !py-2 text-xs"
+                    >
+                      {hasDossierUnlocked ? <Unlock size={13} className="text-moss" /> : <FileCheck2 size={13} className="text-ochre" />}
+                      Tenement Dossier &amp; Contact
+                    </button>
                   </div>
                 </article>
               ))}
@@ -364,6 +396,16 @@ function Opportunities() {
           </p>
         </div>
       </div>
+
+      {activeLiveDossier && (
+        <TenementDossierGate
+          variant="modal"
+          dossier={activeLiveDossier}
+          onTriggerRfq={() => navigate({ to: '/services' })}
+          rfqButtonLabel="Request Quote via Services Desk"
+          onClose={() => setActiveLiveDossier(null)}
+        />
+      )}
 
       {drawer && (
         <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal aria-label={t('opp.filtersBtn')}>

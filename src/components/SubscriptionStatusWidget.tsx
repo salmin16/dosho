@@ -311,7 +311,22 @@ export default function SubscriptionStatusWidget({
             <li className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-paper/80">
                 <ShieldCheck size={13} className="text-gold" />
-                {ui('NDA Data Room', 'Chumba cha Nyaraka (NDA)', 'Sala de Datos NDA')}
+                {ui('Tenement Dossier & Contacts', 'Faili la Leseni & Simu', 'Expediente y Contactos')}
+              </span>
+              {isPaidActive || entitlements.can_access_data_room ? (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-[#9de4b4]">
+                  <CheckCircle2 size={11} /> {ui('UNLOCKED', 'IMEFUNGULIWA', 'ACTIVO')}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-paper/50">
+                  <Lock size={11} /> Operator Pro+
+                </span>
+              )}
+            </li>
+            <li className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-paper/80">
+                <ShieldCheck size={13} className="text-gold" />
+                {ui('NDA Data Room Docs', 'Nyaraka za NDA', 'Sala de Datos NDA')}
               </span>
               {entitlements.can_access_data_room ? (
                 <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-[#9de4b4]">

@@ -1,13 +1,19 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { BadgeCheck, Clock, Lock, MapPin, Star, CheckCircle2, X } from 'lucide-react'
+import { BadgeCheck, Clock, FileCheck2, Lock, MapPin, Star, CheckCircle2, Unlock, X } from 'lucide-react'
 import { SERVICE_CATEGORIES, type ServiceProvider } from '../data/fixtures'
 import { useI18n } from '../i18n'
+import TenementDossierGate from '../components/TenementDossierGate'
 import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
 } from '../components/TurnstileWidget'
 import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
+import {
+  buildLiveServiceDossier,
+  buildServiceProviderDossier,
+  type CounterpartyDossierData,
+} from '../lib/counterpartyDossier'
 import { useSubscription } from '../lib/subscriptions'
 import {
   createGroundedQuoteRequest,
@@ -35,11 +41,24 @@ function Services() {
   const { category } = Route.useSearch()
   const navigate = useNavigate()
   const session = useAuthSession()
-  const { plan, planId, entitlements, canSubmitRfq, refreshSubscription } = useSubscription()
+  const {
+    plan,
+    planId,
+    entitlements,
+    isPaidActive,
+    canAccessDataRoom,
+    canSubmitRfq,
+    refreshSubscription,
+  } = useSubscription()
   const [verifiedOnly, setVerifiedOnly] = useState(false)
   const [quoteFor, setQuoteFor] = useState<ServiceProvider | null>(null)
+  const [activeDossier, setActiveDossier] = useState<{
+    dossier: CounterpartyDossierData
+    provider: ServiceProvider
+  } | null>(null)
   const [showRfqUpgrade, setShowRfqUpgrade] = useState(false)
   const [liveApprovedServices, setLiveApprovedServices] = useState<UserServiceRecord[]>([])
+  const hasDossierUnlocked = isPaidActive || canAccessDataRoom
 
   useEffect(() => {
     void fetchApprovedPublicServices().then(setLiveApprovedServices)
@@ -140,32 +159,60 @@ function Services() {
                     {srv.provider_organization} · {srv.expertise_area}
                   </p>
                   <p className="mt-3 text-sm leading-relaxed text-stone">{srv.scope_description}</p>
-                  <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 pt-4 text-xs">
-                    <span className="font-mono text-stone">
+                  <div className="mt-auto flex flex-wrap items-center justify-between gap-2.5 border-t border-ink/10 pt-4 text-xs">
+                    <span className="min-w-0 font-mono text-stone">
                       {srv.regional_coverage} · <strong className="text-ink">{srv.rate_or_pricing_model}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleRequestQuoteClick({
-                          id: srv.id,
-                          name: srv.provider_organization,
-                          initials: srv.provider_organization.slice(0, 2).toUpperCase(),
-                          category: SERVICE_CATEGORIES[0],
-                          location: srv.regional_coverage,
-                          verified: true,
-                          rating: 5.0,
-                          reviews: 1,
-                          responseTime: '24h',
-                          summary: srv.scope_description,
-                          services: [srv.service_name],
-                        })
-                      }
-                      className="btn-primary !py-2"
-                    >
-                      {!session && <Lock size={13} />}
-                      {t('services.requestQuote')}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const mappedProvider: ServiceProvider = {
+                            id: srv.id,
+                            name: srv.provider_organization,
+                            initials: srv.provider_organization.slice(0, 2).toUpperCase(),
+                            category: SERVICE_CATEGORIES[0],
+                            location: srv.regional_coverage,
+                            verified: true,
+                            rating: 5.0,
+                            reviews: 1,
+                            responseTime: '24h',
+                            summary: srv.scope_description,
+                            services: [srv.service_name],
+                          }
+                          setActiveDossier({
+                            dossier: buildLiveServiceDossier(srv),
+                            provider: mappedProvider,
+                          })
+                        }}
+                        className="btn-ghost !py-2 !px-3 text-xs"
+                      >
+                        {hasDossierUnlocked ? <Unlock size={13} className="text-moss" /> : <FileCheck2 size={13} className="text-ochre" />}
+                        Dossier &amp; Contact
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRequestQuoteClick({
+                            id: srv.id,
+                            name: srv.provider_organization,
+                            initials: srv.provider_organization.slice(0, 2).toUpperCase(),
+                            category: SERVICE_CATEGORIES[0],
+                            location: srv.regional_coverage,
+                            verified: true,
+                            rating: 5.0,
+                            reviews: 1,
+                            responseTime: '24h',
+                            summary: srv.scope_description,
+                            services: [srv.service_name],
+                          })
+                        }
+                        className="btn-primary !py-2"
+                      >
+                        {!session && <Lock size={13} />}
+                        {t('services.requestQuote')}
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -209,8 +256,8 @@ function Services() {
                     </span>
                   ))}
                 </div>
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-ink/10 pt-5 text-sm">
-                  <div className="flex flex-wrap gap-4 text-stone">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 pt-5 text-sm">
+                  <div className="flex flex-wrap gap-3 text-xs text-stone sm:text-sm">
                     <span className="flex items-center gap-1">
                       <Star size={14} className="fill-gold text-gold" />{' '}
                       <strong className="text-ink">{s.rating}</strong> ({s.reviews})
@@ -222,13 +269,28 @@ function Services() {
                       <Clock size={14} /> {s.responseTime}
                     </span>
                   </div>
-                  <button
-                    onClick={() => handleRequestQuoteClick(s)}
-                    className="btn-primary !py-2"
-                  >
-                    {!session && <Lock size={13} />}
-                    {t('services.requestQuote')}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveDossier({
+                          dossier: buildServiceProviderDossier(s),
+                          provider: s,
+                        })
+                      }
+                      className="btn-ghost !py-2 !px-3 text-xs"
+                    >
+                      {hasDossierUnlocked ? <Unlock size={13} className="text-moss" /> : <FileCheck2 size={13} className="text-ochre" />}
+                      Dossier &amp; Contact
+                    </button>
+                    <button
+                      onClick={() => handleRequestQuoteClick(s)}
+                      className="btn-primary !py-2 text-xs sm:text-sm"
+                    >
+                      {!session && <Lock size={13} />}
+                      {t('services.requestQuote')}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -236,6 +298,16 @@ function Services() {
         )}
         <p className="mt-10 text-xs text-stone">{t('services.footnote')}</p>
       </div>
+
+      {activeDossier && (
+        <TenementDossierGate
+          variant="modal"
+          dossier={activeDossier.dossier}
+          onTriggerRfq={() => handleRequestQuoteClick(activeDossier.provider)}
+          rfqButtonLabel={t('services.requestQuote')}
+          onClose={() => setActiveDossier(null)}
+        />
+      )}
 
       {quoteFor && (
         <QuoteModal

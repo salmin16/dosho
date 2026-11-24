@@ -27,7 +27,9 @@ import { useI18n } from '../i18n'
 import VerificationBadge, { levelTone } from '../components/VerificationBadge'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap from '../components/TanzaniaMap'
+import TenementDossierGate from '../components/TenementDossierGate'
 import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
+import { buildProjectDossier } from '../lib/counterpartyDossier'
 import { useSubscription } from '../lib/subscriptions'
 
 export const Route = createFileRoute('/opportunities_/$projectId')({
@@ -66,10 +68,12 @@ function ProjectDetail() {
   const { t, tv, localizeProject, formatDate, fixtures } = useI18n()
   const p = localizeProject(rawProject)
   const { isSaved, toggle } = useSavedProjects()
-  const { plan, canAccessDataRoom } = useSubscription()
+  const { plan, isPaidActive, canAccessDataRoom } = useSubscription()
   const [modal, setModal] = useState<Modal>(null)
   const [dataRoomUpgradeDoc, setDataRoomUpgradeDoc] = useState<string | null>(null)
   const saved = isSaved(p.id)
+  const projectDossier = buildProjectDossier(p)
+  const hasDossierUnlocked = isPaidActive || canAccessDataRoom
   const levelMeta = fixtures.verificationLevels[p.verification.level]
   const related = PROJECTS.filter(
     (x) => x.id !== p.id && (x.minerals.some((m) => p.minerals.includes(m)) || x.region === p.region),
@@ -125,6 +129,14 @@ function ProjectDetail() {
               ))}
             </ul>
           </Section>
+
+          {/* Dedicated Paid-Entitled Tenement & Due-Diligence Dossier + Direct Counterparty Contact */}
+          <TenementDossierGate
+            variant="section"
+            dossier={projectDossier}
+            onTriggerRfq={() => setModal('enquiry')}
+            rfqButtonLabel="One-Tap Request Quote / Enquiry"
+          />
 
           <Section title={t('detail.licenceInfo')}>
             <dl className="grid overflow-hidden rounded-xl border border-ink/10 sm:grid-cols-3">
@@ -344,8 +356,19 @@ function ProjectDetail() {
           </div>
 
           <div className="mt-4 rounded-2xl border border-ink/10 bg-white/50 p-5">
-            <div className="label">{t('detail.listedBy')}</div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="label !mb-0">{t('detail.listedBy')}</div>
+              <span
+                className={`rounded-full px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase ${
+                  hasDossierUnlocked
+                    ? 'bg-moss-light text-moss'
+                    : 'bg-ink text-gold'
+                }`}
+              >
+                {hasDossierUnlocked ? 'Direct Unlocked' : 'Paid Unlock'}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink font-display text-paper">
                 {p.owner.name
                   .split(' ')
@@ -353,14 +376,43 @@ function ProjectDetail() {
                   .map((w) => w[0])
                   .join('')}
               </span>
-              <div>
-                <div className="font-medium">{p.owner.name}</div>
+              <div className="min-w-0">
+                <div className="truncate font-medium">{p.owner.name}</div>
                 <div className="text-xs text-stone">
                   {t('detail.memberSince', { kind: p.owner.kind, year: p.owner.memberSince })}
                 </div>
               </div>
             </div>
-            <p className="mt-4 text-xs leading-relaxed text-stone">{t('detail.contactReleaseNote')}</p>
+            {hasDossierUnlocked ? (
+              <div className="mt-3.5 space-y-1.5 rounded-xl border border-moss/25 bg-moss-light/45 p-3 font-mono text-[11px]">
+                <a
+                  href={`tel:${projectDossier.directPhone.replace(/\s+/g, '')}`}
+                  className="block font-semibold text-ink hover:text-ochre hover:underline tabular-nums"
+                >
+                  {projectDossier.directPhone}
+                </a>
+                <a
+                  href={`mailto:${projectDossier.directEmail}`}
+                  className="block truncate text-ochre hover:underline"
+                >
+                  {projectDossier.directEmail}
+                </a>
+                <div className="text-[10px] text-stone">
+                  {projectDossier.companyRegistration}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3.5">
+                <p className="text-xs leading-relaxed text-stone">{t('detail.contactReleaseNote')}</p>
+                <Link
+                  to="/pricing"
+                  search={{ plan: 'pro', checkout: '1' } as unknown as undefined}
+                  className="mt-2.5 inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-ochre hover:underline"
+                >
+                  <Lock size={11} /> Unlock Direct Phone &amp; Email →
+                </Link>
+              </div>
+            )}
           </div>
 
           <button

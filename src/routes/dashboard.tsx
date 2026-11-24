@@ -24,6 +24,7 @@ import { useSavedProjects } from '../lib/saved'
 import { PROJECTS } from '../data/fixtures'
 import { useLocalization } from '../context/LocalizationContext'
 import PriceDisplay from '../components/PriceDisplay'
+import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
 import type {
   DocumentClassification,
@@ -197,6 +198,24 @@ export function DashboardRouteComponent() {
               {ui('Sign Out', 'Ondoka', 'Cerrar Sesión')}
             </button>
           </div>
+        </div>
+
+        {/* Live Subscription & Quota Telemetry Strip */}
+        <div className="mt-5">
+          <SubscriptionQuotaBar
+            contextLabel={ui('Workspace Entitlements', 'Haki za Dashibodi', 'Permisos del Panel')}
+            projectsUsed={listedProjects.length}
+            quotesUsedThisMonth={
+              quoteRequests.filter((q) => {
+                const d = new Date(q.created_at)
+                const now = new Date()
+                return (
+                  d.getUTCFullYear() === now.getUTCFullYear() &&
+                  d.getUTCMonth() === now.getUTCMonth()
+                )
+              }).length
+            }
+          />
         </div>
 
         {/* Member Identity Verification Status & Request Panel */}

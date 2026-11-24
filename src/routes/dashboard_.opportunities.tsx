@@ -20,6 +20,7 @@ import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
+import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import { GuidedOpportunityWizard } from '../components/GuidedSubmissionWizards'
 import type { UserOpportunityRecord } from '../types/database'
 
@@ -40,10 +41,23 @@ function DashboardOpportunitiesRouteComponent() {
   } = useLocalization()
 
   const [opportunities, setOpportunities] = useState<UserOpportunityRecord[]>([])
+  const [listedProjectsCount, setListedProjectsCount] = useState(0)
+  const [monthlyRfqsCount, setMonthlyRfqsCount] = useState(0)
 
   const loadData = useCallback(async () => {
     const data = await fetchGroundedUserData()
     setOpportunities(data.userOpportunities)
+    setListedProjectsCount(data.listedProjects.length)
+    const now = new Date()
+    setMonthlyRfqsCount(
+      data.quoteRequests.filter((q) => {
+        const d = new Date(q.created_at)
+        return (
+          d.getUTCFullYear() === now.getUTCFullYear() &&
+          d.getUTCMonth() === now.getUTCMonth()
+        )
+      }).length,
+    )
   }, [])
 
   useEffect(() => {
@@ -156,8 +170,17 @@ function DashboardOpportunitiesRouteComponent() {
           </div>
         </div>
 
+        {/* Live Plan & Quota Telemetry Strip */}
+        <div className="mt-5">
+          <SubscriptionQuotaBar
+            contextLabel={ui('Opportunity Studio', 'Studio ya Fursa', 'Estudio de Oportunidades')}
+            projectsUsed={listedProjectsCount}
+            quotesUsedThisMonth={monthlyRfqsCount}
+          />
+        </div>
+
         {/* Guided 3-Step Opportunity Wizard */}
-        <div className="mt-8">
+        <div className="mt-6">
           <GuidedOpportunityWizard onSubmitted={loadData} />
         </div>
 

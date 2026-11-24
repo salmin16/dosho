@@ -232,12 +232,14 @@ function Pricing() {
 
         {/* Active / Dormant / Free Account Status Pill */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-ochre/30 bg-ochre/10 px-4 py-1.5 font-mono text-xs text-ochre">
-            <Crown size={13} />
-            {ui('Account Tier:', 'Mpango Wako:', 'Plan Actual:')}{' '}
-            <strong>{activePlan.name}</strong>
+          <div className="inline-flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-ochre/30 bg-ochre/10 px-4 py-1.5 font-mono text-xs text-ochre">
+            <Crown size={13} className="shrink-0" />
+            <span>
+              {ui('Account Tier:', 'Mpango Wako:', 'Plan Actual:')}{' '}
+              <strong>{activePlan.name}</strong>
+            </span>
             <span
-              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+              className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
                 accountState === 'active'
                   ? 'bg-moss text-paper'
                   : accountState === 'dormant'
@@ -245,7 +247,9 @@ function Pricing() {
                     : 'bg-ink text-gold'
               }`}
             >
-              {accountState}
+              {accountState === 'dormant'
+                ? ui('DORMANT · Renew to Unlock', 'IMESIMAMA · Huisha', 'INACTIVO · Renovar')
+                : accountState}
             </span>
           </div>
         </div>
@@ -334,13 +338,13 @@ function Pricing() {
                 )}
 
                 <dl
-                  className={`mt-5 grid grid-cols-2 gap-2 rounded-xl border p-3 font-mono text-[11px] ${
+                  className={`mt-5 grid grid-cols-2 gap-2.5 rounded-xl border p-3 font-mono text-[11px] ${
                     isHighlighted
                       ? 'border-paper/12 bg-ink-2'
                       : 'border-ink/10 bg-paper-2/70'
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0">
                     <dt
                       className={`text-[9.5px] uppercase ${
                         isHighlighted ? 'text-paper/55' : 'text-stone'
@@ -355,7 +359,7 @@ function Pricing() {
                     </dd>
                   </div>
                   <div
-                    className={`border-l pl-2 ${
+                    className={`min-w-0 border-l pl-2.5 ${
                       isHighlighted ? 'border-paper/12' : 'border-ink/10'
                     }`}
                   >
@@ -370,6 +374,64 @@ function Pricing() {
                       {p.max_monthly_rfqs < 0
                         ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
                         : `${p.max_monthly_rfqs}/mo`}
+                    </dd>
+                  </div>
+                  <div
+                    className={`min-w-0 border-t pt-2 ${
+                      isHighlighted ? 'border-paper/12' : 'border-ink/10'
+                    }`}
+                  >
+                    <dt
+                      className={`text-[9.5px] uppercase ${
+                        isHighlighted ? 'text-paper/55' : 'text-stone'
+                      }`}
+                    >
+                      {ui('Dossier & NDA', 'Faili & NDA', 'Expediente')}
+                    </dt>
+                    <dd
+                      className={`mt-0.5 truncate font-bold ${
+                        p.can_access_data_room || planSlug === 'pro'
+                          ? isHighlighted
+                            ? 'text-gold'
+                            : 'text-moss'
+                          : isHighlighted
+                            ? 'text-paper/45'
+                            : 'text-stone'
+                      }`}
+                    >
+                      {p.can_access_data_room
+                        ? ui('Full NDA Room', 'NDA Kamili', 'Sala NDA')
+                        : planSlug === 'pro'
+                          ? ui('Dossier + Direct', 'Faili + Simu', 'Expediente')
+                          : ui('Preview Only', 'Muhtasari', 'Vista Previa')}
+                    </dd>
+                  </div>
+                  <div
+                    className={`min-w-0 border-l border-t pl-2.5 pt-2 ${
+                      isHighlighted ? 'border-paper/12' : 'border-ink/10'
+                    }`}
+                  >
+                    <dt
+                      className={`text-[9.5px] uppercase ${
+                        isHighlighted ? 'text-paper/55' : 'text-stone'
+                      }`}
+                    >
+                      {ui('Markets CSV', 'Pakua CSV', 'CSV Mercado')}
+                    </dt>
+                    <dd
+                      className={`mt-0.5 truncate font-bold ${
+                        p.can_export_markets
+                          ? isHighlighted
+                            ? 'text-[#9de4b4]'
+                            : 'text-moss'
+                          : isHighlighted
+                            ? 'text-paper/45'
+                            : 'text-stone'
+                      }`}
+                    >
+                      {p.can_export_markets
+                        ? ui('Included', 'Imejumuishwa', 'Incluido')
+                        : ui('Locked', 'Imefungwa', 'Bloqueado')}
                     </dd>
                   </div>
                 </dl>

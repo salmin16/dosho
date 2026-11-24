@@ -34,6 +34,7 @@ import LiveMarketTicker from './LiveMarketTicker'
 import MineralTrendChart from './MineralTrendChart'
 import PriceDisplay from './PriceDisplay'
 import UpgradeRequiredGate from './UpgradeRequiredGate'
+import { downloadMarketValuationCsv } from '../lib/marketCsvExport'
 import { useSubscription } from '../lib/subscriptions'
 import type {
   MarketSyncTelemetry,
@@ -154,7 +155,15 @@ export default function MineralPricesBoard({
   const [unitBasis, setUnitBasis] = useState<'standard' | 'metric_local'>('metric_local')
   const [chartSymbol, setChartSymbol] = useState<string>(initialSymbol || 'XAU')
   const [showExportUpgrade, setShowExportUpgrade] = useState(false)
-  const { plan: activePlan, canExportMarkets } = useSubscription()
+  const [csvDownloaded, setCsvDownloaded] = useState(false)
+  const csvConfirmTimerRef = useRef<number | null>(null)
+  const {
+    plan: activePlan,
+    accountState,
+    isPaidActive,
+    canExportMarkets,
+  } = useSubscription()
+  const canExportValuation = canExportMarkets || isPaidActive
 
   // Interactive Statutory Valuation & Royalty Calculator State
   const [calcSymbol, setCalcSymbol] = useState<string>('XAU')
@@ -232,6 +241,9 @@ export default function MineralPricesBoard({
       if (updatedTimerRef.current !== null) {
         window.clearTimeout(updatedTimerRef.current)
       }
+      if (csvConfirmTimerRef.current !== null) {
+        window.clearTimeout(csvConfirmTimerRef.current)
+      }
     }
   }, [])
 
@@ -293,51 +305,46 @@ export default function MineralPricesBoard({
     return list
   }, [minerals, selectedCategory, matrixSearch])
 
-  const handleExportMatrixCsv = useCallback(() => {
-    if (!canExportMarkets) {
-      setShowExportUpgrade(true)
-      return
-    }
-    const headers = [
-      'Symbol',
-      'Mineral',
-      'Category',
-      'UnitBasis',
-      'Currency',
-      'WorldSpot',
-      'SokoLaMadini',
-      'BuyingCentre',
-      'Trend24hPct',
-      'UpdatedAt',
-    ]
-    const rows = filteredMinerals.map((m) => {
-      const world = formatStatutoryPrice(m.world_market_price_usd, m.unit, unitBasis)
-      const soko = formatStatutoryPrice(m.local_market_price_usd, m.unit, unitBasis)
-      const buying = formatStatutoryPrice(m.buying_centre_price_usd, m.unit, unitBasis)
-      return [
-        m.symbol,
-        `"${m.mineral_name.replace(/"/g, '""')}"`,
-        `"${m.category}"`,
-        world.unitSuffix,
+  const handleExportValuationCsv = useCallback(
+    (
+      rowsToExport: MineralPriceRecord[],
+      viewLabel: 'live-spot-feed' | 'statutory-matrix',
+    ) => {
+      if (!canExportValuation) {
+        setShowExportUpgrade(true)
+        return
+      }
+      downloadMarketValuationCsv({
+        minerals: rowsToExport,
         currency,
-        `"${world.formatted}"`,
-        `"${soko.formatted}"`,
-        `"${buying.formatted}"`,
-        `${m.trend_percentage.toFixed(2)}%`,
-        m.updated_at,
-      ].join(',')
-    })
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `mineconnect-mineral-benchmarks-${currency.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }, [canExportMarkets, filteredMinerals, formatStatutoryPrice, unitBasis, currency])
+        rateForSelected,
+        ratesSource,
+        unitBasis,
+        viewLabel,
+        formatStatutoryPrice,
+      })
+      setCsvDownloaded(true)
+      if (csvConfirmTimerRef.current !== null) {
+        window.clearTimeout(csvConfirmTimerRef.current)
+      }
+      csvConfirmTimerRef.current = window.setTimeout(() => {
+        setCsvDownloaded(false)
+        csvConfirmTimerRef.current = null
+      }, 3200)
+    },
+    [
+      canExportValuation,
+      currency,
+      rateForSelected,
+      ratesSource,
+      unitBasis,
+      formatStatutoryPrice,
+    ],
+  )
+
+  const handleExportMatrixCsv = useCallback(() => {
+    handleExportValuationCsv(filteredMinerals, 'statutory-matrix')
+  }, [handleExportValuationCsv, filteredMinerals])
 
   const translateCategory = (cat: 'ALL' | MineralCategory): string => {
     switch (cat) {
@@ -679,6 +686,11 @@ export default function MineralPricesBoard({
                 mineralsOverride={minerals}
                 telemetryOverride={telemetry}
                 onInspectTrend={handleInspectTrend}
+                onExportValuationCsv={(visible) =>
+                  handleExportValuationCsv(visible, 'live-spot-feed')
+                }
+                canExportMarkets={canExportValuation}
+                csvDownloaded={csvDownloaded}
               />
             )}
 
@@ -753,10 +765,21 @@ export default function MineralPricesBoard({
                     <button
                       type="button"
                       onClick={handleExportMatrixCsv}
-                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-ink/15 bg-ink px-3 font-mono text-[11px] font-semibold text-gold transition hover:bg-ochre hover:text-paper"
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-ink/15 bg-ink px-3.5 font-mono text-[11px] font-semibold text-gold transition hover:bg-ochre hover:text-paper"
                     >
-                      {canExportMarkets ? <Download size={13} /> : <Lock size={12} />}
-                      <span>{ui('Export CSV', 'Pakua CSV', 'Exportar CSV')}</span>
+                      {csvDownloaded ? (
+                        <>
+                          <Check size={13} />
+                          <span>{ui('CSV Downloaded', 'CSV Imepakuliwa', 'CSV Descargado')}</span>
+                        </>
+                      ) : (
+                        <>
+                          {canExportValuation ? <Download size={13} /> : <Lock size={12} />}
+                          <span>
+                            {ui('Export Valuation CSV', 'Pakua CSV ya Thamani', 'Exportar CSV')}
+                          </span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1091,8 +1114,17 @@ export default function MineralPricesBoard({
           variant="modal"
           requiredPlan="pro"
           currentPlanLabel={activePlan.name}
-          featureTitle="Upgrade to Export Statutory Market Data (CSV)"
-          reason="Downloading converted World Spot Parity, Soko la Madini, and Buying Centre pricing matrices requires an active Operator Pro or Institutional / JV Desk subscription."
+          accountStateOverride={accountState}
+          featureTitle={
+            accountState === 'dormant'
+              ? 'Renew Subscription to Export Markets Valuation CSV'
+              : 'Upgrade to Export Markets Valuation CSV'
+          }
+          reason={
+            accountState === 'dormant'
+              ? `Your paid subscription is currently dormant. Renew Operator Pro or Institutional / JV Desk to download live ${currency} (${unitBasis === 'metric_local' ? 'Local /g, /kg, /ct' : 'Global /toz, /lb, /t'}) valuation CSV snapshots with active FX rates and EAT timestamps.`
+              : `Downloading formatted ${currency} valuation CSV snapshots (World Spot, Soko la Madini, Buying Centre, active FX rate & EAT timestamp) requires an active Operator Pro or Institutional / JV Desk subscription.`
+          }
           onClose={() => setShowExportUpgrade(false)}
         />
       )}

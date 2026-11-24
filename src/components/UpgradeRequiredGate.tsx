@@ -3,8 +3,12 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Check, Crown, Lock, ShieldCheck, X } from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
-import { CANONICAL_SUBSCRIPTION_PLANS, PLAN_FEATURE_BULLETS } from '../lib/subscriptions'
-import type { SubscriptionPlanId } from '../types/database'
+import {
+  CANONICAL_SUBSCRIPTION_PLANS,
+  PLAN_FEATURE_BULLETS,
+  useSubscription,
+} from '../lib/subscriptions'
+import type { AccountBillingState, SubscriptionPlanId } from '../types/database'
 
 export interface UpgradeRequiredGateProps {
   /** 'banner' renders inline inside a page; 'modal' renders an editorial overlay dialog */
@@ -13,6 +17,7 @@ export interface UpgradeRequiredGateProps {
   featureTitle: string
   reason: string
   currentPlanLabel?: string
+  accountStateOverride?: AccountBillingState
   quotaSummary?: string
   onClose?: () => void
 }
@@ -22,11 +27,16 @@ export default function UpgradeRequiredGate({
   requiredPlan = 'pro',
   featureTitle,
   reason,
-  currentPlanLabel = 'Explorer',
+  currentPlanLabel,
+  accountStateOverride,
   quotaSummary,
   onClose,
 }: UpgradeRequiredGateProps) {
   const { currency, formatPrice, ui } = useLocalization()
+  const { plan: currentPlan, accountState: hookAccountState } = useSubscription()
+  const effectiveAccountState = accountStateOverride ?? hookAccountState
+  const isDormant = effectiveAccountState === 'dormant'
+  const effectivePlanLabel = currentPlanLabel ?? currentPlan.name
   const targetPlan =
     CANONICAL_SUBSCRIPTION_PLANS.find((p) => p.id === requiredPlan) ??
     CANONICAL_SUBSCRIPTION_PLANS[1]
@@ -51,13 +61,21 @@ export default function UpgradeRequiredGate({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/45 bg-ochre/25 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-gold">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
+            isDormant
+              ? 'border-danger/50 bg-danger/25 text-[#f59c8a]'
+              : 'border-gold/45 bg-ochre/25 text-gold'
+          }`}
+        >
           <Lock size={11} />
-          {ui('Upgrade Required', 'Pandisha Mpango', 'Actualización Requerida')}
+          {isDormant
+            ? ui('Account Dormant · Renew', 'Akaunti Imesimama · Huisha', 'Inactivo · Renovar')
+            : ui('Upgrade Required', 'Pandisha Mpango', 'Actualización Requerida')}
         </span>
         <span className="rounded-full border border-paper/15 bg-paper/[0.06] px-2.5 py-1 font-mono text-[10px] text-paper/75">
           {ui('Current Plan:', 'Mpango wa Sasa:', 'Plan Actual:')}{' '}
-          <strong className="text-paper">{currentPlanLabel}</strong>
+          <strong className="text-paper">{effectivePlanLabel}</strong>
         </span>
         {quotaSummary && (
           <span className="rounded-full border border-danger/40 bg-danger/15 px-2.5 py-1 font-mono text-[10px] font-semibold text-[#f59c8a] tabular-nums">
@@ -125,11 +143,17 @@ export default function UpgradeRequiredGate({
             onClick={onClose}
             className="btn-primary !py-2.5 !px-5 text-xs"
           >
-            {ui(
-              `Upgrade to ${targetPlan.name}`,
-              `Pandisha hadi ${targetPlan.name}`,
-              `Actualizar a ${targetPlan.name}`,
-            )}
+            {isDormant
+              ? ui(
+                  `Renew ${targetPlan.name}`,
+                  `Huisha ${targetPlan.name}`,
+                  `Renovar ${targetPlan.name}`,
+                )
+              : ui(
+                  `Upgrade to ${targetPlan.name}`,
+                  `Pandisha hadi ${targetPlan.name}`,
+                  `Actualizar a ${targetPlan.name}`,
+                )}
             <ArrowRight size={14} />
           </Link>
         </div>

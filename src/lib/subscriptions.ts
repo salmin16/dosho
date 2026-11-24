@@ -47,7 +47,7 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
   {
     id: 'free',
     name: 'Explorer',
-    tagline: 'Standard market benchmarks, 31-Mikoa GIS map & discovery access',
+    tagline: 'Live spot feed, interactive trend chart, 31-Mikoa GIS map & public previews',
     price_tzs: 0,
     price_usd: 0,
     billing_cycle: 'monthly',
@@ -61,7 +61,7 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
   {
     id: 'pro',
     name: 'Operator Pro',
-    tagline: 'Active project listings, verified tenement eligibility & full market analytics',
+    tagline: 'Up to 3 active listings, 25 RFQs/mo, full tenement dossiers & CSV valuation exports',
     price_tzs: 120_000,
     price_usd: 45,
     billing_cycle: 'monthly',
@@ -75,7 +75,7 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
   {
     id: 'enterprise',
     name: 'Institutional / JV Desk',
-    tagline: 'Unlimited listings & RFQs, NDA Data Room access & statutory market exports',
+    tagline: 'Unlimited listings & RFQs, full NDA Data Room documents & valuation CSV exports',
     price_tzs: 450_000,
     price_usd: 170,
     billing_cycle: 'monthly',
@@ -90,22 +90,22 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
 
 export const PLAN_FEATURE_BULLETS: Record<SubscriptionPlanId, string[]> = {
   free: [
-    'Live Mineral Spot Feed & 31-Mikoa GIS Map',
-    'Browse public mining opportunities & service providers',
-    'Up to 2 Quote Requests (RFQs) per month',
-    '0 active project listings (upgrade to publish)',
+    'Live Mineral Spot Feed, Multi-Year Trend Chart & 31-Mikoa GIS Map',
+    'Public listing & service previews (mineral, region & scope)',
+    'Up to 2 Quote Requests (RFQs) per calendar month',
+    '0 active project listings · Tenement dossier & CSV export locked',
   ],
   pro: [
-    'Publish up to 3 active mining project listings',
-    'Up to 25 Quote Requests (RFQs) per month',
-    'Verified Tenement eligibility & priority review',
-    'Full multi-decade market history & CSV exports',
+    'Publish up to 3 active mining project listings (RLS-verified)',
+    'Up to 25 Quote Requests (RFQs) per month + one-tap outreach',
+    'Full Tenement & Due-Diligence Dossier + Direct Counterparty Contacts',
+    'Export Markets Valuation CSV (Live Spot Feed & Statutory Matrix)',
   ],
   enterprise: [
-    'Unlimited active project listings & tenders',
-    'Unlimited monthly Quote Requests (RFQs)',
-    'NDA Data Room & restricted tenement document access',
-    'Full Markets CSV/data exports & JV Desk support',
+    'Unlimited active mining project listings across Tanzania',
+    'Unlimited monthly Quote Requests (RFQs) & direct counterparty desk',
+    'Full Tenement Dossier, Direct Contacts & Restricted NDA Data Room Docs',
+    'Export Markets Valuation CSV (Spot Feed & Matrix in TZS / USD / EUR)',
   ],
 };
 
