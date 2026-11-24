@@ -47,12 +47,12 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
   {
     id: 'free',
     name: 'Explorer',
-    tagline: 'Live spot feed, interactive trend chart, 31-Mikoa GIS map & public previews',
+    tagline: 'View-only market benchmarks, 31-Mikoa GIS map & public listing previews',
     price_tzs: 0,
     price_usd: 0,
     billing_cycle: 'monthly',
     max_active_listings: 0,
-    max_monthly_rfqs: 2,
+    max_monthly_rfqs: 0,
     can_access_data_room: false,
     can_export_markets: false,
     is_active: true,
@@ -90,20 +90,20 @@ export const CANONICAL_SUBSCRIPTION_PLANS: readonly SubscriptionPlanRecord[] = [
 
 export const PLAN_FEATURE_BULLETS: Record<SubscriptionPlanId, string[]> = {
   free: [
-    'Live Mineral Spot Feed, Multi-Year Trend Chart & 31-Mikoa GIS Map',
-    'Public listing & service previews (mineral, region & scope)',
-    'Up to 2 Quote Requests (RFQs) per calendar month',
-    '0 active project listings · Tenement dossier & CSV export locked',
+    'View-only market benchmarks, Multi-Year Trend Chart & 31-Mikoa GIS Map',
+    'Browse public listing & technical service previews only',
+    '0 project, opportunity, or service listings (upgrade to publish)',
+    '0 quote, information, or due-diligence requests · No dossier or contact unlock',
   ],
   pro: [
-    'Publish up to 3 active mining project listings (RLS-verified)',
-    'Up to 25 Quote Requests (RFQs) per month + one-tap outreach',
+    'Publish up to 3 active mining projects, opportunities & services',
+    'Up to 25 Quote, Info & Due-Diligence Requests (RFQs) per month',
     'Full Tenement & Due-Diligence Dossier + Direct Counterparty Contacts',
     'Export Markets Valuation CSV (Live Spot Feed & Statutory Matrix)',
   ],
   enterprise: [
-    'Unlimited active mining project listings across Tanzania',
-    'Unlimited monthly Quote Requests (RFQs) & direct counterparty desk',
+    'Unlimited active project, opportunity & technical service listings',
+    'Unlimited monthly Quote, Info & Due-Diligence Requests (RFQs)',
     'Full Tenement Dossier, Direct Contacts & Restricted NDA Data Room Docs',
     'Export Markets Valuation CSV (Spot Feed & Matrix in TZS / USD / EUR)',
   ],
@@ -188,8 +188,8 @@ export const SUBSCRIPTION_TIERS: Record<
     tagline: CANONICAL_SUBSCRIPTION_PLANS[0].tagline,
     quotas: {
       maxProjectListings: 0,
-      maxMonthlyRfqs: 2,
-      maxOpportunityListings: 1,
+      maxMonthlyRfqs: 0,
+      maxOpportunityListings: 0,
       maxServiceListings: 0,
       maxVaultDocuments: 2,
     },
@@ -518,7 +518,7 @@ function createDefaultEntitlements(isAdmin = false): UserEntitlements {
     starts_at: null,
     expires_at: null,
     max_active_listings: 0,
-    max_monthly_rfqs: 2,
+    max_monthly_rfqs: 0,
     active_listings_count: 0,
     monthly_rfqs_count: 0,
     can_access_data_room: false,
@@ -543,17 +543,28 @@ export async function fetchSubscriptionPlans(): Promise<
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      cachedPlans = data.map((row) => ({
-        ...row,
-        id: normalizePlanId(row.id),
-        price_tzs: Number(row.price_tzs) || 0,
-        price_usd: Number(row.price_usd) || 0,
-        max_active_listings: Number(row.max_active_listings),
-        max_monthly_rfqs: Number(row.max_monthly_rfqs),
-        can_access_data_room: Boolean(row.can_access_data_room),
-        can_export_markets: Boolean(row.can_export_markets),
-      }));
+      if (!error && Array.isArray(data) && data.length > 0) {
+      cachedPlans = data.map((row) => {
+        const normalizedId = normalizePlanId(row.id);
+        return {
+          ...row,
+          id: normalizedId,
+          tagline:
+            normalizedId === 'free'
+              ? CANONICAL_SUBSCRIPTION_PLANS[0].tagline
+              : row.tagline,
+          price_tzs: Number(row.price_tzs) || 0,
+          price_usd: Number(row.price_usd) || 0,
+          max_active_listings:
+            normalizedId === 'free' ? 0 : Number(row.max_active_listings),
+          max_monthly_rfqs:
+            normalizedId === 'free' ? 0 : Number(row.max_monthly_rfqs),
+          can_access_data_room:
+            normalizedId === 'free' ? false : Boolean(row.can_access_data_room),
+          can_export_markets:
+            normalizedId === 'free' ? false : Boolean(row.can_export_markets),
+        };
+      });
     }
   } catch {
     // Fallback smoothly to canonical plans if migration not yet executed
@@ -684,12 +695,12 @@ export async function fetchUserSubscriptionFromSupabase(
       is_paid_active: isPaidActive,
       starts_at: typeof raw.starts_at === 'string' ? raw.starts_at : null,
       expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : null,
-      max_active_listings: Number(raw.max_active_listings ?? 0),
-      max_monthly_rfqs: Number(raw.max_monthly_rfqs ?? 2),
+      max_active_listings: isPaidActive ? Number(raw.max_active_listings ?? 0) : 0,
+      max_monthly_rfqs: isPaidActive ? Number(raw.max_monthly_rfqs ?? 0) : 0,
       active_listings_count: Number(raw.active_listings_count ?? 0),
       monthly_rfqs_count: Number(raw.monthly_rfqs_count ?? 0),
-      can_access_data_room: Boolean(raw.can_access_data_room),
-      can_export_markets: Boolean(raw.can_export_markets),
+      can_access_data_room: Boolean(raw.can_access_data_room) && isPaidActive,
+      can_export_markets: Boolean(raw.can_export_markets) && isPaidActive,
     };
   } else {
     // Fallback calculation if SQL RPC migration hasn't been executed yet
@@ -752,8 +763,8 @@ export async function fetchUserSubscriptionFromSupabase(
         is_paid_active: isPaidActive,
         starts_at: subscription.starts_at ?? subscription.created_at,
         expires_at: subscription.expires_at,
-        max_active_listings: matchedPlan.max_active_listings,
-        max_monthly_rfqs: matchedPlan.max_monthly_rfqs,
+        max_active_listings: isPaidActive ? matchedPlan.max_active_listings : 0,
+        max_monthly_rfqs: isPaidActive ? matchedPlan.max_monthly_rfqs : 0,
         active_listings_count: activeListingsCount,
         monthly_rfqs_count: monthlyRfqsCount,
         can_access_data_room: matchedPlan.can_access_data_room && isPaidActive,
@@ -1648,6 +1659,7 @@ export function useSubscription() {
   }, [entitlements]);
 
   const canSubmitRfq = useMemo(() => {
+    if (!entitlements.is_paid_active) return false;
     if (entitlements.max_monthly_rfqs < 0) return true;
     return entitlements.monthly_rfqs_count < entitlements.max_monthly_rfqs;
   }, [entitlements]);
@@ -1674,7 +1686,11 @@ export function useSubscription() {
     } => {
       const limit = tierConfig.quotas[quotaKey];
       const remaining = limit >= 999 ? 999 : Math.max(0, limit - currentUsed);
-      const needsPaid = quotaKey === 'maxProjectListings';
+      const needsPaid =
+        quotaKey === 'maxProjectListings' ||
+        quotaKey === 'maxMonthlyRfqs' ||
+        quotaKey === 'maxOpportunityListings' ||
+        quotaKey === 'maxServiceListings';
       const allowed =
         (!needsPaid || entitlements.is_paid_active) &&
         (limit >= 999 || currentUsed < limit);

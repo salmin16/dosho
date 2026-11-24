@@ -52,10 +52,14 @@ export default function SubscriptionQuotaBar({
   const rfqsUsed = Math.max(quotesUsedThisMonth, entitlements.monthly_rfqs_count)
   const rfqsLimit = entitlements.max_monthly_rfqs
   const rfqsUnlimited = rfqsLimit < 0 || rfqsLimit >= 999
-  const rfqsRatio = rfqsUnlimited
-    ? Math.min(0.85, rfqsUsed / 30)
-    : Math.min(1, rfqsUsed / Math.max(1, rfqsLimit))
-  const rfqsNearOrAtCap = !rfqsUnlimited && rfqsUsed >= Math.ceil(rfqsLimit * 0.8)
+  const rfqsRatio =
+    rfqsLimit === 0
+      ? 1
+      : rfqsUnlimited
+        ? Math.min(0.85, rfqsUsed / 30)
+        : Math.min(1, rfqsUsed / Math.max(1, rfqsLimit))
+  const rfqsNearOrAtCap =
+    rfqsLimit === 0 || (!rfqsUnlimited && rfqsUsed >= Math.ceil(rfqsLimit * 0.8))
 
   const expiryObj = entitlements.expires_at ? new Date(entitlements.expires_at) : null
   const expiryLabel =
@@ -74,7 +78,7 @@ export default function SubscriptionQuotaBar({
     planId === 'pro' && isPaidActive ? 'enterprise' : 'pro'
 
   const stateBadgeText = isDormant
-    ? ui('DORMANT · Renew to Unlock', 'IMESIMAMA · Huisha Kufungua', 'INACTIVO · Renovar')
+    ? ui('DORMANT · View-Only (Renew)', 'IMESIMAMA · Mtazamaji Pekee', 'INACTIVO · Solo Vista')
     : isPaidActive
       ? expiryLabel
         ? ui(
@@ -83,7 +87,7 @@ export default function SubscriptionQuotaBar({
             `ACTIVO · ${plan.name} · Vence ${expiryLabel}`,
           )
         : ui(`ACTIVE · ${plan.name}`, `HAI · ${plan.name}`, `ACTIVO · ${plan.name}`)
-      : ui('FREE · Explorer', 'BURE · Explorer', 'GRATIS · Explorer')
+      : ui('FREE · Explorer (View-Only)', 'BURE · Explorer (Mtazamaji Pekee)', 'GRATIS · Solo Vista')
 
   return (
     <section
@@ -126,9 +130,9 @@ export default function SubscriptionQuotaBar({
             <span>
               {isDormant
                 ? ui(
-                    'Paid entitlements paused until renewal — Free Explorer limits apply.',
-                    'Huduma za kulipia zimesitishwa hadi uhuishe — viwango vya bure vinatumika.',
-                    'Permisos de pago pausados hasta renovar — aplican límites gratuitos.',
+                    'View-only mode: 0 listings, 0 quote or information requests, no dossier/contact unlock until renewed.',
+                    'Hali ya kutazama pekee: miradi 0, maombi 0 ya bei/taarifa hadi uhuishe mpango wako.',
+                    'Modo solo vista: 0 listados, 0 cotizaciones ni solicitudes hasta renovar tu plan.',
                   )
                 : isPaidActive
                   ? ui(
@@ -137,9 +141,9 @@ export default function SubscriptionQuotaBar({
                       'Cuotas sincronizadas en tiempo real con Supabase.',
                     )
                   : ui(
-                      'Upgrade to unlock project publishing, full tenement dossiers & CSV exports.',
-                      'Pandisha mpango kufungua uchapishaji, faili za leseni na upakuaji wa CSV.',
-                      'Actualiza para publicar proyectos, ver expedientes y exportar CSV.',
+                      'View-only market, GIS & public listing access (0 listings · 0 quote/info requests · no dossier or contact unlock).',
+                      'Mtazamaji pekee wa soko, GIS na matangazo ya wazi (miradi 0 · maombi 0 ya bei/taarifa · hakuna faili la leseni).',
+                      'Acceso solo de vista al mercado y GIS (0 listados · 0 cotizaciones · sin acceso a expedientes).',
                     )}
             </span>
           </p>
@@ -198,7 +202,7 @@ export default function SubscriptionQuotaBar({
             <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-ink/10">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  !rfqsUnlimited && rfqsUsed >= rfqsLimit
+                  rfqsLimit === 0 || (!rfqsUnlimited && rfqsUsed >= rfqsLimit)
                     ? 'bg-danger'
                     : rfqsNearOrAtCap
                       ? 'bg-ochre'

@@ -21,7 +21,9 @@ import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
+import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
 import { GuidedOpportunityWizard } from '../components/GuidedSubmissionWizards'
+import { useSubscription } from '../lib/subscriptions'
 import type { UserOpportunityRecord } from '../types/database'
 
 export const Route = createFileRoute('/dashboard_/opportunities')({
@@ -31,6 +33,13 @@ export const Route = createFileRoute('/dashboard_/opportunities')({
 function DashboardOpportunitiesRouteComponent() {
   const navigate = useNavigate()
   const { session, isAdmin, loading: authLoading } = useAuthState()
+  const {
+    plan,
+    accountState,
+    entitlements,
+    isPaidActive,
+    canCreateListing,
+  } = useSubscription()
   const {
     currency,
     language,
@@ -179,9 +188,39 @@ function DashboardOpportunitiesRouteComponent() {
           />
         </div>
 
-        {/* Guided 3-Step Opportunity Wizard */}
+        {/* Guided 3-Step Opportunity Wizard (Locked for Free/Dormant View-Only Accounts) */}
         <div className="mt-6">
-          <GuidedOpportunityWizard onSubmitted={loadData} />
+          {!isPaidActive ? (
+            <UpgradeRequiredGate
+              variant="banner"
+              requiredPlan="pro"
+              currentPlanLabel={plan.name}
+              accountStateOverride={accountState}
+              quotaSummary="0 / 0 Active Listings (View-Only)"
+              featureTitle={
+                accountState === 'dormant'
+                  ? 'Dormant Account (View-Only) · Renew to Publish & Submit Quotes'
+                  : 'Viewer-Only Account · Upgrade to Publish & Submit Quotes'
+              }
+              reason={
+                accountState === 'dormant'
+                  ? 'Your previous paid subscription has expired. Renew Operator Pro or Institutional / JV Desk in 2 steps to unlock the 3-step Guided Opportunity Studio, project publishing, tenement dossiers, and quote requests.'
+                  : 'Explorer (Free) accounts are strictly view-only (0 listings, 0 quote or information requests). Upgrade to Operator Pro to unlock the 3-step Guided Opportunity Studio, publish up to 3 active listings, and submit 25 monthly RFQs.'
+              }
+            />
+          ) : !canCreateListing ? (
+            <UpgradeRequiredGate
+              variant="banner"
+              requiredPlan="enterprise"
+              currentPlanLabel={plan.name}
+              accountStateOverride={accountState}
+              quotaSummary={`${Math.max(listedProjectsCount, entitlements.active_listings_count)} / ${entitlements.max_active_listings} Active Listings`}
+              featureTitle="Active Listing Limit Reached — Upgrade to Institutional / JV Desk"
+              reason="You have reached your Operator Pro active listing allowance. Upgrade to Institutional / JV Desk for unlimited project, opportunity, and service listings."
+            />
+          ) : (
+            <GuidedOpportunityWizard onSubmitted={loadData} />
+          )}
         </div>
 
         {/* User's Submitted Opportunities Ledger */}

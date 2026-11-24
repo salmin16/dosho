@@ -293,7 +293,7 @@ function Pricing() {
                   }`}
                 >
                   {planSlug === 'free'
-                    ? 'TIER 01 · FREE'
+                    ? 'TIER 01 · VIEW-ONLY (FREE)'
                     : planSlug === 'pro'
                       ? 'TIER 02 · OPERATOR'
                       : 'TIER 03 · INSTITUTIONAL'}
@@ -368,12 +368,14 @@ function Pricing() {
                         isHighlighted ? 'text-paper/55' : 'text-stone'
                       }`}
                     >
-                      {ui('Monthly RFQs', 'Maombi / Mwezi', 'RFQs / Mes')}
+                      {ui('Quote / Info RFQs', 'Maombi / Mwezi', 'RFQs / Mes')}
                     </dt>
                     <dd className="mt-0.5 font-bold tabular-nums">
                       {p.max_monthly_rfqs < 0
                         ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                        : `${p.max_monthly_rfqs}/mo`}
+                        : p.max_monthly_rfqs === 0
+                          ? ui('0 (View-Only)', '0 (Mtazamaji)', '0 (Solo Vista)')
+                          : `${p.max_monthly_rfqs}/mo`}
                     </dd>
                   </div>
                   <div

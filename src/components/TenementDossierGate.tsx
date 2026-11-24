@@ -94,12 +94,12 @@ export default function TenementDossierGate({
             ) : isDormant ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-danger/40 bg-danger/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-danger">
                 <Lock size={11} />
-                {ui('Dormant · Renew to Unlock', 'Imesimama · Huisha Kufungua', 'Inactivo · Renovar')}
+                {ui('Dormant · View-Only (Renew)', 'Imesimama · Mtazamaji Pekee', 'Inactivo · Solo Vista')}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full border border-ochre/35 bg-ochre/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-ochre">
                 <Lock size={11} />
-                {ui('Explorer Preview · Paid Unlock', 'Muhtasari wa Bure', 'Vista Previa Gratuita')}
+                {ui('Explorer · View-Only Mode', 'Mtazamaji Pekee · Bure', 'Solo Vista · Gratis')}
               </span>
             )}
           </div>
@@ -393,29 +393,29 @@ export default function TenementDossierGate({
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/45 bg-ochre/25 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-gold">
                       <Crown size={11} />
                       {isDormant
-                        ? ui('Account Dormant · Renewal Required', 'Akaunti Imesimama · Huisha', 'Cuenta Inactiva · Renovar')
-                        : ui('Active Subscription Required', 'Mpango wa Kulipia Unahitajika', 'Plan Activo Requerido')}
+                        ? ui('Dormant Account · View-Only Mode', 'Akaunti Imesimama · Mtazamaji Pekee', 'Cuenta Inactiva · Solo Vista')
+                        : ui('Viewer-Only Account · Paid Unlock Required', 'Akaunti ya Kutazama Pekee', 'Cuenta Solo Vista · Plan Requerido')}
                     </span>
                   </div>
 
                   <h4 className="font-display mt-2.5 text-xl font-light leading-snug text-paper sm:text-2xl">
                     {ui(
-                      'Unlock Full Tenement Dossier & Direct Contact',
-                      'Fungua Faili Kamili la Leseni na Mawasiliano ya Moja kwa Moja',
-                      'Desbloquear Expediente Completo y Contacto Directo',
+                      'Unlock Full Tenement Dossier, Direct Contact & Quote Requests',
+                      'Fungua Faili la Leseni, Mawasiliano na Maombi ya Bei',
+                      'Desbloquear Expediente, Contacto Directo y Cotizaciones',
                     )}
                   </h4>
                   <p className="mt-1.5 text-xs leading-relaxed text-paper/75">
                     {isDormant
                       ? ui(
-                          'Your previous paid period has expired. Renew Operator Pro or Institutional / JV Desk in 2 steps to restore full PML/PL/ML/SML cadastre dossiers, compliance notes, and verified phone/email contacts.',
-                          'Muda wako wa mpango wa kulipia umeisha. Huisha Operator Pro au Institutional kwa hatua 2 ili kurejesha faili za leseni na mawasiliano ya moja kwa moja.',
-                          'Tu período de pago ha vencido. Renueva Operator Pro o Institutional en 2 pasos para restaurar acceso al expediente y contactos directos.',
+                          'Your paid subscription has expired and your account is now in view-only mode (0 listings, 0 quote/info requests). Renew Operator Pro or Institutional / JV Desk in 2 steps to restore full dossiers, direct contacts, and RFQs.',
+                          'Mpango wako wa kulipia umeisha na akaunti yako ni ya kutazama pekee. Huisha Operator Pro au Institutional kwa hatua 2 ili kurejesha faili za leseni, mawasiliano na maombi ya bei.',
+                          'Tu suscripción venció y tu cuenta está en modo solo vista. Renueva Operator Pro o Institutional en 2 pasos para restaurar expedientes, contactos y cotizaciones.',
                         )
                       : ui(
-                          'Activate Operator Pro or Institutional / JV Desk to view full PML/PL/ML/SML licence details, assay & compliance notes, BRELA/TIN registration, and verified direct phone & email contacts.',
-                          'Washa Operator Pro au Institutional kuona maelezo kamili ya leseni (PML/PL/ML/SML), taarifa za maabara, BRELA/TIN, na simu/barua pepe ya mhusika.',
-                          'Activa Operator Pro o Institutional para ver licencias PML/PL/ML/SML completas, notas técnicas y contactos directos verificados.',
+                          'Explorer (Free) accounts are view-only with 0 quote, information, or due-diligence requests. Upgrade to Operator Pro to unlock PML/PL/ML/SML dossiers, BRELA/TIN registration, direct phone/email contacts, and 25 monthly RFQs.',
+                          'Akaunti za Explorer (Bure) ni za kutazama pekee (maombi 0 ya bei au taarifa). Pandisha hadi Operator Pro kufungua faili za leseni, simu/barua pepe ya mhusika, na maombi 25 kwa mwezi.',
+                          'Las cuentas Explorer (Gratis) son solo de visualización (0 solicitudes). Actualiza a Operator Pro para desbloquear expedientes, contactos directos y 25 RFQs mensuales.',
                         )}
                   </p>
                 </div>
@@ -430,22 +430,9 @@ export default function TenementDossierGate({
                     <Zap size={14} />
                     {isDormant
                       ? ui('Renew & Unlock Now', 'Huisha na Ufungue', 'Renovar Ahora')
-                      : ui('Unlock with Operator Pro', 'Fungua kwa Operator Pro', 'Activar Operator Pro')}
+                      : ui('Upgrade to Operator Pro', 'Pandisha Operator Pro', 'Activar Operator Pro')}
                     <ArrowRight size={14} />
                   </Link>
-                  {onTriggerRfq && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (variant === 'modal' && onClose) onClose()
-                        onTriggerRfq()
-                      }}
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-paper/20 bg-paper/10 px-3.5 py-2 font-mono text-[11px] font-semibold text-paper transition hover:bg-paper/20 sm:w-auto"
-                    >
-                      <MessageSquareText size={12} />
-                      {ui('Use Monthly RFQ Quota', 'Tumia Nafasi ya RFQ', 'Usar Cuota RFQ')}
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

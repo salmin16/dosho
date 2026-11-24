@@ -58,10 +58,14 @@ export default function SubscriptionStatusWidget({
       : entitlements.monthly_rfqs_count;
   const rfqsLimit = entitlements.max_monthly_rfqs;
   const rfqsUnlimited = rfqsLimit < 0 || rfqsLimit >= 999;
-  const rfqsAllowed = rfqsUnlimited || rfqsUsed < rfqsLimit;
-  const rfqsPct = rfqsUnlimited
-    ? Math.min(100, Math.round((rfqsUsed / 30) * 100))
-    : Math.min(100, Math.round((rfqsUsed / Math.max(1, rfqsLimit)) * 100));
+  const rfqsAllowed =
+    isPaidActive && (rfqsUnlimited || rfqsUsed < rfqsLimit);
+  const rfqsPct =
+    rfqsLimit === 0
+      ? 100
+      : rfqsUnlimited
+        ? Math.min(100, Math.round((rfqsUsed / 30) * 100))
+        : Math.min(100, Math.round((rfqsUsed / Math.max(1, rfqsLimit)) * 100));
 
   const formattedPlanPrice =
     plan.price_tzs === 0
@@ -282,7 +286,15 @@ export default function SubscriptionStatusWidget({
           </div>
 
           <p className="mt-2 text-[11px] text-paper/65">
-            {rfqsUnlimited
+            {rfqsLimit === 0 || !isPaidActive ? (
+              <span className="text-[#f59c8a]">
+                {ui(
+                  'View-only mode: 0 quote, information, or due-diligence requests. Upgrade to Operator Pro for 25/mo.',
+                  'Mtazamaji pekee: maombi 0 ya bei au taarifa. Pandisha hadi Operator Pro kupata 25 kwa mwezi.',
+                  'Solo vista: 0 cotizaciones ni solicitudes. Actualiza a Operator Pro para 25/mes.',
+                )}
+              </span>
+            ) : rfqsUnlimited
               ? ui(
                   'Unlimited monthly RFQs across verified service providers.',
                   'Maombi ya bei bila kikomo kila mwezi.',
@@ -295,7 +307,7 @@ export default function SubscriptionStatusWidget({
                     `${Math.max(0, rfqsLimit - rfqsUsed)} cotizaciones restantes este mes.`,
                   )
                 : ui(
-                    `Monthly RFQ cap reached (${rfqsUsed}/${rfqsLimit}). Upgrade to Operator Pro (25/mo) or Institutional.`,
+                    `Monthly RFQ cap reached (${rfqsUsed}/${rfqsLimit}). Upgrade to Institutional / JV Desk for unlimited RFQs.`,
                     `Kikomo cha maombi ya bei kimefikiwa (${rfqsUsed}/${rfqsLimit}). Pandisha mpango wako.`,
                     `Límite mensual alcanzado (${rfqsUsed}/${rfqsLimit}). Actualiza tu plan.`,
                   )}

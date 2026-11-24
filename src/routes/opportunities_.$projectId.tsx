@@ -68,12 +68,83 @@ function ProjectDetail() {
   const { t, tv, localizeProject, formatDate, fixtures } = useI18n()
   const p = localizeProject(rawProject)
   const { isSaved, toggle } = useSavedProjects()
-  const { plan, isPaidActive, canAccessDataRoom } = useSubscription()
+  const {
+    plan,
+    planId,
+    accountState,
+    entitlements,
+    isPaidActive,
+    canSubmitRfq,
+    canAccessDataRoom,
+  } = useSubscription()
   const [modal, setModal] = useState<Modal>(null)
-  const [dataRoomUpgradeDoc, setDataRoomUpgradeDoc] = useState<string | null>(null)
+  const [upgradePrompt, setUpgradePrompt] = useState<{
+    requiredPlan: 'pro' | 'enterprise'
+    title: string
+    reason: string
+    quotaSummary?: string
+  } | null>(null)
   const saved = isSaved(p.id)
   const projectDossier = buildProjectDossier(p)
   const hasDossierUnlocked = isPaidActive || canAccessDataRoom
+  const canRequestInfoOrQuote = isPaidActive && canSubmitRfq
+
+  const handleRequestInformationClick = () => {
+    if (!isPaidActive) {
+      setUpgradePrompt({
+        requiredPlan: 'pro',
+        title:
+          accountState === 'dormant'
+            ? 'Renew Operator Pro to Request Information & Quotes'
+            : 'Upgrade to Operator Pro to Request Information & Quotes',
+        reason:
+          accountState === 'dormant'
+            ? 'Your account is currently Dormant (view-only mode with 0 quote or information requests). Renew Operator Pro in 2 steps to unlock 25 monthly requests, full tenement dossiers, and direct counterparty contacts.'
+            : 'Explorer (Free) and guest visitors are strictly view-only (0 quote, information, or due-diligence requests). Upgrade to Operator Pro to contact project owners, unlock tenement dossiers, and submit up to 25 monthly requests.',
+        quotaSummary: '0 / 0 Requests (View-Only)',
+      })
+      return
+    }
+    if (!canSubmitRfq) {
+      setUpgradePrompt({
+        requiredPlan: 'enterprise',
+        title: 'Monthly Request Limit Reached — Upgrade to Institutional / JV Desk',
+        reason:
+          'You have used all 25 monthly quote and information requests on Operator Pro. Upgrade to Institutional / JV Desk for unlimited requests and full NDA Data Room access.',
+        quotaSummary: `${entitlements.monthly_rfqs_count} / ${entitlements.max_monthly_rfqs} Monthly RFQs`,
+      })
+      return
+    }
+    setModal('enquiry')
+  }
+
+  const handleRequestDiligenceClick = () => {
+    if (!isPaidActive) {
+      setUpgradePrompt({
+        requiredPlan: 'pro',
+        title:
+          accountState === 'dormant'
+            ? 'Renew Operator Pro to Request Due Diligence'
+            : 'Upgrade to Operator Pro to Request Due Diligence',
+        reason:
+          accountState === 'dormant'
+            ? 'Your account is currently Dormant (view-only mode). Renew Operator Pro or Institutional / JV Desk to unlock tenement due-diligence dossiers, direct contacts, and formal diligence requests.'
+            : 'Explorer (Free) and guest visitors are strictly view-only and cannot submit due-diligence requests. Upgrade to Operator Pro to unlock tenement dossiers, direct contacts, and diligence workflows.',
+        quotaSummary: '0 / 0 Requests (View-Only)',
+      })
+      return
+    }
+    if (!canAccessDataRoom) {
+      setUpgradePrompt({
+        requiredPlan: 'enterprise',
+        title: 'Institutional / JV Desk Required for Full NDA Due Diligence Pack',
+        reason: `Requesting formal NDA Data Room due-diligence packages for ${p.id} requires an active Institutional / JV Desk subscription.`,
+        quotaSummary: `Current Tier: ${planId === 'pro' ? 'Operator Pro' : plan.name}`,
+      })
+      return
+    }
+    setModal('diligence')
+  }
   const levelMeta = fixtures.verificationLevels[p.verification.level]
   const related = PROJECTS.filter(
     (x) => x.id !== p.id && (x.minerals.some((m) => p.minerals.includes(m)) || x.region === p.region),
@@ -134,7 +205,7 @@ function ProjectDetail() {
           <TenementDossierGate
             variant="section"
             dossier={projectDossier}
-            onTriggerRfq={() => setModal('enquiry')}
+            onTriggerRfq={handleRequestInformationClick}
             rfqButtonLabel="One-Tap Request Quote / Enquiry"
           />
 
@@ -229,7 +300,7 @@ function ProjectDetail() {
                     {unlocked ? (
                       <button
                         type="button"
-                        onClick={() => setModal('diligence')}
+                        onClick={handleRequestDiligenceClick}
                         className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
                           d.access === 'Public'
                             ? 'bg-moss-light text-moss hover:bg-moss hover:text-paper'
@@ -241,7 +312,17 @@ function ProjectDetail() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setDataRoomUpgradeDoc(d.name)}
+                        onClick={() =>
+                          setUpgradePrompt({
+                            requiredPlan: isPaidActive ? 'enterprise' : 'pro',
+                            title: isPaidActive
+                              ? 'Institutional / JV Desk Required for NDA Data Room'
+                              : 'Upgrade to Operator Pro to Unlock Dossiers & Requests',
+                            reason: isPaidActive
+                              ? `Accessing "${d.name}" and restricted NDA Data Room documents requires an active Institutional / JV Desk subscription.`
+                              : `Explorer (Free) and Dormant accounts are view-only. Upgrade to Operator Pro to unlock tenement dossiers, direct contacts, and requests (or Institutional / JV Desk for full NDA Data Room documents like "${d.name}").`,
+                          })
+                        }
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold transition hover:bg-ochre hover:text-paper"
                       >
                         <Lock size={11} /> {tv(d.access)} · Unlock
@@ -322,20 +403,20 @@ function ProjectDetail() {
               </div>
             </div>
             <div className="mt-6 space-y-2.5">
-              <button onClick={() => setModal('enquiry')} className="btn-primary w-full">
-                <MessageSquareText size={16} /> {t('detail.requestInfo')}
+              <button onClick={handleRequestInformationClick} className="btn-primary w-full">
+                {canRequestInfoOrQuote ? (
+                  <MessageSquareText size={16} />
+                ) : (
+                  <Lock size={15} />
+                )}
+                {t('detail.requestInfo')}
               </button>
-              <button
-                onClick={() => {
-                  if (!canAccessDataRoom) {
-                    setDataRoomUpgradeDoc('Verified Tenement & NDA Data Room Dossier')
-                  } else {
-                    setModal('diligence')
-                  }
-                }}
-                className="btn-ghost w-full"
-              >
-                {canAccessDataRoom ? <Microscope size={16} /> : <Lock size={15} className="text-ochre" />}
+              <button onClick={handleRequestDiligenceClick} className="btn-ghost w-full">
+                {canAccessDataRoom ? (
+                  <Microscope size={16} />
+                ) : (
+                  <Lock size={15} className="text-ochre" />
+                )}
                 {t('detail.requestDiligence')}
               </button>
               <button onClick={() => toggle(p.id)} className="btn-ghost w-full" aria-pressed={saved}>
@@ -438,14 +519,16 @@ function ProjectDetail() {
       )}
 
       {modal && <ActionModal kind={modal} project={p} onClose={() => setModal(null)} />}
-      {dataRoomUpgradeDoc && (
+      {upgradePrompt && (
         <UpgradeRequiredGate
           variant="modal"
-          requiredPlan="enterprise"
+          requiredPlan={upgradePrompt.requiredPlan}
           currentPlanLabel={plan.name}
-          featureTitle="Institutional / JV Desk Required for NDA Data Room"
-          reason={`Accessing "${dataRoomUpgradeDoc}" and verified tenement diligence packs requires an active Institutional / JV Desk subscription.`}
-          onClose={() => setDataRoomUpgradeDoc(null)}
+          accountStateOverride={accountState}
+          quotaSummary={upgradePrompt.quotaSummary}
+          featureTitle={upgradePrompt.title}
+          reason={upgradePrompt.reason}
+          onClose={() => setUpgradePrompt(null)}
         />
       )}
     </div>

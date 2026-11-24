@@ -44,6 +44,7 @@ function Services() {
   const {
     plan,
     planId,
+    accountState,
     entitlements,
     isPaidActive,
     canAccessDataRoom,
@@ -59,6 +60,7 @@ function Services() {
   const [showRfqUpgrade, setShowRfqUpgrade] = useState(false)
   const [liveApprovedServices, setLiveApprovedServices] = useState<UserServiceRecord[]>([])
   const hasDossierUnlocked = isPaidActive || canAccessDataRoom
+  const canRequestQuoteNow = Boolean(session) && isPaidActive && canSubmitRfq
 
   useEffect(() => {
     void fetchApprovedPublicServices().then(setLiveApprovedServices)
@@ -70,14 +72,7 @@ function Services() {
 
   const handleRequestQuoteClick = (provider: ServiceProvider) => {
     const activeSession = getSession()
-    if (!activeSession) {
-      navigate({
-        to: '/signup',
-        search: { next: '/services', reason: 'request_quote' } as unknown as undefined,
-      })
-      return
-    }
-    if (!canSubmitRfq) {
+    if (!activeSession || !isPaidActive || !canSubmitRfq) {
       setShowRfqUpgrade(true)
       return
     }
@@ -209,7 +204,7 @@ function Services() {
                         }
                         className="btn-primary !py-2"
                       >
-                        {!session && <Lock size={13} />}
+                        {!canRequestQuoteNow && <Lock size={13} />}
                         {t('services.requestQuote')}
                       </button>
                     </div>
@@ -287,7 +282,7 @@ function Services() {
                       onClick={() => handleRequestQuoteClick(s)}
                       className="btn-primary !py-2 text-xs sm:text-sm"
                     >
-                      {!session && <Lock size={13} />}
+                      {!canRequestQuoteNow && <Lock size={13} />}
                       {t('services.requestQuote')}
                     </button>
                   </div>
@@ -324,20 +319,29 @@ function Services() {
       {showRfqUpgrade && (
         <UpgradeRequiredGate
           variant="modal"
-          requiredPlan={planId === 'pro' ? 'enterprise' : 'pro'}
-          currentPlanLabel={plan.name}
-          quotaSummary={`${entitlements.monthly_rfqs_count} / ${
-            entitlements.max_monthly_rfqs < 0 ? '∞' : entitlements.max_monthly_rfqs
-          } Monthly RFQs`}
+          requiredPlan={isPaidActive && planId === 'pro' ? 'enterprise' : 'pro'}
+          currentPlanLabel={session ? plan.name : 'Guest (View-Only)'}
+          accountStateOverride={session ? accountState : 'free'}
+          quotaSummary={
+            isPaidActive
+              ? `${entitlements.monthly_rfqs_count} / ${
+                  entitlements.max_monthly_rfqs < 0 ? '∞' : entitlements.max_monthly_rfqs
+                } Monthly RFQs`
+              : '0 / 0 Quote Requests (View-Only)'
+          }
           featureTitle={
-            planId === 'pro'
+            isPaidActive && planId === 'pro'
               ? 'Monthly RFQ Limit Reached — Upgrade to Institutional / JV Desk'
-              : 'Monthly Free RFQ Limit Reached (2/2)'
+              : accountState === 'dormant'
+                ? 'Dormant Account — Renew Operator Pro to Request Quotes'
+                : 'Upgrade to Operator Pro to Request a Quote'
           }
           reason={
-            planId === 'pro'
+            isPaidActive && planId === 'pro'
               ? 'You have used all 25 monthly quote requests on Operator Pro. Upgrade to Institutional / JV Desk for unlimited monthly RFQs and NDA Data Room access.'
-              : 'Explorer (Free) accounts include up to 2 Quote Requests per month. Upgrade to Operator Pro for 25 monthly RFQs and up to 3 active project listings.'
+              : accountState === 'dormant'
+                ? 'Your paid period has expired and your account is currently view-only (0 quote or information requests). Renew Operator Pro in 2 steps to restore 25 monthly RFQs and direct provider contacts.'
+                : 'Explorer (Free) accounts and guest visitors are strictly view-only (0 quote, information, or due-diligence requests). Upgrade to Operator Pro to submit up to 25 monthly RFQs and unlock full provider dossiers.'
           }
           onClose={() => setShowRfqUpgrade(false)}
         />
