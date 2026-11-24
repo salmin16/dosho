@@ -1,17 +1,32 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, TrendingUp } from 'lucide-react'
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  TrendingUp,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
 import {
   CHART_TIMEFRAMES,
   buildMineralTrendSeries,
+  buildMineralYearSeries,
   computeNiceAxisTicks,
   convertToChartUnitUsd,
-  formatChartAxisDate,
-  formatChartTooltipDate,
+  detectTimelineScale,
+  formatChartAxisDateByScale,
+  formatChartTooltipDateByScale,
+  formatVisibleDateWindow,
+  getSelectableYears,
   type ChartPricingMode,
   type ChartTimeframe,
+  type TimelineScale,
 } from '../lib/mineralHistory'
 import type { MineralPriceRecord } from '../types/database'
 
@@ -22,6 +37,8 @@ export interface MineralTrendChartProps {
   /** Master unit mode controlled exclusively by the /markets dashboard header */
   unitBasis?: ChartPricingMode
 }
+
+const MIN_VISIBLE_POINTS = 6
 
 function getShortMineralLabel(mineralName: string): string {
   const withoutParens = mineralName.replace(/\s*\([^)]*\)/g, '').trim()
@@ -45,18 +62,27 @@ export default function MineralTrendChart({
 
   const gradientId = useId().replace(/:/g, '')
   const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const pinchStartRef = useRef<{ dist: number; window: [number, number] } | null>(
+    null,
+  )
+
   const [chartWidth, setChartWidth] = useState<number>(880)
   const [internalSymbol, setInternalSymbol] = useState<string>(
     () => minerals[0]?.symbol ?? 'XAU',
   )
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('30D')
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
+  const selectableYears = useMemo(() => getSelectableYears(), [])
 
   const handleSymbolChange = useCallback(
     (symbol: string) => {
       setHoverIndex(null)
+      setZoomWindow(null)
       if (onSelectSymbol) {
         onSelectSymbol(symbol)
       } else {
@@ -65,6 +91,22 @@ export default function MineralTrendChart({
     },
     [onSelectSymbol],
   )
+
+  const handleTimeframeChange = useCallback((tf: ChartTimeframe) => {
+    setTimeframe(tf)
+    setHoverIndex(null)
+    setZoomWindow(null)
+    if (tf !== '1Y') {
+      setSelectedYear(null)
+    }
+  }, [])
+
+  const handleYearSelect = useCallback((year: number | null) => {
+    setTimeframe('1Y')
+    setSelectedYear(year)
+    setHoverIndex(null)
+    setZoomWindow(null)
+  }, [])
 
   const activeMineral = useMemo(() => {
     if (!minerals.length) return null
@@ -95,15 +137,139 @@ export default function MineralTrendChart({
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Reset scrub index when timeframe or master unit mode changes
+  // Reset scrub index when unit mode changes
   useEffect(() => {
     setHoverIndex(null)
-  }, [timeframe, unitBasis])
+  }, [unitBasis])
 
-  const series = useMemo(() => {
+  const fullSeries = useMemo(() => {
     if (!activeMineral) return null
+    if (timeframe === '1Y' && selectedYear !== null) {
+      return buildMineralYearSeries(activeMineral, selectedYear, unitBasis)
+    }
     return buildMineralTrendSeries(activeMineral, timeframe, unitBasis)
-  }, [activeMineral, timeframe, unitBasis])
+  }, [activeMineral, timeframe, selectedYear, unitBasis])
+
+  // Resolve active zoomed index bounds safely
+  const totalPoints = fullSeries?.points.length ?? 0
+  const [startIdx, endIdx] = useMemo<[number, number]>(() => {
+    if (totalPoints < 2) return [0, 0]
+    if (!zoomWindow) return [0, totalPoints - 1]
+    const clampedStart = Math.max(0, Math.min(totalPoints - MIN_VISIBLE_POINTS, zoomWindow[0]))
+    const clampedEnd = Math.min(
+      totalPoints - 1,
+      Math.max(clampedStart + MIN_VISIBLE_POINTS - 1, zoomWindow[1]),
+    )
+    return [clampedStart, clampedEnd]
+  }, [zoomWindow, totalPoints])
+
+  const isZoomed = totalPoints > 1 && (startIdx > 0 || endIdx < totalPoints - 1)
+  const canZoomIn = endIdx - startIdx + 1 > MIN_VISIBLE_POINTS
+  const canZoomOut = isZoomed
+
+  const visiblePoints = useMemo(() => {
+    if (!fullSeries) return []
+    return fullSeries.points.slice(startIdx, endIdx + 1)
+  }, [fullSeries, startIdx, endIdx])
+
+  const visibleStats = useMemo(() => {
+    if (visiblePoints.length === 0) return null
+    const startPt = visiblePoints[0]
+    const endPt = visiblePoints[visiblePoints.length - 1]
+    let minUsd = startPt.unitUsd
+    let maxUsd = startPt.unitUsd
+    for (const pt of visiblePoints) {
+      if (pt.unitUsd < minUsd) minUsd = pt.unitUsd
+      if (pt.unitUsd > maxUsd) maxUsd = pt.unitUsd
+    }
+    const spanMs = Math.max(0, endPt.timestampMs - startPt.timestampMs)
+    const scale = detectTimelineScale(spanMs)
+    const changeUsd = endPt.unitUsd - startPt.unitUsd
+    const changePct = startPt.unitUsd > 0 ? (changeUsd / startPt.unitUsd) * 100 : 0
+
+    return {
+      startMs: startPt.timestampMs,
+      endMs: endPt.timestampMs,
+      spanMs,
+      scale,
+      startUnitUsd: startPt.unitUsd,
+      endUnitUsd: endPt.unitUsd,
+      minUnitUsd: minUsd,
+      maxUnitUsd: maxUsd,
+      changeUnitUsd: changeUsd,
+      changePct,
+    }
+  }, [visiblePoints])
+
+  // Zoom / Pan helpers anchored smoothly to focal fraction (hover point or center)
+  const applyZoom = useCallback(
+    (direction: 'in' | 'out', anchorRatio?: number) => {
+      if (totalPoints < MIN_VISIBLE_POINTS) return
+      const curLen = endIdx - startIdx + 1
+      const factor = direction === 'in' ? 0.65 : 1.55
+      const nextLen = Math.max(
+        MIN_VISIBLE_POINTS,
+        Math.min(totalPoints, Math.round(curLen * factor)),
+      )
+      if (nextLen >= totalPoints) {
+        setZoomWindow(null)
+        setHoverIndex(null)
+        return
+      }
+      const focal =
+        anchorRatio !== undefined
+          ? Math.max(0, Math.min(1, anchorRatio))
+          : hoverIndex !== null && curLen > 1
+            ? hoverIndex / (curLen - 1)
+            : 0.5
+
+      const anchorGlobal = startIdx + focal * (curLen - 1)
+      let nextStart = Math.round(anchorGlobal - focal * (nextLen - 1))
+      nextStart = Math.max(0, Math.min(totalPoints - nextLen, nextStart))
+      const nextEnd = nextStart + nextLen - 1
+
+      setHoverIndex(null)
+      setZoomWindow([nextStart, nextEnd])
+    },
+    [totalPoints, startIdx, endIdx, hoverIndex],
+  )
+
+  const applyPan = useCallback(
+    (direction: 'left' | 'right') => {
+      if (!isZoomed || totalPoints < 2) return
+      const curLen = endIdx - startIdx + 1
+      const shift = Math.max(1, Math.round(curLen * 0.25))
+      const delta = direction === 'left' ? -shift : shift
+      let nextStart = startIdx + delta
+      nextStart = Math.max(0, Math.min(totalPoints - curLen, nextStart))
+      setHoverIndex(null)
+      setZoomWindow([nextStart, nextStart + curLen - 1])
+    },
+    [isZoomed, totalPoints, startIdx, endIdx],
+  )
+
+  const handleResetZoom = useCallback(() => {
+    setZoomWindow(null)
+    setHoverIndex(null)
+  }, [])
+
+  // Non-passive wheel listener for smooth zoom in/out over the SVG canvas
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    const onWheel = (e: WheelEvent) => {
+      // Zoom smoothly when scrolling vertically over the chart canvas
+      if (Math.abs(e.deltaY) < 2) return
+      e.preventDefault()
+      const rect = svg.getBoundingClientRect()
+      const ratio = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5
+      applyZoom(e.deltaY < 0 ? 'in' : 'out', ratio)
+    }
+
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+  }, [applyZoom])
 
   // Format a value that is already in the active display currency for Y-axis ticks
   const formatAxisTickValue = useCallback(
@@ -123,7 +289,7 @@ export default function MineralTrendChart({
           return `${(displayValue / 1_000).toFixed(decimals)}k`
         }
         if (absVal >= 1_000) {
-          return `${(displayValue / 1_000).toFixed(step < 100 ? 2 : step < 500 ? 2 : 1)}k`
+          return `${(displayValue / 1_000).toFixed(step < 500 ? 2 : 1)}k`
         }
         const decimals = isZeroDecimal ? 0 : step < 0.05 ? 3 : step < 0.5 ? 2 : step < 1 ? 1 : 0
         return displayValue.toLocaleString('en-US', {
@@ -133,7 +299,7 @@ export default function MineralTrendChart({
       }
 
       if (absVal >= 1_000_000) {
-        const decimals = absVal >= 10_000_000 ? 1 : 2
+        const decimals = step < 100_000 ? 2 : absVal >= 10_000_000 ? 1 : 2
         const compactNum = (displayValue / 1_000_000).toFixed(decimals)
         return `${currencyMeta.symbol}${compactNum}M`
       }
@@ -160,35 +326,31 @@ export default function MineralTrendChart({
     [formatPrice],
   )
 
-  const timeframeLabel = useCallback(
-    (tf: ChartTimeframe): string => {
-      switch (tf) {
-        case '1M':
-          return ui('past 1 minute (EAT)', 'dakika 1 iliyopita (EAT)', 'último minuto (EAT)')
-        case '1H':
-          return ui('past 1 hour (EAT)', 'saa 1 iliyopita (EAT)', 'última hora (EAT)')
-        case '1D':
-          return ui('past 24 hours (EAT)', 'saa 24 zilizopita (EAT)', 'últimas 24 horas (EAT)')
-        case '7D':
-          return ui('past 7 days', 'siku 7 zilizopita', 'últimos 7 días')
-        case '30D':
-          return ui('past 30 days', 'siku 30 zilizopita', 'últimos 30 días')
-        case '90D':
-          return ui('past 90 days', 'siku 90 zilizopita', 'últimos 90 días')
-        case '1Y':
-          return ui('past 1 year', 'mwaka 1 uliopita', 'último año')
+  const formatScaleLabel = useCallback(
+    (scale: TimelineScale): string => {
+      switch (scale) {
+        case 'min':
+          return ui('Scale: min', 'Kipimo: dak', 'Escala: min')
+        case 'hours':
+          return ui('Scale: hours', 'Kipimo: saa', 'Escala: horas')
+        case 'days':
+          return ui('Scale: days', 'Kipimo: siku', 'Escala: días')
+        case 'months':
+          return ui('Scale: months', 'Kipimo: miezi', 'Escala: meses')
+        case 'years':
+          return ui('Scale: years', 'Kipimo: miaka', 'Escala: años')
       }
     },
     [ui],
   )
 
-  // Compute SVG geometry in measured pixel coordinates (mobile-first plot width ~80%+)
+  // Compute SVG geometry from the currently visible (zoomed or full) slice
   const chartGeometry = useMemo(() => {
-    if (!series || series.points.length < 2) return null
+    if (!visibleStats || visiblePoints.length < 2) return null
 
     const isCompact = chartWidth < 600
-    const height = isCompact ? 256 : 352
-    const convertedValues = series.points.map((p) => p.unitUsd * rateForSelected)
+    const height = isCompact ? 256 : 348
+    const convertedValues = visiblePoints.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
 
@@ -209,7 +371,6 @@ export default function MineralTrendChart({
       3,
     )
 
-    // Compact left Y-axis margin on mobile so the plot spans ~80%+ of card width
     const padLeft = isCompact
       ? Math.min(54, Math.max(38, Math.round(maxLabelLen * 6.4 + 10)))
       : Math.min(126, Math.max(66, Math.round(maxLabelLen * 7.2 + 16)))
@@ -220,9 +381,9 @@ export default function MineralTrendChart({
     const plotHeight = Math.max(120, height - padTop - padBottom)
     const ySpan = Math.max(1e-9, yMax - yMin)
 
-    const coords = series.points.map((pt, idx) => {
+    const coords = visiblePoints.map((pt, idx) => {
       const converted = convertedValues[idx]
-      const x = padLeft + (idx / (series.points.length - 1)) * plotWidth
+      const x = padLeft + (idx / (visiblePoints.length - 1)) * plotWidth
       const y = padTop + (1 - (converted - yMin) / ySpan) * plotHeight
       return { x, y, pt, converted }
     })
@@ -234,21 +395,25 @@ export default function MineralTrendChart({
     const baselineY = padTop + plotHeight
     const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(2)} ${baselineY.toFixed(2)} L ${coords[0].x.toFixed(2)} ${baselineY.toFixed(2)} Z`
 
-    // Period-opening horizontal reference dashed line
     const openY =
       padTop + (1 - (convertedValues[0] - yMin) / ySpan) * plotHeight
 
-    // Max 4 X-axis ticks on mobile so labels never collide, 6 on desktop
-    const xTickCount = isCompact ? 4 : 6
+    // Auto-adjusted tick density (max 4 on mobile, 5–6 on desktop)
+    const xTickCount = isCompact ? 4 : visibleStats.scale === 'min' ? 5 : 6
     const xTicks: Array<{ x: number; label: string; idx: number }> = []
     for (let i = 0; i < xTickCount; i++) {
       const frac = i / (xTickCount - 1)
-      const idx = Math.round(frac * (series.points.length - 1))
+      const idx = Math.round(frac * (visiblePoints.length - 1))
       const coord = coords[idx]
       xTicks.push({
         x: coord.x,
         idx,
-        label: formatChartAxisDate(coord.pt.timestampMs, timeframe, language),
+        label: formatChartAxisDateByScale(
+          coord.pt.timestampMs,
+          visibleStats.scale,
+          visibleStats.spanMs,
+          language,
+        ),
       })
     }
 
@@ -276,17 +441,17 @@ export default function MineralTrendChart({
       xTicks,
     }
   }, [
-    series,
+    visiblePoints,
+    visibleStats,
     chartWidth,
     rateForSelected,
     formatAxisTickValue,
-    timeframe,
     language,
   ])
 
   const handlePointerScrub = useCallback(
     (clientX: number, currentTarget: SVGSVGElement) => {
-      if (!chartGeometry || !series) return
+      if (!chartGeometry || visiblePoints.length === 0) return
       const rect = currentTarget.getBoundingClientRect()
       if (rect.width <= 0) return
 
@@ -297,63 +462,116 @@ export default function MineralTrendChart({
       )
       const ratio =
         (clampedX - chartGeometry.padLeft) / Math.max(1, chartGeometry.plotWidth)
-      const nearestIdx = Math.round(ratio * (series.points.length - 1))
+      const nearestIdx = Math.round(ratio * (visiblePoints.length - 1))
       setHoverIndex(
-        Math.max(0, Math.min(series.points.length - 1, nearestIdx)),
+        Math.max(0, Math.min(visiblePoints.length - 1, nearestIdx)),
       )
     },
-    [chartGeometry, series],
+    [chartGeometry, visiblePoints.length],
   )
+
+  // Two-finger pinch zoom support on touchscreens
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        pinchStartRef.current = {
+          dist: Math.hypot(dx, dy),
+          window: [startIdx, endIdx],
+        }
+      }
+    },
+    [startIdx, endIdx],
+  )
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      if (e.touches.length === 2 && pinchStartRef.current && totalPoints >= MIN_VISIBLE_POINTS) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        const curDist = Math.hypot(dx, dy)
+        if (pinchStartRef.current.dist > 10 && curDist > 10) {
+          const scaleRatio = pinchStartRef.current.dist / curDist
+          const [origStart, origEnd] = pinchStartRef.current.window
+          const origLen = origEnd - origStart + 1
+          const nextLen = Math.max(
+            MIN_VISIBLE_POINTS,
+            Math.min(totalPoints, Math.round(origLen * scaleRatio)),
+          )
+          if (nextLen >= totalPoints) {
+            setZoomWindow(null)
+            return
+          }
+          const mid = (origStart + origEnd) / 2
+          let nextStart = Math.round(mid - (nextLen - 1) / 2)
+          nextStart = Math.max(0, Math.min(totalPoints - nextLen, nextStart))
+          setZoomWindow([nextStart, nextStart + nextLen - 1])
+          setHoverIndex(null)
+        }
+      }
+    },
+    [totalPoints],
+  )
+
+  const handleTouchEnd = useCallback(() => {
+    pinchStartRef.current = null
+  }, [])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<SVGSVGElement>) => {
-      if (!series || series.points.length === 0) return
-      const last = series.points.length - 1
+      if (visiblePoints.length === 0) return
+      const last = visiblePoints.length - 1
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
         setHoverIndex((prev) => (prev === null ? last - 1 : Math.max(0, prev - 1)))
       } else if (e.key === 'ArrowRight') {
         e.preventDefault()
         setHoverIndex((prev) => (prev === null ? last : Math.min(last, prev + 1)))
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault()
+        applyZoom('in')
+      } else if (e.key === '-') {
+        e.preventDefault()
+        applyZoom('out')
       } else if (e.key === 'Escape') {
         setHoverIndex(null)
       }
     },
-    [series],
+    [visiblePoints.length, applyZoom],
   )
 
-  if (!activeMineral || !series || !chartGeometry) {
+  if (!activeMineral || !fullSeries || !visibleStats || !chartGeometry) {
     return null
   }
 
-  const lastIdx = series.points.length - 1
-  const activePointIdx = hoverIndex !== null ? hoverIndex : lastIdx
-  const activePoint = series.points[activePointIdx]
+  const lastIdx = visiblePoints.length - 1
+  const safeHoverIdx =
+    hoverIndex !== null && hoverIndex <= lastIdx ? hoverIndex : null
+  const activePointIdx = safeHoverIdx !== null ? safeHoverIdx : lastIdx
+  const activePoint = visiblePoints[activePointIdx]
   const activeCoord = chartGeometry.coords[activePointIdx]
   const terminalCoord = chartGeometry.coords[lastIdx]
 
   const displayedUnitUsd = activePoint.unitUsd
-  const displayedDeltaUsd = displayedUnitUsd - series.startUnitUsd
+  const displayedDeltaUsd = displayedUnitUsd - visibleStats.startUnitUsd
   const displayedDeltaPct =
-    series.startUnitUsd > 0
-      ? (displayedDeltaUsd / series.startUnitUsd) * 100
+    visibleStats.startUnitUsd > 0
+      ? (displayedDeltaUsd / visibleStats.startUnitUsd) * 100
       : 0
 
-  // Trend polarity based on overall selected timeframe performance
-  const seriesPositive = series.changeUnitUsd >= 0
+  const seriesPositive = visibleStats.changeUnitUsd >= 0
   const displayedPositive = displayedDeltaUsd >= 0
 
-  // Classic institutional palette harmonized with MineConnect brand tokens
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
   const fillTopOpacity = seriesPositive ? 0.25 : 0.22
 
-  // Reference statutory benchmarks matched to the active /markets master unit mode
+  // Statutory reference benchmarks in active master unit mode
   const sokoTier = convertToChartUnitUsd(
     activeMineral.local_market_price_usd,
     activeMineral.unit,
     unitBasis,
   )
-
   const buyingTier = convertToChartUnitUsd(
     activeMineral.buying_centre_price_usd,
     activeMineral.unit,
@@ -361,10 +579,24 @@ export default function MineralTrendChart({
   )
 
   const isLocalUnits = unitBasis === 'metric_local'
+  const visibleDateWindowLabel = formatVisibleDateWindow(
+    visibleStats.startMs,
+    visibleStats.endMs,
+    visibleStats.scale,
+    language,
+  )
+  const activeTimeframeBadge =
+    timeframe === '1Y' && selectedYear !== null ? String(selectedYear) : timeframe
 
-  // Tooltip horizontal alignment so it never clips off left or right edge
   const tooltipAlignRight =
     activeCoord.x > chartGeometry.padLeft + chartGeometry.plotWidth * 0.62
+
+  // Range scrub thumb geometry when zoomed
+  const scrubLeftPct = totalPoints > 1 ? (startIdx / (totalPoints - 1)) * 100 : 0
+  const scrubWidthPct =
+    totalPoints > 1 ? ((endIdx - startIdx) / (totalPoints - 1)) * 100 : 100
+
+  const yearSummary = fullSeries.yearSummary
 
   return (
     <section
@@ -379,7 +611,7 @@ export default function MineralTrendChart({
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
       {/* Top Masthead Bar */}
-      <div className="flex flex-col justify-between gap-3 border-b border-ink/10 bg-paper-2 px-5 py-4 sm:flex-row sm:items-center lg:px-6">
+      <div className="flex flex-col justify-between gap-2.5 border-b border-ink/10 bg-paper-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5 lg:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
@@ -392,23 +624,23 @@ export default function MineralTrendChart({
             </span>
             <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
               {ui(
-                `World Spot Parity (${series.unitSuffix})`,
-                `Soko la Dunia (${series.unitSuffix})`,
-                `Paridad Spot Mundial (${series.unitSuffix})`,
+                `World Spot Parity (${fullSeries.unitSuffix})`,
+                `Soko la Dunia (${fullSeries.unitSuffix})`,
+                `Paridad Spot Mundial (${fullSeries.unitSuffix})`,
               )}
             </span>
           </div>
           <p className="mt-1 text-xs text-stone">
             {isLocalUnits
               ? ui(
-                  `Plotting World Spot Parity benchmarks in local units (${currency}${series.unitSuffix}), synced with the Markets header unit mode and top navbar.`,
-                  `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha ndani (${currency}${series.unitSuffix}), ikioana na upau wa Soko na upau mkuu wa juu.`,
-                  `Graficando referencias de Paridad Spot Mundial en unidades locales (${currency}${series.unitSuffix}), sincronizado con la cabecera de Mercados.`,
+                  `Plotting World Spot Parity in local units (${currency}${fullSeries.unitSuffix}) · Scroll or use zoom controls to inspect intervals.`,
+                  `Inaonyesha bei za Soko la Dunia kwa kipimo cha ndani (${currency}${fullSeries.unitSuffix}) · Tumia vidhibiti vya kukuza kuchambua muda.`,
+                  `Paridad Spot Mundial en unidades locales (${currency}${fullSeries.unitSuffix}) · Usa el zoom para inspeccionar intervalos.`,
                 )
               : ui(
-                  `Plotting World Spot Parity benchmarks in global spot units (${currency}${series.unitSuffix}), synced with the Markets header unit mode and top navbar.`,
-                  `Inaonyesha mwenendo wa bei za Soko la Dunia kwa kipimo cha kimataifa (${currency}${series.unitSuffix}), ikioana na upau wa Soko na upau mkuu wa juu.`,
-                  `Graficando referencias de Paridad Spot Mundial en unidades internacionales (${currency}${series.unitSuffix}), sincronizado con la cabecera de Mercados.`,
+                  `Plotting World Spot Parity in global spot units (${currency}${fullSeries.unitSuffix}) · Scroll or use zoom controls to inspect intervals.`,
+                  `Inaonyesha bei za Soko la Dunia kwa kipimo cha kimataifa (${currency}${fullSeries.unitSuffix}) · Tumia vidhibiti vya kukuza kuchambua muda.`,
+                  `Paridad Spot Mundial en unidades globales (${currency}${fullSeries.unitSuffix}) · Usa el zoom para inspeccionar intervalos.`,
                 )}
           </p>
         </div>
@@ -421,13 +653,13 @@ export default function MineralTrendChart({
               aria-hidden="true"
             />
             {currencyMeta.flag} {currency}
-            {series.unitSuffix}
+            {fullSeries.unitSuffix}
           </span>
         </div>
       </div>
 
-      {/* Mineral Selector Strip (All Benchmarks on /markets) */}
-      <div className="border-b border-ink/10 bg-paper px-5 py-3 lg:px-6">
+      {/* Mineral Selector Strip */}
+      <div className="border-b border-ink/10 bg-paper px-4 py-2.5 sm:px-5 lg:px-6">
         <div
           role="tablist"
           aria-label={ui('Select mineral', 'Chagua madini', 'Seleccionar mineral')}
@@ -463,8 +695,8 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Headline Price Readout & Timeframe Pills */}
-      <div className="flex flex-col justify-between gap-4 px-5 pt-5 pb-3 lg:flex-row lg:items-end lg:px-6">
+      {/* Headline Price Readout & Single-Row Timeframe Pills */}
+      <div className="flex flex-col justify-between gap-3.5 px-4 pt-4 pb-3 sm:px-5 lg:flex-row lg:items-end lg:px-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-display text-2xl font-medium text-ink sm:text-[26px]">
@@ -478,12 +710,12 @@ export default function MineralTrendChart({
             </span>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="font-mono text-3xl font-bold tracking-tight text-ink tabular-nums sm:text-4xl">
               {formatPrice(displayedUnitUsd)}
             </span>
             <span className="font-mono text-base font-medium text-stone">
-              {series.unitSuffix}
+              {fullSeries.unitSuffix}
             </span>
 
             <span
@@ -505,20 +737,21 @@ export default function MineralTrendChart({
           </div>
 
           <p className="mt-1 font-mono text-[11px] text-stone tabular-nums">
-            {hoverIndex !== null ? (
+            {safeHoverIdx !== null ? (
               <>
                 <span className="font-semibold text-ink">
-                  {formatChartTooltipDate(
+                  {formatChartTooltipDateByScale(
                     activePoint.timestampMs,
-                    timeframe,
+                    visibleStats.scale,
+                    visibleStats.spanMs,
                     language,
                   )}
                 </span>{' '}
                 ·{' '}
                 {ui(
-                  `Change since start of ${timeframe}`,
-                  `Mabadiliko tangu mwanzo wa ${timeframe}`,
-                  `Cambio desde el inicio de ${timeframe}`,
+                  `Change in visible ${activeTimeframeBadge} window`,
+                  `Mabadiliko ndani ya muda wa ${activeTimeframeBadge}`,
+                  `Cambio en la ventana ${activeTimeframeBadge}`,
                 )}
               </>
             ) : (
@@ -528,7 +761,6 @@ export default function MineralTrendChart({
                   'Bei ya Soko la Dunia ·',
                   'Tasa de Paridad Spot Mundial ·',
                 )}{' '}
-                {timeframeLabel(timeframe)} ·{' '}
                 {activeMineral.exchange_desk ?? 'LBMA / Tume ya Madini'}
               </>
             )}
@@ -548,7 +780,7 @@ export default function MineralTrendChart({
                 key={tf}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setTimeframe(tf)}
+                onClick={() => handleTimeframeChange(tf)}
                 className={`rounded-md px-1 py-1.5 text-center font-mono text-[10.5px] font-semibold transition sm:px-3 sm:text-xs ${
                   active
                     ? 'bg-ink text-gold shadow-xs'
@@ -562,20 +794,151 @@ export default function MineralTrendChart({
         </div>
       </div>
 
+      {/* Explicit Date & EAT Window + Auto-Granularity Scale + Zoom Controls Toolbar */}
+      <div className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-paper-2/65 px-3 py-2 sm:mx-5 lg:mx-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] font-semibold text-ink tabular-nums sm:text-[11px]">
+            <Calendar size={12} className="shrink-0 text-ochre" />
+            <span className="truncate">{visibleDateWindowLabel}</span>
+          </span>
+          <span className="inline-flex items-center rounded border border-ochre/25 bg-ochre/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ochre">
+            {formatScaleLabel(visibleStats.scale)}
+          </span>
+        </div>
+
+        <div
+          role="group"
+          aria-label={ui('Chart zoom controls', 'Vidhibiti vya kukuza chati', 'Controles de zoom')}
+          className="flex items-center gap-1"
+        >
+          {isZoomed && (
+            <>
+              <button
+                type="button"
+                onClick={() => applyPan('left')}
+                disabled={startIdx <= 0}
+                title={ui('Pan earlier', 'Sogeza nyuma', 'Desplazar atrás')}
+                aria-label={ui('Pan earlier', 'Sogeza nyuma', 'Desplazar atrás')}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-ink/12 bg-paper text-ink transition hover:border-ochre hover:text-ochre disabled:opacity-35"
+              >
+                <ChevronLeft size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPan('right')}
+                disabled={endIdx >= totalPoints - 1}
+                title={ui('Pan later', 'Sogeza mbele', 'Desplazar adelante')}
+                aria-label={ui('Pan later', 'Sogeza mbele', 'Desplazar adelante')}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-ink/12 bg-paper text-ink transition hover:border-ochre hover:text-ochre disabled:opacity-35"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => applyZoom('in')}
+            disabled={!canZoomIn}
+            title={ui('Zoom in', 'Kuza ndani', 'Acercar')}
+            aria-label={ui('Zoom in', 'Kuza ndani', 'Acercar')}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/12 bg-paper px-2 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre disabled:opacity-35"
+          >
+            <ZoomIn size={12} />
+            <span className="hidden sm:inline">{ui('Zoom In', 'Kuza', 'Acercar')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => applyZoom('out')}
+            disabled={!canZoomOut}
+            title={ui('Zoom out', 'Punguza', 'Alejar')}
+            aria-label={ui('Zoom out', 'Punguza', 'Alejar')}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/12 bg-paper px-2 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre disabled:opacity-35"
+          >
+            <ZoomOut size={12} />
+            <span className="hidden sm:inline">{ui('Zoom Out', 'Punguza', 'Alejar')}</span>
+          </button>
+          {isZoomed && (
+            <button
+              type="button"
+              onClick={handleResetZoom}
+              title={ui('Reset zoom', 'Rejesha ukubwa', 'Restablecer zoom')}
+              aria-label={ui('Reset zoom', 'Rejesha ukubwa', 'Restablecer zoom')}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/20 bg-ink px-2 font-mono text-[10px] font-semibold text-gold transition hover:bg-ochre hover:text-paper"
+            >
+              <RotateCcw size={11} />
+              <span>{ui('Reset', 'Rejesha', 'Reset')}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Year Selector Strip (Visible in 1Y / Yearly Assessment View) */}
+      {timeframe === '1Y' && (
+        <div className="mx-4 mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-white/80 px-3 py-2 sm:mx-5 lg:mx-6">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+            {ui(
+              'Assess Calendar Year:',
+              'Tathmini Mwaka Maalum:',
+              'Evaluar Año Calendario:',
+            )}
+          </span>
+          <div
+            role="group"
+            aria-label={ui('Select assessment year', 'Chagua mwaka wa tathmini', 'Seleccionar año')}
+            className="flex flex-wrap items-center gap-1"
+          >
+            <button
+              type="button"
+              aria-pressed={selectedYear === null}
+              onClick={() => handleYearSelect(null)}
+              className={`rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition ${
+                selectedYear === null
+                  ? 'bg-ink text-gold shadow-xs'
+                  : 'border border-ink/12 bg-paper text-ink-3 hover:border-ochre/45 hover:text-ink'
+              }`}
+            >
+              {ui('Rolling 1Y', 'Mwaka 1', '1A Móvil')}
+            </button>
+            {selectableYears.map((yr) => {
+              const active = selectedYear === yr
+              return (
+                <button
+                  key={yr}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => handleYearSelect(yr)}
+                  className={`rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition tabular-nums ${
+                    active
+                      ? 'bg-ochre text-paper shadow-xs'
+                      : 'border border-ink/12 bg-paper text-ink-3 hover:border-ochre/45 hover:text-ink'
+                  }`}
+                >
+                  {yr}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Interactive Financial Area/Line Chart */}
       <div className="relative px-2 pb-3 sm:px-6 sm:pb-4">
         <div ref={chartContainerRef} className="relative w-full select-none">
           <svg
+            ref={svgRef}
             width={chartGeometry.width}
             height={chartGeometry.height}
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${timeframe} World Spot Parity ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${series.unitSuffix})`}
+            aria-label={`${activeMineral.mineral_name} ${activeTimeframeBadge} World Spot Parity ${ui('price trend', 'mwenendo wa bei', 'tendencia de precio')} (${currency}${fullSeries.unitSuffix})`}
             className="block w-full cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ochre/40"
             onPointerMove={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerDown={(e) => handlePointerScrub(e.clientX, e.currentTarget)}
             onPointerLeave={() => setHoverIndex(null)}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             onKeyDown={handleKeyDown}
           >
             <defs>
@@ -654,7 +1017,7 @@ export default function MineralTrendChart({
               )
             })}
 
-            {/* Period-Opening Reference Dashed Baseline */}
+            {/* Visible-Period Opening Reference Dashed Baseline */}
             <line
               x1={chartGeometry.padLeft}
               y1={chartGeometry.openY}
@@ -682,7 +1045,7 @@ export default function MineralTrendChart({
             />
 
             {/* Hover / Scrub Crosshair Lines & Active Point Marker */}
-            {hoverIndex !== null && (
+            {safeHoverIdx !== null && (
               <g>
                 <line
                   x1={activeCoord.x}
@@ -720,7 +1083,7 @@ export default function MineralTrendChart({
               </g>
             )}
 
-            {/* Live Terminal Marker Dot at Latest Data Point */}
+            {/* Terminal Marker Dot at Latest Visible Data Point */}
             <g aria-hidden="true">
               <circle
                 cx={terminalCoord.x}
@@ -740,39 +1103,40 @@ export default function MineralTrendChart({
             </g>
           </svg>
 
-          {/* Interactive Floating Scrub Tooltip */}
-          {hoverIndex !== null && (
+          {/* Interactive Floating Scrub Tooltip (Always Includes Exact Date + EAT Time) */}
+          {safeHoverIdx !== null && (
             <div
               role="status"
               aria-live="polite"
-              className="pointer-events-none absolute top-3 z-20 min-w-[200px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
+              className="pointer-events-none absolute top-2 z-20 min-w-[205px] rounded-lg border border-ink/15 bg-ink px-3.5 py-2.5 text-paper shadow-md"
               style={
                 tooltipAlignRight
                   ? {
                       right: `${Math.max(
-                        12,
-                        chartGeometry.width - activeCoord.x + 14,
+                        10,
+                        chartGeometry.width - activeCoord.x + 12,
                       )}px`,
                     }
                   : {
                       left: `${Math.min(
-                        chartGeometry.width - 214,
-                        Math.max(chartGeometry.padLeft + 8, activeCoord.x + 14),
+                        Math.max(10, chartGeometry.width - 216),
+                        Math.max(chartGeometry.padLeft + 6, activeCoord.x + 12),
                       )}px`,
                     }
               }
             >
-              <div className="font-mono text-[10px] uppercase tracking-wider text-paper/65">
-                {formatChartTooltipDate(
+              <div className="font-mono text-[10px] tracking-wide text-paper/75 tabular-nums">
+                {formatChartTooltipDateByScale(
                   activePoint.timestampMs,
-                  timeframe,
+                  visibleStats.scale,
+                  visibleStats.spanMs,
                   language,
                 )}
               </div>
               <div className="mt-1 flex items-baseline gap-1 font-mono text-sm font-bold text-paper tabular-nums">
                 <span>{formatPrice(displayedUnitUsd)}</span>
                 <span className="text-[11px] font-normal text-gold">
-                  {series.unitSuffix}
+                  {fullSeries.unitSuffix}
                 </span>
               </div>
               <div
@@ -782,32 +1146,129 @@ export default function MineralTrendChart({
               >
                 {formatSignedDelta(displayedDeltaUsd)} (
                 {displayedPositive ? '+' : ''}
-                {displayedDeltaPct.toFixed(2)}%) · {timeframe}
+                {displayedDeltaPct.toFixed(2)}%) · {activeTimeframeBadge}
+              </div>
+            </div>
+          )}
+
+          {/* Compact Zoom Position Scrub Track (Shown When Zoomed) */}
+          {isZoomed && (
+            <div className="mt-2 px-1">
+              <div
+                aria-label={ui('Visible zoom range', 'Sehemu iliyokuzwa', 'Rango visible')}
+                className="relative h-1.5 w-full overflow-hidden rounded-full bg-ink/10"
+              >
+                <div
+                  className="absolute top-0 h-full rounded-full bg-ochre transition-all duration-150"
+                  style={{
+                    left: `${scrubLeftPct}%`,
+                    width: `${Math.max(6, scrubWidthPct)}%`,
+                  }}
+                />
               </div>
             </div>
           )}
         </div>
       </div>
 
+      {/* Selected Year Breakdown Card (Cleanly Shown Below Canvas When Inspecting a Specific Year) */}
+      {yearSummary && (
+        <div className="mx-4 mb-4 rounded-xl border border-ink/12 bg-white px-4 py-3.5 shadow-xs sm:mx-5 sm:px-5 lg:mx-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/8 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-bold text-gold tabular-nums">
+                {yearSummary.year}
+              </span>
+              <span className="font-display text-sm font-medium text-ink sm:text-base">
+                {yearSummary.isYtd
+                  ? ui(
+                      `${yearSummary.year} Year-to-Date Assessment`,
+                      `Tathmini ya Mwaka ${yearSummary.year} Hadi Sasa`,
+                      `Evaluación Acumulada ${yearSummary.year}`,
+                    )
+                  : ui(
+                      `${yearSummary.year} Full-Year Assessment`,
+                      `Tathmini ya Mwaka Kamili ${yearSummary.year}`,
+                      `Evaluación Anual ${yearSummary.year}`,
+                    )}
+              </span>
+            </div>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
+              {currencyMeta.flag} {currency}
+              {fullSeries.unitSuffix}
+            </span>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+                {yearSummary.year} {ui('High', 'Juu Zaidi', 'Máximo')} ({fullSeries.unitSuffix})
+              </span>
+              <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+                {formatPrice(yearSummary.highUnitUsd)}
+                <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+                {yearSummary.year} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({fullSeries.unitSuffix})
+              </span>
+              <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+                {formatPrice(yearSummary.lowUnitUsd)}
+                <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+                {yearSummary.isYtd
+                  ? ui('Live Benchmark', 'Bei Hai', 'Referencia Actual')
+                  : ui('Year Close', 'Bei ya Kufunga', 'Cierre Anual')}{' '}
+                ({fullSeries.unitSuffix})
+              </span>
+              <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
+                {formatPrice(yearSummary.closeUnitUsd)}
+                <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
+                {ui('YoY Change', 'Mabadiliko YoY', 'Variación Anual')}
+              </span>
+              <span
+                className={`mt-0.5 inline-flex items-center gap-0.5 whitespace-nowrap font-mono text-[12px] font-bold tabular-nums sm:text-xs ${
+                  yearSummary.yoyChangeUsd >= 0 ? 'text-moss' : 'text-danger'
+                }`}
+              >
+                {yearSummary.yoyChangeUsd >= 0 ? '+' : ''}
+                {yearSummary.yoyChangePct.toFixed(2)}% ({formatSignedDelta(yearSummary.yoyChangeUsd)})
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mode-Matched Benchmark Summary Strip */}
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-ink/10 bg-paper-2/70 px-4 py-3.5 sm:grid-cols-4 sm:px-5 lg:px-6">
         <div className="min-w-0">
           <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {timeframe} {ui('High', 'Juu Zaidi', 'Máximo')} ({series.unitSuffix})
+            {activeTimeframeBadge} {ui('High', 'Juu Zaidi', 'Máximo')} ({fullSeries.unitSuffix})
           </span>
           <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-            {formatPrice(series.maxUnitUsd)}
-            <span className="font-normal text-stone">{series.unitSuffix}</span>
+            {formatPrice(visibleStats.maxUnitUsd)}
+            <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
           </span>
         </div>
 
         <div className="min-w-0">
           <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {timeframe} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({series.unitSuffix})
+            {activeTimeframeBadge} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({fullSeries.unitSuffix})
           </span>
           <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-            {formatPrice(series.minUnitUsd)}
-            <span className="font-normal text-stone">{series.unitSuffix}</span>
+            {formatPrice(visibleStats.minUnitUsd)}
+            <span className="font-normal text-stone">{fullSeries.unitSuffix}</span>
           </span>
         </div>
 
