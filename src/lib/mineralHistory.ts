@@ -6,19 +6,9 @@ import {
 import type { LanguageCode } from '../i18n'
 import type { MineralPriceRecord } from '../types/database'
 
-export type ChartTimeframe = '1M' | '1H' | '1D' | '1Mo' | '1Y'
-
 export type ChartPricingMode = 'metric_local' | 'standard'
 
 export type TimelineScale = 'min' | 'hours' | 'days' | 'months' | 'years'
-
-export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
-  '1M',
-  '1H',
-  '1D',
-  '1Mo',
-  '1Y',
-] as const
 
 export type LocalUnitSuffix = '/g' | '/kg' | '/ct'
 export type GlobalUnitSuffix = '/toz' | '/lb' | '/t' | '/carat'
@@ -35,31 +25,43 @@ export interface MineralTrendPoint {
   unitUsd: number
 }
 
-export interface YearlyAssessmentSummary {
-  year: number
-  isYtd: boolean
-  openUnitUsd: number
-  highUnitUsd: number
-  lowUnitUsd: number
-  closeUnitUsd: number
-  yoyChangeUsd: number
-  yoyChangePct: number
-}
-
-export interface MineralTrendSeries {
+export interface ContinuousMineralModel {
+  symbol: string
   mode: ChartPricingMode
-  timeframe: ChartTimeframe
-  selectedYear: number
-  points: MineralTrendPoint[]
   unitSuffix: ChartUnitSuffix
   unitSingular: string
-  startUnitUsd: number
-  currentUnitUsd: number
-  minUnitUsd: number
-  maxUnitUsd: number
-  changeUnitUsd: number
-  changePct: number
-  yearSummary: YearlyAssessmentSummary
+  liveUnitUsd: number
+  historyStartMs: number
+  historyEndMs: number
+  minSpanMs: number
+  maxSpanMs: number
+  defaultSpanMs: number
+  sampleWindow: (
+    viewStartMs: number,
+    viewEndMs: number,
+    sampleCount: number,
+  ) => MineralTrendPoint[]
+}
+
+export interface TimeAxisTick {
+  timestampMs: number
+  x: number
+  label: string
+}
+
+export const MINUTE_MS = 60_000
+export const HOUR_MS = 3_600_000
+export const DAY_MS = 86_400_000
+export const TAPE_TOTAL_SLOTS = 1000
+
+const EAT_TZ = 'Africa/Dar_es_Salaam'
+/** Tanzania (EAT) is fixed UTC+3 year-round with no DST */
+const EAT_OFFSET_MS = 3 * HOUR_MS
+
+const LOCALE_BY_LANG: Record<LanguageCode, string> = {
+  en: 'en-GB',
+  sw: 'sw-TZ',
+  es: 'es-ES',
 }
 
 /**
@@ -142,84 +144,71 @@ export function convertToChartUnitUsd(
   }
 }
 
-interface HistoricalProfile {
-  /** Annual returns for multi-year assessment (offset 0 = current YTD, 1 = -1y, 2 = -2y, 3 = -3y) */
+interface MineralMarketProfile {
+  /** Annual returns going backward from current year: [YTD, -1y, -2y, -3y] */
   annualReturns: [number, number, number, number]
-  /** Monthly drift signature */
-  monthlyDrift: number
-  /** Relative noise/oscillation amplitude per granularity */
-  volatility: Record<ChartTimeframe, number>
-  /** Multi-cycle wave signature */
+  /** Characteristic relative swing volatility */
+  baseVolatility: number
+  /** Macro wave phase offset */
   cyclePhase: number
 }
 
-const MINERAL_PROFILES: Record<string, HistoricalProfile> = {
+const MINERAL_PROFILES: Record<string, MineralMarketProfile> = {
   XAU: {
     annualReturns: [0.245, 0.272, 0.131, 0.048],
-    monthlyDrift: 0.058,
-    volatility: { '1M': 0.00042, '1H': 0.0014, '1D': 0.0042, '1Mo': 0.018, '1Y': 0.044 },
+    baseVolatility: 0.036,
     cyclePhase: 0.4,
   },
   XAG: {
     annualReturns: [0.294, 0.215, 0.082, -0.034],
-    monthlyDrift: 0.074,
-    volatility: { '1M': 0.00068, '1H': 0.0022, '1D': 0.0075, '1Mo': 0.032, '1Y': 0.07 },
+    baseVolatility: 0.056,
     cyclePhase: 1.1,
   },
   HG: {
     annualReturns: [0.128, 0.104, 0.052, -0.068],
-    monthlyDrift: 0.034,
-    volatility: { '1M': 0.00055, '1H': 0.0018, '1D': 0.0055, '1Mo': 0.026, '1Y': 0.06 },
+    baseVolatility: 0.046,
     cyclePhase: 2.0,
   },
   TZN: {
     annualReturns: [0.148, 0.118, 0.095, 0.072],
-    monthlyDrift: 0.046,
-    volatility: { '1M': 0.00032, '1H': 0.001, '1D': 0.0032, '1Mo': 0.014, '1Y': 0.034 },
+    baseVolatility: 0.026,
     cyclePhase: 0.85,
   },
   RBY: {
     annualReturns: [0.186, 0.142, 0.114, 0.088],
-    monthlyDrift: 0.054,
-    volatility: { '1M': 0.00036, '1H': 0.0011, '1D': 0.0036, '1Mo': 0.016, '1Y': 0.038 },
+    baseVolatility: 0.03,
     cyclePhase: 1.55,
   },
   GRF: {
     annualReturns: [0.162, 0.084, -0.052, 0.118],
-    monthlyDrift: 0.068,
-    volatility: { '1M': 0.00046, '1H': 0.0015, '1D': 0.005, '1Mo': 0.024, '1Y': 0.054 },
+    baseVolatility: 0.042,
     cyclePhase: 2.6,
   },
   NI: {
     annualReturns: [-0.054, -0.082, -0.185, 0.224],
-    monthlyDrift: -0.028,
-    volatility: { '1M': 0.0006, '1H': 0.002, '1D': 0.0062, '1Mo': 0.032, '1Y': 0.076 },
+    baseVolatility: 0.058,
     cyclePhase: 3.3,
   },
   LI: {
     annualReturns: [0.098, -0.164, -0.285, 0.41],
-    monthlyDrift: 0.062,
-    volatility: { '1M': 0.00065, '1H': 0.0021, '1D': 0.0068, '1Mo': 0.035, '1Y': 0.084 },
+    baseVolatility: 0.064,
     cyclePhase: 4.1,
   },
   CO: {
     annualReturns: [-0.036, -0.112, -0.145, 0.092],
-    monthlyDrift: 0.029,
-    volatility: { '1M': 0.00048, '1H': 0.0016, '1D': 0.0052, '1Mo': 0.025, '1Y': 0.066 },
+    baseVolatility: 0.048,
     cyclePhase: 4.9,
   },
   SN: {
     annualReturns: [0.112, 0.168, 0.064, -0.125],
-    monthlyDrift: -0.021,
-    volatility: { '1M': 0.00058, '1H': 0.0019, '1D': 0.0058, '1Mo': 0.028, '1Y': 0.064 },
+    baseVolatility: 0.05,
     cyclePhase: 5.5,
   },
 }
 
-const DEFAULT_PROFILE: HistoricalProfile = {
+const DEFAULT_PROFILE: MineralMarketProfile = {
   annualReturns: [0.12, 0.09, 0.06, 0.04],
-  monthlyDrift: 0.035,
-  volatility: { '1M': 0.00045, '1H': 0.0015, '1D': 0.005, '1Mo': 0.022, '1Y': 0.052 },
+  baseVolatility: 0.04,
   cyclePhase: 1.7,
 }
 
@@ -232,47 +221,248 @@ function hashSeed(input: string): number {
   return h >>> 0
 }
 
-function createPrng(seed: number): () => number {
-  let state = seed >>> 0
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = Math.imul(state ^ (state >>> 15), 1 | state)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
+/**
+ * Deterministic O(1) hash mapping (seed, octave, integer grid index) -> [-1, 1].
+ * Enables continuous, seamless multi-resolution sampling from 4 years down to seconds
+ * without storing millions of array points in memory.
+ */
+function gridNoiseValue(seed: number, octave: number, index: number): number {
+  let h = (seed ^ Math.imul(octave + 1, 0x9e3779b1)) >>> 0
+  const low = index | 0
+  const high = Math.floor(index / 4294967296) | 0
+  h ^= Math.imul(low, 0x85ebca6b) >>> 0
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0
+  h ^= Math.imul(high, 0x27d4eb2d) >>> 0
+  h = (h ^ (h >>> 16)) >>> 0
+  return (h / 4294967295) * 2 - 1
 }
 
-const MINUTE_MS = 60_000
-const HOUR_MS = 3_600_000
-const DAY_MS = 86_400_000
-
-const SUB_YEAR_CONFIG: Record<
-  Exclude<ChartTimeframe, '1Y'>,
-  { count: number; spanMs: number }
-> = {
-  '1M': { count: 61, spanMs: MINUTE_MS }, // 1-second ticks over 60 seconds
-  '1H': { count: 61, spanMs: HOUR_MS }, // 1-minute ticks over 60 minutes
-  '1D': { count: 49, spanMs: 24 * HOUR_MS }, // 30-minute ticks over 24 hours
-  '1Mo': { count: 61, spanMs: 30 * DAY_MS }, // 12-hour ticks over 30 days
+/** Smooth C1-continuous 1D value noise via cubic Hermite interpolation */
+function smoothNoise1D(seed: number, octave: number, coord: number): number {
+  const i0 = Math.floor(coord)
+  const f = coord - i0
+  const u = f * f * (3 - 2 * f)
+  const v0 = gridNoiseValue(seed, octave, i0)
+  const v1 = gridNoiseValue(seed, octave, i0 + 1)
+  return v0 + (v1 - v0) * u
 }
 
-function resolveAnchorNowMs(mineral: MineralPriceRecord, anchorNowMs?: number): number {
+interface NoiseOctave {
+  strideMs: number
+  relAmp: number
+}
+
+/**
+ * 8-octave fractal time-series spectrum covering quarterly swings down to
+ * 10-second micro-ticks. Higher-frequency octaves fade in smoothly as the
+ * user pinches or scrolls deeper into shorter windows (zero aliasing on pan).
+ */
+const MULTI_SCALE_OCTAVES: readonly NoiseOctave[] = [
+  { strideMs: 42 * DAY_MS, relAmp: 1.15 }, // Macro quarterly cycle
+  { strideMs: 11 * DAY_MS, relAmp: 0.68 }, // Multi-week swing
+  { strideMs: 3 * DAY_MS, relAmp: 0.38 }, // Multi-day swing
+  { strideMs: 12 * HOUR_MS, relAmp: 0.2 }, // Daily / session swing
+  { strideMs: 2 * HOUR_MS, relAmp: 0.1 }, // Intraday waves
+  { strideMs: 20 * MINUTE_MS, relAmp: 0.048 }, // Sub-hour waves
+  { strideMs: 3 * MINUTE_MS, relAmp: 0.022 }, // Minute waves
+  { strideMs: 15_000, relAmp: 0.009 }, // Micro-tick detail
+]
+
+function resolveAnchorNowMs(
+  mineral: MineralPriceRecord,
+  anchorNowMs?: number,
+): number {
   if (anchorNowMs !== undefined) return anchorNowMs
   const parsedUpdated = Date.parse(mineral.updated_at)
-  if (Number.isFinite(parsedUpdated) && Math.abs(Date.now() - parsedUpdated) < 30 * DAY_MS) {
+  if (
+    Number.isFinite(parsedUpdated) &&
+    Math.abs(Date.now() - parsedUpdated) < 30 * DAY_MS
+  ) {
     return Math.max(parsedUpdated, Date.now())
   }
   return Date.now()
 }
 
-export function getSelectableYears(anchorNowMs?: number): number[] {
-  const currentYear = new Date(anchorNowMs ?? Date.now()).getUTCFullYear()
-  return [currentYear, currentYear - 1, currentYear - 2, currentYear - 3]
+interface AnchorNode {
+  t: number
+  logPrice: number
+}
+
+function evaluateAnchorLogPrice(nodes: readonly AnchorNode[], t: number): number {
+  if (nodes.length === 0) return 0
+  if (t <= nodes[0].t) return nodes[0].logPrice
+  const last = nodes[nodes.length - 1]
+  if (t >= last.t) return last.logPrice
+
+  let lo = 0
+  let hi = nodes.length - 1
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1
+    if (nodes[mid].t <= t) lo = mid
+    else hi = mid
+  }
+
+  const a = nodes[lo]
+  const b = nodes[hi]
+  const frac = (t - a.t) / Math.max(1, b.t - a.t)
+  // Gentle cosine blend avoids sharp kinks at calendar year boundaries
+  const eased = frac * 0.72 + (0.5 - 0.5 * Math.cos(Math.PI * frac)) * 0.28
+  return a.logPrice + (b.logPrice - a.logPrice) * eased
 }
 
 /**
- * Automatically detects the most readable timeline granularity (`min`, `hours`,
- * `days`, `months`, `years`) from any visible time span (e.g. after zoom/pan).
+ * Builds a single continuous multi-timeline model (2023 -> present live spot)
+ * for direct-manipulation pan and pinch/wheel zoom without rigid timeframe reloads.
+ */
+export function createContinuousMineralModel(
+  mineral: MineralPriceRecord,
+  mode: ChartPricingMode = 'metric_local',
+  anchorNowMs?: number,
+): ContinuousMineralModel {
+  const { unitUsd: liveUnitUsd, unitSuffix, unitSingular } =
+    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
+
+  const safeLiveUsd = Math.max(0.0001, liveUnitUsd)
+  const profile =
+    MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
+  const historyEndMs = resolveAnchorNowMs(mineral, anchorNowMs)
+  const currentYear = new Date(historyEndMs).getUTCFullYear()
+  const startYear = currentYear - 3 // 4-year continuous span (e.g. 2023–2026)
+  const historyStartMs = Date.UTC(startYear, 0, 1, 0, 0, 0)
+
+  // Construct continuous yearly anchor nodes chaining backward from liveUnitUsd
+  const yearAnchors: Array<{ t: number; price: number }> = []
+  let cursorPrice = safeLiveUsd
+  yearAnchors.push({ t: historyEndMs, price: cursorPrice })
+
+  for (let offset = 0; offset < 4; offset++) {
+    const yr = currentYear - offset
+    const ret = profile.annualReturns[offset] ?? 0.08
+    cursorPrice = Math.max(0.0001, cursorPrice / (1 + ret))
+    yearAnchors.push({
+      t: Date.UTC(yr, 0, 1, 0, 0, 0),
+      price: cursorPrice,
+    })
+  }
+
+  // Sort chronologically (2023-01-01 -> ... -> historyEndMs)
+  yearAnchors.sort((a, b) => a.t - b.t)
+
+  // Anchor the latest 24h drift to live day_open_usd / trend_percentage when available
+  const dayAgoMs = historyEndMs - DAY_MS
+  let dayOpenUsd: number | null = null
+  if (mineral.day_open_usd && mineral.day_open_usd > 0) {
+    dayOpenUsd = convertToChartUnitUsd(
+      mineral.day_open_usd,
+      mineral.unit,
+      mode,
+    ).unitUsd
+  } else if (
+    Number.isFinite(mineral.trend_percentage) &&
+    Math.abs(mineral.trend_percentage) > 0.001
+  ) {
+    const denom = 1 + mineral.trend_percentage / 100
+    if (denom > 0.4) dayOpenUsd = safeLiveUsd / denom
+  }
+
+  const nodes: AnchorNode[] = yearAnchors.map((a) => ({
+    t: a.t,
+    logPrice: Math.log(Math.max(0.0001, a.price)),
+  }))
+
+  if (dayOpenUsd && dayOpenUsd > 0 && dayAgoMs > nodes[nodes.length - 2].t) {
+    nodes.splice(nodes.length - 1, 0, {
+      t: dayAgoMs,
+      logPrice: Math.log(dayOpenUsd),
+    })
+  }
+
+  const seed = hashSeed(`${mineral.symbol.toUpperCase()}:continuous:v5`)
+  const endRefOctaves = MULTI_SCALE_OCTAVES.map((oct, idx) =>
+    smoothNoise1D(seed, idx, historyEndMs / oct.strideMs),
+  )
+
+  const maxSpanMs = Math.max(DAY_MS, historyEndMs - historyStartMs)
+  const minSpanMs = 2 * MINUTE_MS
+  const defaultSpanMs = Math.min(maxSpanMs, 30 * DAY_MS)
+
+  const sampleWindow = (
+    rawViewStartMs: number,
+    rawViewEndMs: number,
+    sampleCount: number,
+  ): MineralTrendPoint[] => {
+    const count = Math.max(24, Math.min(320, Math.round(sampleCount)))
+    const span = Math.max(
+      minSpanMs,
+      Math.min(maxSpanMs, rawViewEndMs - rawViewStartMs),
+    )
+    let endMs = Math.min(historyEndMs, Math.max(historyStartMs + span, rawViewEndMs))
+    let startMs = endMs - span
+    if (startMs < historyStartMs) {
+      startMs = historyStartMs
+      endMs = Math.min(historyEndMs, startMs + span)
+    }
+
+    const stepMs = (endMs - startMs) / (count - 1)
+    const octaveWeights = MULTI_SCALE_OCTAVES.map((oct) => {
+      const ratio = oct.strideMs / Math.max(1, stepMs)
+      // Smooth low-pass fade-in so finer detail organically emerges as user zooms in
+      return Math.max(0, Math.min(1, (ratio - 0.35) / 1.2))
+    })
+
+    const points: MineralTrendPoint[] = new Array(count)
+    for (let i = 0; i < count; i++) {
+      const t = i === count - 1 ? endMs : startMs + i * stepMs
+      if (Math.abs(t - historyEndMs) < 1) {
+        points[i] = { timestampMs: historyEndMs, unitUsd: safeLiveUsd }
+        continue
+      }
+
+      const baseLog = evaluateAnchorLogPrice(nodes, t)
+      let logDelta = 0
+
+      for (let o = 0; o < MULTI_SCALE_OCTAVES.length; o++) {
+        const w = octaveWeights[o]
+        if (w <= 0) continue
+        const oct = MULTI_SCALE_OCTAVES[o]
+        // Subtracting endRefOctaves[o] guarantees exact liveUnitUsd convergence at historyEndMs
+        const n = smoothNoise1D(seed, o, t / oct.strideMs) - endRefOctaves[o]
+        logDelta += n * profile.baseVolatility * oct.relAmp * w
+      }
+
+      // Subtle harmonic macro wave (also zeroed at historyEndMs for exact live convergence)
+      const yearsFromEnd = (t - historyEndMs) / (365.25 * DAY_MS)
+      const macroWave =
+        (Math.sin(yearsFromEnd * Math.PI * 2.4 + profile.cyclePhase) -
+          Math.sin(profile.cyclePhase)) *
+        profile.baseVolatility *
+        0.55
+
+      const unitUsd = Math.max(0.0001, Math.exp(baseLog + logDelta + macroWave))
+      points[i] = { timestampMs: Math.round(t), unitUsd }
+    }
+
+    return points
+  }
+
+  return {
+    symbol: mineral.symbol.toUpperCase(),
+    mode,
+    unitSuffix,
+    unitSingular,
+    liveUnitUsd: safeLiveUsd,
+    historyStartMs,
+    historyEndMs,
+    minSpanMs,
+    maxSpanMs,
+    defaultSpanMs,
+    sampleWindow,
+  }
+}
+
+/**
+ * Automatically detects timeline granularity (`min`, `hours`, `days`, `months`, `years`)
+ * directly from the currently visible time span.
  */
 export function detectTimelineScale(visibleSpanMs: number): TimelineScale {
   const span = Math.max(0, visibleSpanMs)
@@ -283,309 +473,54 @@ export function detectTimelineScale(visibleSpanMs: number): TimelineScale {
   return 'years'
 }
 
-function sampleSeriesAtTimestamp(points: MineralTrendPoint[], targetMs: number): number {
-  if (points.length === 0) return 0
-  if (targetMs <= points[0].timestampMs) return points[0].unitUsd
-  const last = points[points.length - 1]
-  if (targetMs >= last.timestampMs) return last.unitUsd
-
-  let lo = 0
-  let hi = points.length - 1
-  while (lo + 1 < hi) {
-    const mid = (lo + hi) >> 1
-    if (points[mid].timestampMs <= targetMs) lo = mid
-    else hi = mid
+/**
+ * Formats a concise human-readable duration token for the visible viewport
+ * (e.g. `4m`, `12H`, `30D`, `6M`, `3.9Y`).
+ */
+export function formatSpanCompact(visibleSpanMs: number): string {
+  const span = Math.max(MINUTE_MS, visibleSpanMs)
+  if (span < 90 * MINUTE_MS) {
+    return `${Math.max(1, Math.round(span / MINUTE_MS))}m`
   }
-  const a = points[lo]
-  const b = points[hi]
-  const span = Math.max(1, b.timestampMs - a.timestampMs)
-  const frac = (targetMs - a.timestampMs) / span
-  return a.unitUsd + (b.unitUsd - a.unitUsd) * frac
-}
-
-function generateBridgeSeries(params: {
-  seedKey: string
-  count: number
-  startMs: number
-  endMs: number
-  startUsd: number
-  endUsd: number
-  vol: number
-  phase: number
-  waveCount: number
-  guardLow?: number | null
-  guardHigh?: number | null
-}): MineralTrendPoint[] {
-  const {
-    seedKey,
-    count,
-    startMs,
-    endMs,
-    startUsd,
-    endUsd,
-    vol,
-    phase,
-    waveCount,
-    guardLow,
-    guardHigh,
-  } = params
-
-  const rng = createPrng(hashSeed(seedKey))
-  const walk: number[] = [0]
-  for (let i = 1; i < count; i++) {
-    const z = (rng() + rng() + rng() - 1.5) * 1.15
-    walk.push(walk[i - 1] + z)
+  if (span < 48 * HOUR_MS) {
+    return `${Math.max(1, Math.round(span / HOUR_MS))}H`
   }
-  const walkEnd = walk[count - 1]
-  const bridge = walk.map((v, i) => v - (i / (count - 1)) * walkEnd)
-  const maxAbsBridge = Math.max(0.0001, ...bridge.map((v) => Math.abs(v)))
-
-  const meanLevel = (startUsd + endUsd) / 2
-  const spanMs = Math.max(1, endMs - startMs)
-  const points: MineralTrendPoint[] = []
-
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1)
-    const timestampMs = Math.round(startMs + t * spanMs)
-
-    if (i === 0) {
-      points.push({ timestampMs, unitUsd: startUsd })
-      continue
-    }
-    if (i === count - 1) {
-      points.push({ timestampMs, unitUsd: endUsd })
-      continue
-    }
-
-    const linear = startUsd + (endUsd - startUsd) * t
-    const envelope = Math.sin(Math.PI * t)
-    const macroWave =
-      Math.sin(t * Math.PI * waveCount + phase) * 0.42 +
-      Math.cos(t * Math.PI * (waveCount * 2.1) + phase * 1.2) * 0.18
-    const bridgeNorm = bridge[i] / maxAbsBridge
-
-    let value = linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.52)
-
-    if (guardLow != null && guardHigh != null) {
-      const loGuard = Math.min(guardLow, startUsd, endUsd)
-      const hiGuard = Math.max(guardHigh, startUsd, endUsd)
-      value = Math.max(loGuard, Math.min(hiGuard, value))
-    }
-
-    const positiveFloor = Math.max(0.0001, Math.min(startUsd, endUsd) * 0.35)
-    points.push({
-      timestampMs,
-      unitUsd: Math.max(positiveFloor, value),
-    })
+  if (span < 60 * DAY_MS) {
+    return `${Math.max(1, Math.round(span / DAY_MS))}D`
   }
-
-  return points
+  if (span < 365 * DAY_MS) {
+    return `${Math.max(1, Math.round(span / (30.4375 * DAY_MS)))}M`
+  }
+  const years = span / (365.25 * DAY_MS)
+  return years >= 1.05 ? `${years.toFixed(1).replace(/\.0$/, '')}Y` : '1Y'
 }
 
 /**
- * Unified Year + Granularity Drill-Down engine:
- * Always computes the authoritative full-year baseline for `selectedYear` (continuous
- * across 2023 -> 2024 -> 2025 -> 2026 live spot) and slices cleanly into `1Y`, `1Mo`,
- * `1D`, `1H`, or `1M` anchored inside that chosen year.
+ * Computes a compact 1..1000 timeline tape position counter (e.g. `158/1000`)
+ * reflecting where the active window / inspected cursor sits along the
+ * continuous multi-year history.
  */
-export function buildMineralYearDrilldownSeries(
-  mineral: MineralPriceRecord,
-  selectedYear: number,
-  timeframe: ChartTimeframe,
-  mode: ChartPricingMode = 'metric_local',
-  focusTimestampMs?: number | null,
-  anchorNowMs?: number,
-): MineralTrendSeries {
-  const { unitUsd: liveUnitUsd, unitSuffix, unitSingular } =
-    convertToChartUnitUsd(mineral.world_market_price_usd, mineral.unit, mode)
-
-  const profile = MINERAL_PROFILES[mineral.symbol.toUpperCase()] ?? DEFAULT_PROFILE
-  const nowMs = resolveAnchorNowMs(mineral, anchorNowMs)
-  const currentYear = new Date(nowMs).getUTCFullYear()
-  const yearOffset = Math.max(0, Math.min(3, currentYear - selectedYear))
-  const isYtd = selectedYear >= currentYear
-
-  // Walk backwards continuously from liveUnitUsd so 2023 -> 2024 -> 2025 -> 2026 seamlessly chain
-  let yearEndUnitUsd = liveUnitUsd
-  for (let o = 0; o < yearOffset; o++) {
-    const r = profile.annualReturns[o] ?? 0.08
-    yearEndUnitUsd = yearEndUnitUsd / (1 + r)
-  }
-  const annualReturn = profile.annualReturns[yearOffset] ?? 0.08
-  const yearStartUnitUsd = yearEndUnitUsd / (1 + annualReturn)
-
-  const yearStartMs = Date.UTC(selectedYear, 0, 1, 0, 0, 0)
-  // Historical years close on Dec 31 17:00 EAT (14:00 UTC)
-  const yearEndMs = isYtd ? nowMs : Date.UTC(selectedYear, 11, 31, 14, 0, 0)
-
-  // Always compute full-year trajectory first so Year Evaluation stats remain consistent across drill-downs
-  const yearPoints = generateBridgeSeries({
-    seedKey: `${mineral.symbol}:YEAR:${selectedYear}:mineconnect-v4`,
-    count: 105,
-    startMs: yearStartMs,
-    endMs: yearEndMs,
-    startUsd: yearStartUnitUsd,
-    endUsd: yearEndUnitUsd,
-    vol: profile.volatility['1Y'],
-    phase: profile.cyclePhase + yearOffset * 1.35,
-    waveCount: 2.3,
-  })
-
-  let yearLowUsd = yearPoints[0].unitUsd
-  let yearHighUsd = yearPoints[0].unitUsd
-  for (const pt of yearPoints) {
-    if (pt.unitUsd < yearLowUsd) yearLowUsd = pt.unitUsd
-    if (pt.unitUsd > yearHighUsd) yearHighUsd = pt.unitUsd
-  }
-
-  const yoyChangeUsd = yearEndUnitUsd - yearStartUnitUsd
-  const yoyChangePct =
-    yearStartUnitUsd > 0 ? (yoyChangeUsd / yearStartUnitUsd) * 100 : 0
-
-  const yearSummary: YearlyAssessmentSummary = {
-    year: selectedYear,
-    isYtd,
-    openUnitUsd: yearStartUnitUsd,
-    highUnitUsd: yearHighUsd,
-    lowUnitUsd: yearLowUsd,
-    closeUnitUsd: yearEndUnitUsd,
-    yoyChangeUsd,
-    yoyChangePct,
-  }
-
-  if (timeframe === '1Y') {
-    return {
-      mode,
-      timeframe,
-      selectedYear,
-      points: yearPoints,
-      unitSuffix,
-      unitSingular,
-      startUnitUsd: yearStartUnitUsd,
-      currentUnitUsd: yearEndUnitUsd,
-      minUnitUsd: yearLowUsd,
-      maxUnitUsd: yearHighUsd,
-      changeUnitUsd: yoyChangeUsd,
-      changePct: yoyChangePct,
-      yearSummary,
-    }
-  }
-
-  // Drill down into `1Mo`, `1D`, `1H`, or `1M` strictly inside `selectedYear`
-  const { count, spanMs } = SUB_YEAR_CONFIG[timeframe]
-  const rawSliceEnd =
-    focusTimestampMs != null &&
-    focusTimestampMs >= yearStartMs &&
-    focusTimestampMs <= yearEndMs
-      ? focusTimestampMs
-      : yearEndMs
-
-  const sliceEndMs = Math.max(
-    Math.min(yearEndMs, yearStartMs + spanMs),
-    Math.min(yearEndMs, rawSliceEnd),
+export function computeTapeCounter(
+  activeTimestampMs: number,
+  historyStartMs: number,
+  historyEndMs: number,
+  totalSlots = TAPE_TOTAL_SLOTS,
+): { current: number; total: number; label: string } {
+  const totalSpan = Math.max(1, historyEndMs - historyStartMs)
+  const frac = Math.max(
+    0,
+    Math.min(1, (activeTimestampMs - historyStartMs) / totalSpan),
   )
-  const sliceStartMs = Math.max(yearStartMs, sliceEndMs - spanMs)
-
-  // Anchor endpoints seamlessly onto the chosen year's trajectory (or live 1D open/low/high for current YTD latest)
-  const isLiveTail = isYtd && Math.abs(yearEndMs - sliceEndMs) < HOUR_MS
-  const sliceEndUsd = isLiveTail
-    ? liveUnitUsd
-    : sampleSeriesAtTimestamp(yearPoints, sliceEndMs)
-
-  let sliceStartUsd: number
-  let guardLow: number | null = null
-  let guardHigh: number | null = null
-
-  if (isLiveTail && timeframe === '1D') {
-    if (mineral.day_open_usd && mineral.day_open_usd > 0) {
-      sliceStartUsd = convertToChartUnitUsd(
-        mineral.day_open_usd,
-        mineral.unit,
-        mode,
-      ).unitUsd
-    } else {
-      const denom = 1 + (mineral.trend_percentage || 0) / 100
-      sliceStartUsd = denom > 0.2 ? sliceEndUsd / denom : sliceEndUsd
-    }
-    if (mineral.day_low_usd && mineral.day_low_usd > 0) {
-      guardLow = convertToChartUnitUsd(mineral.day_low_usd, mineral.unit, mode).unitUsd
-    }
-    if (mineral.day_high_usd && mineral.day_high_usd > 0) {
-      guardHigh = convertToChartUnitUsd(mineral.day_high_usd, mineral.unit, mode).unitUsd
-    }
-  } else if (timeframe === '1Mo') {
-    sliceStartUsd = sampleSeriesAtTimestamp(yearPoints, sliceStartMs)
-  } else {
-    // Sub-day / intraday slice inside the chosen year
-    const driftScale =
-      timeframe === '1M' ? 0.025 : timeframe === '1H' ? 0.16 : 0.85
-    const baseTrendPct = isLiveTail
-      ? mineral.trend_percentage || 0
-      : Math.max(-2.5, Math.min(2.5, yoyChangePct / 12))
-    const denom = 1 + (baseTrendPct / 100) * driftScale
-    sliceStartUsd = denom > 0.5 ? sliceEndUsd / denom : sliceEndUsd
-  }
-
-  const points = generateBridgeSeries({
-    seedKey: `${mineral.symbol}:YEAR:${selectedYear}:${timeframe}:${Math.round(sliceEndMs / DAY_MS)}:v4`,
-    count,
-    startMs: sliceStartMs,
-    endMs: sliceEndMs,
-    startUsd: sliceStartUsd,
-    endUsd: sliceEndUsd,
-    vol: profile.volatility[timeframe],
-    phase: profile.cyclePhase + yearOffset * 0.9,
-    waveCount: timeframe === '1M' ? 3.1 : timeframe === '1H' ? 2.4 : 2.6,
-    guardLow,
-    guardHigh,
-  })
-
-  let minUsd = points[0].unitUsd
-  let maxUsd = points[0].unitUsd
-  for (const pt of points) {
-    if (pt.unitUsd < minUsd) minUsd = pt.unitUsd
-    if (pt.unitUsd > maxUsd) maxUsd = pt.unitUsd
-  }
-
-  const changeUsd = sliceEndUsd - sliceStartUsd
-  const changePct = sliceStartUsd > 0 ? (changeUsd / sliceStartUsd) * 100 : 0
-
-  return {
-    mode,
-    timeframe,
-    selectedYear,
-    points,
-    unitSuffix,
-    unitSingular,
-    startUnitUsd: sliceStartUsd,
-    currentUnitUsd: sliceEndUsd,
-    minUnitUsd: minUsd,
-    maxUnitUsd: maxUsd,
-    changeUnitUsd: changeUsd,
-    changePct,
-    yearSummary,
-  }
+  const current = Math.max(
+    1,
+    Math.min(totalSlots, Math.round(frac * (totalSlots - 1)) + 1),
+  )
+  return { current, total: totalSlots, label: `${current}/${totalSlots}` }
 }
-
-const LOCALE_BY_LANG: Record<LanguageCode, string> = {
-  en: 'en-GB',
-  sw: 'sw-TZ',
-  es: 'es-ES',
-}
-
-const EAT_TZ = 'Africa/Dar_es_Salaam'
 
 function getEatDayKey(timestampMs: number): string {
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: EAT_TZ,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date(timestampMs))
-  } catch {
-    return new Date(timestampMs).toISOString().slice(0, 10)
-  }
+  const d = new Date(timestampMs + EAT_OFFSET_MS)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 export function formatChartAxisDateByScale(
@@ -599,7 +534,7 @@ export function formatChartAxisDateByScale(
 
   try {
     if (scale === 'min') {
-      if (visibleSpanMs <= 3 * MINUTE_MS) {
+      if (visibleSpanMs <= 4 * MINUTE_MS) {
         return new Intl.DateTimeFormat(locale, {
           hour: '2-digit',
           minute: '2-digit',
@@ -617,6 +552,15 @@ export function formatChartAxisDateByScale(
     }
 
     if (scale === 'hours') {
+      const eatDate = new Date(timestampMs + EAT_OFFSET_MS)
+      // Highlight midnight transitions with date + month so multi-day intraday scrolls stay crystal clear
+      if (eatDate.getUTCHours() === 0 && eatDate.getUTCMinutes() === 0) {
+        return new Intl.DateTimeFormat(locale, {
+          day: 'numeric',
+          month: 'short',
+          timeZone: EAT_TZ,
+        }).format(date)
+      }
       return new Intl.DateTimeFormat(locale, {
         hour: '2-digit',
         minute: '2-digit',
@@ -641,8 +585,13 @@ export function formatChartAxisDateByScale(
       }).format(date)
     }
 
+    const eatDate = new Date(timestampMs + EAT_OFFSET_MS)
+    if (eatDate.getUTCMonth() === 0) {
+      return String(eatDate.getUTCFullYear())
+    }
     return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
+      month: 'short',
+      year: '2-digit',
       timeZone: EAT_TZ,
     }).format(date)
   } catch {
@@ -667,7 +616,7 @@ export function formatChartTooltipDateByScale(
       timeZone: EAT_TZ,
     }).format(date)
 
-    if (scale === 'min' && visibleSpanMs <= 3 * MINUTE_MS) {
+    if (scale === 'min' && visibleSpanMs <= 4 * MINUTE_MS) {
       const timePart = new Intl.DateTimeFormat(locale, {
         hour: '2-digit',
         minute: '2-digit',
@@ -695,8 +644,8 @@ export function formatChartTooltipDateByScale(
 }
 
 /**
- * Formats an explicit human-readable calendar date (and EAT time window for intraday views)
- * e.g. `24 Nov 2026 · 07:35–08:35 EAT` or `1 Jan 2024 – 31 Dec 2024`.
+ * Formats an explicit calendar date + EAT intraday time window
+ * (e.g. `24 Nov 2026 · 07:51–08:51 EAT` or `25 Oct 2026 – 24 Nov 2026`).
  */
 export function formatVisibleDateWindow(
   startMs: number,
@@ -735,7 +684,7 @@ export function formatVisibleDateWindow(
       }).format(d)
 
     if (scale === 'min' || scale === 'hours') {
-      const withSeconds = spanMs <= 3 * MINUTE_MS
+      const withSeconds = spanMs <= 4 * MINUTE_MS
       const sameDay = getEatDayKey(startMs) === getEatDayKey(endMs)
       if (sameDay) {
         return `${fmtDate(endDate)} · ${fmtTime(startDate, withSeconds)}–${fmtTime(endDate, withSeconds)} EAT`
@@ -747,6 +696,145 @@ export function formatVisibleDateWindow(
   } catch {
     return `${startDate.toISOString().slice(0, 10)} – ${endDate.toISOString().slice(0, 10)}`
   }
+}
+
+const FIXED_TIME_STEPS_MS: readonly number[] = [
+  15_000,
+  30_000,
+  MINUTE_MS,
+  2 * MINUTE_MS,
+  5 * MINUTE_MS,
+  10 * MINUTE_MS,
+  15 * MINUTE_MS,
+  30 * MINUTE_MS,
+  HOUR_MS,
+  2 * HOUR_MS,
+  4 * HOUR_MS,
+  6 * HOUR_MS,
+  12 * HOUR_MS,
+  DAY_MS,
+  2 * DAY_MS,
+  5 * DAY_MS,
+  7 * DAY_MS,
+  14 * DAY_MS,
+]
+
+/**
+ * Generates clean, calendar- & clock-aligned X-axis ticks that glide naturally
+ * as the user pans and zooms, with guaranteed non-overlapping horizontal spacing.
+ */
+export function computeNiceTimeTicks(params: {
+  viewStartMs: number
+  viewEndMs: number
+  scale: TimelineScale
+  padLeft: number
+  plotWidth: number
+  isCompact: boolean
+  language: LanguageCode
+}): TimeAxisTick[] {
+  const { viewStartMs, viewEndMs, scale, padLeft, plotWidth, isCompact, language } =
+    params
+  const spanMs = Math.max(1, viewEndMs - viewStartMs)
+  const minSpacingPx = isCompact ? 64 : 88
+  const targetTicks = Math.max(
+    3,
+    Math.min(isCompact ? 4 : 7, Math.floor(plotWidth / minSpacingPx)),
+  )
+
+  const candidates: number[] = []
+
+  if (spanMs > 55 * DAY_MS) {
+    // Calendar month / quarter / year boundaries in EAT (UTC+3)
+    const approxMonths = spanMs / (30.4375 * DAY_MS)
+    const rawMonthStep = approxMonths / targetTicks
+    const monthStep =
+      rawMonthStep <= 1
+        ? 1
+        : rawMonthStep <= 2
+          ? 2
+          : rawMonthStep <= 3
+            ? 3
+            : rawMonthStep <= 6
+              ? 6
+              : 12
+
+    const startEat = new Date(viewStartMs + EAT_OFFSET_MS)
+    let yr = startEat.getUTCFullYear()
+    let mo = Math.floor(startEat.getUTCMonth() / monthStep) * monthStep
+
+    for (let guard = 0; guard < 120; guard++) {
+      const tickMs = Date.UTC(yr, mo, 1, 0, 0, 0) - EAT_OFFSET_MS
+      if (tickMs > viewEndMs) break
+      if (tickMs >= viewStartMs) {
+        candidates.push(tickMs)
+      }
+      mo += monthStep
+      while (mo >= 12) {
+        mo -= 12
+        yr += 1
+      }
+    }
+  } else {
+    // Fixed clock/day interval aligned to EAT midnight
+    const rawStep = spanMs / targetTicks
+    let chosenStep = FIXED_TIME_STEPS_MS[FIXED_TIME_STEPS_MS.length - 1]
+    for (const s of FIXED_TIME_STEPS_MS) {
+      if (s >= rawStep) {
+        chosenStep = s
+        break
+      }
+    }
+
+    const firstEat =
+      Math.ceil((viewStartMs + EAT_OFFSET_MS) / chosenStep) * chosenStep
+    for (
+      let t = firstEat - EAT_OFFSET_MS;
+      t <= viewEndMs;
+      t += chosenStep
+    ) {
+      if (t >= viewStartMs) {
+        candidates.push(t)
+      }
+      if (candidates.length > 40) break
+    }
+  }
+
+  // Filter for clean edge margins & non-overlapping labels
+  const edgeMargin = isCompact ? 26 : 34
+  const ticks: TimeAxisTick[] = []
+  let lastX = -Infinity
+
+  for (const ts of candidates) {
+    const x = padLeft + ((ts - viewStartMs) / spanMs) * plotWidth
+    if (x < padLeft + edgeMargin || x > padLeft + plotWidth - edgeMargin) {
+      continue
+    }
+    if (x - lastX < minSpacingPx) continue
+    ticks.push({
+      timestampMs: ts,
+      x,
+      label: formatChartAxisDateByScale(ts, scale, spanMs, language),
+    })
+    lastX = x
+  }
+
+  // Fallback if tight edge constraints filtered everything
+  if (ticks.length < 2) {
+    const fallbackCount = isCompact ? 3 : 4
+    const fallback: TimeAxisTick[] = []
+    for (let i = 0; i < fallbackCount; i++) {
+      const frac = 0.12 + (i / (fallbackCount - 1)) * 0.76
+      const ts = Math.round(viewStartMs + frac * spanMs)
+      fallback.push({
+        timestampMs: ts,
+        x: padLeft + frac * plotWidth,
+        label: formatChartAxisDateByScale(ts, scale, spanMs, language),
+      })
+    }
+    return fallback
+  }
+
+  return ticks
 }
 
 /**
@@ -769,8 +857,8 @@ export function computeNiceAxisTicks(
     hi = hi + pad
   } else {
     const span = hi - lo
-    lo = Math.max(0, lo - span * 0.08)
-    hi = hi + span * 0.08
+    lo = Math.max(0, lo - span * 0.1)
+    hi = hi + span * 0.1
   }
 
   const rawStep = (hi - lo) / Math.max(2, targetTicks - 1)
@@ -798,7 +886,7 @@ export function computeNiceAxisTicks(
 
   return {
     min: niceMin,
-    max: ticks.length > 0 ? ticks[ticks.length - 1] : niceMax,
+    max: niceMax,
     step,
     ticks,
   }
