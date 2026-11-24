@@ -322,14 +322,14 @@ function Opportunities() {
               </button>
             </div>
           ) : view === 'map' ? (
-            <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-              <div className="rounded-xl border border-ink/10 bg-white/50 p-4">
+            <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-ink/10 bg-white/50 p-2.5 sm:p-4">
                 <TanzaniaMap projects={results} selectedId={selectedProject?.id} onSelect={setSelected} className="w-full" />
-                <div className="mt-2 px-2">
+                <div className="mt-2 px-1 sm:px-2">
                   <MapLegend />
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="min-w-0 max-w-full space-y-4">
                 {selectedProject && <ProjectCard project={selectedProject} saved={isSaved(selectedProject.id)} onToggleSave={toggle} />}
                 <ul className="divide-y divide-ink/10 rounded-xl border border-ink/10 bg-white/50">
                   {results.map((raw) => {

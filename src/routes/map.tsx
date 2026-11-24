@@ -49,22 +49,24 @@ function MapPage() {
   )
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-ink pt-[72px] text-paper">
+    <div className="relative min-h-screen overflow-x-hidden bg-ink pt-[72px] pb-12 text-paper">
       <div className="contours absolute inset-0" aria-hidden />
-      <div className="relative mx-auto max-w-[1440px] px-5 py-10 lg:px-8">
-        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-          <div>
-            <p className="eyebrow mb-3 text-gold">{t('mapPage.eyebrow')} · 31 MIKOA ADM1 GIS</p>
-            <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('mapPage.title')}</h1>
+      <div className="relative mx-auto w-full max-w-[1440px] px-3.5 py-7 sm:px-5 sm:py-10 lg:px-8">
+        <div className="flex min-w-0 flex-col justify-between gap-5 lg:flex-row lg:items-end lg:gap-6">
+          <div className="min-w-0">
+            <p className="eyebrow mb-2 text-gold sm:mb-3">{t('mapPage.eyebrow')} · 31 MIKOA ADM1 GIS</p>
+            <h1 className="font-display break-words text-3xl font-light leading-tight sm:text-5xl sm:leading-none md:text-6xl">
+              {t('mapPage.title')}
+            </h1>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
             <DarkSelect value={mineral} onChange={setMineral} label={t('mapPage.allMinerals')} options={MINERALS} renderOption={tv} />
             <DarkSelect value={type} onChange={setType} label={t('mapPage.allTypes')} options={OPPORTUNITY_TYPES} renderOption={tv} />
             <DarkSelect value={stage} onChange={setStage} label={t('mapPage.allStages')} options={STAGES} renderOption={tv} />
             <select
               value={minLevel}
               onChange={(e) => setMinLevel(Number(e.target.value))}
-              className="h-11 rounded-md border border-paper/15 bg-ink-2 px-3 text-sm text-paper outline-none focus:border-gold"
+              className="h-10 min-w-0 w-full truncate rounded-md border border-paper/15 bg-ink-2 px-2.5 text-xs text-paper outline-none focus:border-gold sm:h-11 sm:px-3 sm:text-sm"
               aria-label={t('mapPage.minVerification')}
             >
               {[0, 1, 2, 3, 4].map((l) => (
@@ -76,16 +78,16 @@ function MapPage() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[270px_1fr_360px]">
+        <div className="mt-6 grid min-w-0 gap-5 sm:mt-8 sm:gap-6 lg:grid-cols-[270px_minmax(0,1fr)_360px]">
           {/* Region ("Mikoa") interactive directory */}
-          <aside className="order-3 rounded-xl border border-paper/10 bg-paper/[0.03] p-5 lg:order-1">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="eyebrow text-paper/50">{t('mapPage.resultsByRegion')}</div>
+          <aside className="order-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.03] p-4 sm:p-5 lg:order-1">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="eyebrow min-w-0 text-paper/50">{t('mapPage.resultsByRegion')}</div>
               {selectedRegion && (
                 <button
                   type="button"
                   onClick={() => setSelectedRegion(null)}
-                  className="font-mono text-[10px] text-gold underline hover:text-paper"
+                  className="shrink-0 font-mono text-[10px] text-gold underline hover:text-paper"
                 >
                   All 31 Mikoa
                 </button>
@@ -98,19 +100,19 @@ function MapPage() {
                 {byRegion.map(([r, n]) => {
                   const isActive = selectedRegion?.toLowerCase() === r.toLowerCase()
                   return (
-                    <li key={r}>
+                    <li key={r} className="min-w-0">
                       <button
                         type="button"
                         onClick={() => setSelectedRegion(isActive ? null : r)}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                        className={`w-full max-w-full rounded-lg border px-3 py-2 text-left transition ${
                           isActive
                             ? 'border-gold/50 bg-ochre/25 text-gold'
                             : 'border-transparent hover:border-paper/15 hover:bg-paper/5'
                         }`}
                       >
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium">{r}</span>
-                          <span className="font-mono text-xs text-paper/60">{n}</span>
+                        <div className="flex min-w-0 justify-between gap-2 text-sm">
+                          <span className="truncate font-medium">{r}</span>
+                          <span className="shrink-0 font-mono text-xs text-paper/60 tabular-nums">{n}</span>
                         </div>
                         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-paper/10">
                           <div className="h-full rounded-full bg-gold" style={{ width: `${(n / byRegion[0][1]) * 100}%` }} />
@@ -151,15 +153,16 @@ function MapPage() {
 
             <div className="mt-6 space-y-3 border-t border-paper/10 pt-5 text-xs leading-relaxed text-paper/55">
               <p className="flex gap-2">
-                <UserRound size={14} className="shrink-0 text-gold" /> {t('mapPage.markerNote')}
+                <UserRound size={14} className="shrink-0 text-gold" /> <span className="min-w-0 break-words">{t('mapPage.markerNote')}</span>
               </p>
               <p className="flex gap-2">
-                <Database size={14} className="shrink-0 text-gold" /> {t('mapPage.datasetNote')}
+                <Database size={14} className="shrink-0 text-gold" /> <span className="min-w-0 break-words">{t('mapPage.datasetNote')}</span>
               </p>
             </div>
           </aside>
 
-          <div className="order-1 rounded-xl border border-paper/10 bg-paper/[0.02] p-4 lg:order-2">
+          {/* Center GIS Map Canvas Container */}
+          <div className="order-1 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.02] p-2.5 sm:p-4 lg:order-2">
             <TanzaniaMap
               projects={results}
               selectedId={current?.id}
@@ -168,35 +171,36 @@ function MapPage() {
               onSelectRegion={setSelectedRegion}
               variant="dark"
               className="w-full"
-              heightClass="h-[620px]"
+              heightClass="h-[360px] sm:h-[490px] lg:h-[620px]"
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 px-2 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 pt-3 sm:px-2">
               <MapLegend dark />
               <span className="flex items-center gap-1.5 text-[11px] text-paper/40">
-                <Info size={12} /> {t('mapPage.outlineNote')}
+                <Info size={12} className="shrink-0" /> <span>{t('mapPage.outlineNote')}</span>
               </span>
             </div>
           </div>
 
-          <aside className="order-2 space-y-4 lg:order-3">
+          {/* Right Selected-Option & Project Inspection Dashboard */}
+          <aside className="order-2 min-w-0 max-w-full space-y-4 lg:order-3">
             {activeRegionMeta && (
-              <div className="rounded-xl border border-gold/35 bg-ink-2 p-5">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-gold">
+              <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-gold/35 bg-ink-2 p-3.5 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 break-words font-mono text-[10px] uppercase tracking-wider text-gold">
                     {activeRegionMeta.regionCode} · {activeRegionMeta.zone}
                   </span>
                   <button
                     type="button"
                     onClick={() => setSelectedRegion(null)}
-                    className="font-mono text-[10px] text-paper/60 underline hover:text-gold"
+                    className="shrink-0 font-mono text-[10px] text-paper/60 underline hover:text-gold"
                   >
                     Reset Mkoa
                   </button>
                 </div>
-                <h3 className="font-display mt-1 text-2xl font-medium text-paper">
+                <h3 className="font-display mt-1 break-words text-xl font-medium text-paper sm:text-2xl">
                   Mkoa wa {activeRegionMeta.shapeName}
                 </h3>
-                <p className="mt-1 font-mono text-xs text-paper/70">
+                <p className="mt-1 break-words font-mono text-[11px] text-paper/70 sm:text-xs">
                   Regional HQ: {activeRegionMeta.capital} · Est. Active Licences: ~{activeRegionMeta.activeLicencesEstimate}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -213,60 +217,64 @@ function MapPage() {
             )}
 
             {current ? (
-              <div key={current.id} className="overflow-hidden rounded-xl border border-paper/10 bg-ink-2 animate-rise">
+              <div key={current.id} className="min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-ink-2 animate-rise">
                 <img src={img(current.image, 720)} alt="" className="aspect-[16/9] w-full object-cover" />
-                <div className="p-6">
-                  <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 p-3.5 sm:p-5 lg:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-mono text-[10px] tracking-[0.14em] text-paper/50">{current.id}</span>
                     <VerificationBadge level={current.verification.level} />
                   </div>
-                  <h2 className="font-display mt-3 text-2xl leading-snug">{current.title}</h2>
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-paper/60">
-                    <MapPin size={14} /> {current.district}, {current.region}
+                  <h2 className="font-display mt-2.5 break-words text-xl leading-snug sm:mt-3 sm:text-2xl">{current.title}</h2>
+                  <p className="mt-2 flex items-center gap-1.5 break-words text-xs text-paper/60 sm:text-sm">
+                    <MapPin size={14} className="shrink-0" /> <span className="min-w-0 break-words">{current.district}, {current.region}</span>
                   </p>
-                  <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-paper/10 pt-4 text-sm">
+                  <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-paper/10 pt-3.5 text-sm sm:mt-5 sm:grid-cols-2 sm:gap-4 sm:pt-4">
                     <div className="min-w-0">
                       <dt className="eyebrow !text-[10px] text-paper/40">{t('mapPage.mineral')}</dt>
-                      <dd className="mt-1 break-words">{current.minerals.map(tv).join(', ')}</dd>
+                      <dd className="mt-0.5 break-words sm:mt-1">{current.minerals.map(tv).join(', ')}</dd>
                     </div>
                     <div className="min-w-0">
                       <dt className="eyebrow !text-[10px] text-paper/40">{t('mapPage.seeking')}</dt>
-                      <dd className="mt-1 font-semibold text-gold">{formatUsd(current.investmentUsd)}</dd>
+                      <dd className="mt-0.5 font-semibold text-gold tabular-nums sm:mt-1">{formatUsd(current.investmentUsd)}</dd>
                     </div>
                     <div className="min-w-0">
                       <dt className="eyebrow !text-[10px] text-paper/40">{t('mapPage.licence')}</dt>
-                      <dd className="mt-1 break-words">{tv(current.licence.type)}</dd>
+                      <dd className="mt-0.5 break-words sm:mt-1">{tv(current.licence.type)}</dd>
                     </div>
                     <div className="min-w-0">
                       <dt className="eyebrow !text-[10px] text-paper/40">{t('mapPage.stage')}</dt>
-                      <dd className="mt-1 break-words">{tv(current.stage)}</dd>
+                      <dd className="mt-0.5 break-words sm:mt-1">{tv(current.stage)}</dd>
                     </div>
                   </dl>
-                  <Link to="/opportunities/$projectId" params={{ projectId: current.id }} className="btn-primary mt-6 w-full">
-                    {t('mapPage.viewProject')} <ArrowRight size={16} />
+                  <Link
+                    to="/opportunities/$projectId"
+                    params={{ projectId: current.id }}
+                    className="btn-primary mt-5 flex w-full max-w-full items-center justify-center gap-2 sm:mt-6"
+                  >
+                    <span className="truncate">{t('mapPage.viewProject')}</span> <ArrowRight size={16} className="shrink-0" />
                   </Link>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-paper/20 p-8 text-center text-sm text-paper/60">
+              <div className="rounded-xl border border-dashed border-paper/20 p-6 text-center text-sm text-paper/60 sm:p-8">
                 {t('mapPage.adjustFilters')}
               </div>
             )}
-            <ul className="max-h-72 divide-y divide-paper/10 overflow-y-auto rounded-xl border border-paper/10">
+            <ul className="max-h-72 w-full max-w-full divide-y divide-paper/10 overflow-y-auto rounded-xl border border-paper/10">
               {results.map((raw) => {
                 const p = localizeProject(raw)
                 return (
-                  <li key={p.id}>
+                  <li key={p.id} className="min-w-0">
                     <button
                       onClick={() => {
                         setSelected(p.id)
                         setSelectedRegion(p.region)
                       }}
-                      className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-paper/5 ${
+                      className={`flex w-full max-w-full items-center justify-between gap-3 px-3.5 py-3 text-left text-sm transition hover:bg-paper/5 sm:px-4 ${
                         p.id === current?.id ? 'bg-paper/[0.07] text-gold' : 'text-paper/80'
                       }`}
                     >
-                      <span className="truncate">{p.title}</span>
+                      <span className="min-w-0 flex-1 truncate">{p.title}</span>
                       <span className="shrink-0 font-mono text-[11px] text-paper/40">{p.region}</span>
                     </button>
                   </li>
@@ -298,7 +306,7 @@ function DarkSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       aria-label={label}
-      className="h-11 rounded-md border border-paper/15 bg-ink-2 px-3 text-sm text-paper outline-none focus:border-gold"
+      className="h-10 min-w-0 w-full truncate rounded-md border border-paper/15 bg-ink-2 px-2.5 text-xs text-paper outline-none focus:border-gold sm:h-11 sm:px-3 sm:text-sm"
     >
       <option value="">{label}</option>
       {options.map((o) => (

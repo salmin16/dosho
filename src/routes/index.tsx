@@ -624,7 +624,7 @@ function MapTeaser() {
             {t('home.mapTeaser.cta')} <Compass size={16} />
           </Link>
         </div>
-        <div className="relative">
+        <div className="relative min-w-0 max-w-full overflow-hidden">
           <TanzaniaMap projects={PROJECTS} variant="dark" className="w-full" />
           <div className="mt-4">
             <MapLegend dark />

@@ -109,7 +109,7 @@ export default function TanzaniaMap({
   onSelectRegion,
   variant = 'dark',
   className = '',
-  heightClass = 'h-[580px]',
+  heightClass = 'h-[360px] sm:h-[480px] lg:h-[580px]',
 }: TanzaniaMapProps) {
   const { t, localizeProject, currency, rateForSelected, formatUsd: formatLocalizedUsd } =
     useLocalization();
@@ -273,16 +273,17 @@ export default function TanzaniaMap({
               if (nextRegion) {
                 const bounds = polyLayer.getBounds();
                 if (bounds.isValid()) {
+                  const isNarrow = window.innerWidth < 640;
                   map.flyToBounds(bounds, {
-                    padding: [48, 48],
+                    padding: isNarrow ? [20, 20] : [48, 48],
                     maxZoom: 8,
-                    duration: 0.8,
+                    duration: 0.75,
                   });
                 }
               } else {
                 map.flyToBounds(TANZANIA_BOUNDS, {
-                  padding: [20, 20],
-                  duration: 0.8,
+                  padding: [16, 16],
+                  duration: 0.75,
                 });
               }
             },
@@ -299,14 +300,23 @@ export default function TanzaniaMap({
     markersLayerGroupRef.current = markersGroup;
     mapInstanceRef.current = map;
 
-    map.fitBounds(TANZANIA_BOUNDS, { padding: [18, 18] });
+    map.fitBounds(TANZANIA_BOUNDS, { padding: [14, 14] });
 
     const timer = window.setTimeout(() => {
       map.invalidateSize();
     }, 150);
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        map.invalidateSize();
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
       window.clearTimeout(timer);
+      resizeObserver?.disconnect();
       map.remove();
       mapInstanceRef.current = null;
       geoJsonLayerRef.current = null;
@@ -524,34 +534,34 @@ export default function TanzaniaMap({
 
   return (
     <div
-      className={`relative isolate z-0 overflow-hidden rounded-xl border border-gold/25 bg-ink text-paper shadow-md ${className}`}
+      className={`relative isolate z-0 w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-gold/25 bg-ink text-paper shadow-md ${className}`}
       role="region"
       aria-label={t('map.ariaLabel')}
     >
-      {/* Top Bar: Clean Status Pill + Region Selector + Reset */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-gold/20 bg-ink-2 px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex h-2 w-2 rounded-full bg-gold" />
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">
+      {/* Top Bar: Mobile-Safe GIS Title + Region Selector + Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold/20 bg-ink-2 px-3 py-2.5 sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-gold" />
+          <span className="truncate font-mono text-[10px] font-semibold uppercase tracking-[0.11em] text-gold sm:text-[11px] sm:tracking-[0.14em]">
             Tanzania Regional GIS (31 Mikoa)
           </span>
           {hoveredRegionName && (
-            <span className="rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold">
-              Hover: {hoveredRegionName} (Click for details)
+            <span className="hidden shrink-0 rounded border border-gold/30 bg-ochre/20 px-2 py-0.5 font-mono text-[10px] text-gold md:inline-flex">
+              Hover: {hoveredRegionName}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:gap-2">
           <select
             aria-label="Select a Tanzanian Region (Mkoa)"
             value={activeRegion ?? ''}
             onChange={(e) =>
               handleSelectRegionFromDropdown(e.target.value || null)
             }
-            className="h-8 rounded-lg border border-gold/35 bg-ink px-2.5 font-mono text-[11px] text-paper outline-none transition focus:border-gold"
+            className="h-8 min-w-0 flex-1 truncate rounded-lg border border-gold/35 bg-ink px-2 font-mono text-[10.5px] text-paper outline-none transition focus:border-gold sm:w-48 sm:flex-initial sm:px-2.5 sm:text-[11px]"
           >
-            <option value="">Select Region (All 31 Mikoa)</option>
+            <option value="">All 31 Mikoa</option>
             {TANZANIA_ADM1_GEOJSON.features
               .map((f) => f.properties.shapeName)
               .sort((a, b) => a.localeCompare(b))
@@ -565,12 +575,13 @@ export default function TanzaniaMap({
           <button
             type="button"
             onClick={() => setShowRegionLabels((s) => !s)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition ${
+            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2 font-mono text-[10px] font-semibold uppercase tracking-wider transition sm:px-2.5 ${
               showRegionLabels
                 ? 'border-gold/45 bg-ochre/30 text-gold'
                 : 'border-paper/20 bg-ink text-paper/70 hover:text-paper'
             }`}
             title="Toggle Regional Labels"
+            aria-label="Toggle Regional Labels"
           >
             <Layers size={12} />
             <span className="hidden sm:inline">Labels</span>
@@ -580,80 +591,85 @@ export default function TanzaniaMap({
             <button
               type="button"
               onClick={handleResetView}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gold/40 bg-ochre px-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-paper transition hover:bg-ochre-dark"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-gold/40 bg-ochre px-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-paper transition hover:bg-ochre-dark sm:px-2.5"
               title="Reset Tanzania Bounds"
             >
               <RotateCcw size={12} />
-              <span>Reset Map</span>
+              <span>Reset</span>
             </button>
           )}
         </div>
       </div>
 
       {/* Main Interactive Leaflet Map Canvas */}
-      <div className={`relative w-full ${heightClass}`}>
-        {!isMounted && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-ink-2 p-8 text-center">
-            <Compass size={28} className="animate-spin text-gold" />
-            <div className="font-mono text-xs uppercase tracking-widest text-gold">
-              Initializing Tanzania Regional GIS Engine (31 Mikoa)...
+      <div className="relative w-full max-w-full overflow-hidden">
+        <div className={`relative w-full ${heightClass}`}>
+          {!isMounted && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-ink-2 p-6 text-center">
+              <Compass size={26} className="animate-spin text-gold" />
+              <div className="font-mono text-[11px] uppercase tracking-widest text-gold">
+                Initializing Tanzania Regional GIS (31 Mikoa)...
+              </div>
             </div>
-          </div>
-        )}
-        <div
-          ref={mapContainerRef}
-          className="h-full w-full"
-          style={{
-            height: '100%',
-            width: '100%',
-            background: variant === 'dark' ? '#111318' : '#15120f',
-          }}
-        />
+          )}
+          <div
+            ref={mapContainerRef}
+            className="h-full w-full"
+            style={{
+              height: '100%',
+              width: '100%',
+              background: variant === 'dark' ? '#111318' : '#15120f',
+            }}
+          />
+        </div>
 
-        {/* Organized Clicked-Region Dossier Card (ONLY visible when a region is clicked) */}
+        {/* Selected Region Dossier: In-flow below canvas on mobile (never clipped or blocking zoom), floating card on md+ */}
         {clickedRegionMeta && (
-          <div className="pointer-events-auto absolute bottom-4 left-4 z-[450] w-[calc(100%-2rem)] max-w-sm rounded-xl border border-gold/40 bg-ink/95 p-4 shadow-md backdrop-blur-md">
-            <div className="flex items-start justify-between gap-3 border-b border-paper/10 pb-2.5">
-              <div>
-                <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
-                  <MapPin size={11} />
-                  {clickedRegionMeta.regionCode} · {clickedRegionMeta.zone}
+          <div className="w-full max-w-full min-w-0 border-t border-gold/30 bg-ink/95 p-3.5 shadow-md md:pointer-events-auto md:absolute md:bottom-4 md:left-4 md:z-[450] md:w-[calc(100%-2rem)] md:max-w-sm md:rounded-xl md:border md:border-gold/40 md:p-4 md:backdrop-blur-md">
+            <div className="flex items-start justify-between gap-2.5 border-b border-paper/10 pb-2.5">
+              <div className="min-w-0 flex-1">
+                <span className="inline-flex max-w-full flex-wrap items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+                  <MapPin size={11} className="shrink-0" />
+                  <span className="break-words">
+                    {clickedRegionMeta.regionCode} · {clickedRegionMeta.zone}
+                  </span>
                 </span>
-                <h4 className="font-display mt-0.5 text-xl font-medium text-paper">
+                <h4 className="font-display mt-0.5 break-words text-lg font-medium text-paper sm:text-xl">
                   Mkoa wa {clickedRegionMeta.shapeName}
                 </h4>
               </div>
               <button
                 type="button"
                 onClick={handleResetView}
-                className="rounded-md border border-paper/15 bg-paper/5 p-1 text-paper/70 transition hover:border-gold/40 hover:text-gold"
+                className="shrink-0 rounded-md border border-paper/15 bg-paper/5 p-1.5 text-paper/70 transition hover:border-gold/40 hover:text-gold"
                 title="Close Region Details & Reset Zoom"
+                aria-label="Close Region Details"
               >
                 <X size={14} />
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-paper/10 bg-ink-2/90 p-2.5 font-mono text-[11px]">
-              <div>
+            <div className="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-paper/10 bg-ink-2/90 p-2.5 font-mono text-[11px] sm:grid-cols-2">
+              <div className="min-w-0">
                 <div className="text-[9px] uppercase text-paper/50">
                   Regional Capital
                 </div>
-                <div className="font-semibold text-paper">
+                <div className="break-words font-semibold text-paper">
                   {clickedRegionMeta.capital}
                 </div>
               </div>
-              <div>
+              <div className="min-w-0 border-t border-paper/10 pt-2 sm:border-t-0 sm:pt-0">
                 <div className="text-[9px] uppercase text-paper/50">
                   Platform Listings
                 </div>
-                <div className="font-semibold text-gold">
-                  {clickedRegionProjects.length} Active (Est. ~
+                <div className="break-words font-semibold text-gold tabular-nums">
+                  {clickedRegionProjects.length} Active (~
                   {clickedRegionMeta.activeLicencesEstimate} Licences)
                 </div>
               </div>
             </div>
 
-            <div className="mt-3">
+            <div className="mt-3 min-w-0">
               <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
                 Primary Mineral Endowments
               </div>
@@ -670,24 +686,24 @@ export default function TanzaniaMap({
             </div>
 
             {clickedRegionProjects.length > 0 && (
-              <div className="mt-3 border-t border-paper/10 pt-2.5">
+              <div className="mt-3 min-w-0 border-t border-paper/10 pt-2.5">
                 <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
                   Opportunities in {clickedRegionMeta.shapeName}
                 </div>
-                <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto pr-1">
+                <ul className="mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-0.5">
                   {clickedRegionProjects.map((rawProj) => {
                     const p = localizeProject(rawProj);
                     return (
-                      <li key={p.id}>
+                      <li key={p.id} className="min-w-0">
                         <button
                           type="button"
                           onClick={() => onSelect?.(p.id)}
-                          className="flex w-full items-center justify-between rounded bg-paper/5 px-2 py-1 text-left text-xs text-paper hover:bg-ochre/25 hover:text-gold"
+                          className="flex w-full max-w-full items-center justify-between gap-2 rounded bg-paper/5 px-2.5 py-1.5 text-left text-xs text-paper hover:bg-ochre/25 hover:text-gold"
                         >
-                          <span className="truncate font-medium">
+                          <span className="min-w-0 flex-1 truncate font-medium">
                             {p.title}
                           </span>
-                          <span className="ml-2 shrink-0 font-mono text-[10px] text-gold">
+                          <span className="shrink-0 font-mono text-[10px] text-gold tabular-nums">
                             {formatLocalizedUsd(p.investmentUsd)}
                           </span>
                         </button>
@@ -702,19 +718,21 @@ export default function TanzaniaMap({
       </div>
 
       {/* Bottom Interactive Status Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gold/20 bg-ink-2 px-4 py-2.5 font-mono text-[11px] text-paper/70">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 text-gold">
-            <MapPin size={12} />
-            {activeRegion
-              ? `Selected: Mkoa wa ${activeRegion}`
-              : 'Click any Region (Mkoa) or Project Pin to inspect'}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gold/20 bg-ink-2 px-3 py-2.5 font-mono text-[10px] text-paper/70 sm:px-4 sm:text-[11px]">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-gold">
+            <MapPin size={12} className="shrink-0" />
+            <span className="break-words">
+              {activeRegion
+                ? `Selected: Mkoa wa ${activeRegion}`
+                : 'Tap any Region (Mkoa) or Pin to inspect'}
+            </span>
           </span>
-          <span className="text-paper/30">·</span>
-          <span>{projects.length} Mapped Opportunities</span>
+          <span className="text-paper/30" aria-hidden="true">·</span>
+          <span className="shrink-0 tabular-nums">{projects.length} Mapped Opportunities</span>
         </div>
-        <span className="text-[10px] text-paper/55">
-          Scroll to zoom · Drag to pan · Click region for organized dossier
+        <span className="hidden text-[10px] text-paper/55 sm:inline">
+          Pinch or scroll to zoom · Drag to pan · Tap region for dossier
         </span>
       </div>
     </div>
