@@ -6,17 +6,15 @@ import {
 import type { LanguageCode } from '../i18n'
 import type { MineralPriceRecord } from '../types/database'
 
-export type ChartTimeframe = '1D' | '5D' | '1M' | '1Y' | '5Y' | 'Max'
+export type ChartTimeframe = '7D' | '30D' | '90D' | '1Y'
 
 export type ChartPricingMode = 'metric_local' | 'standard'
 
 export const CHART_TIMEFRAMES: readonly ChartTimeframe[] = [
-  '1D',
-  '5D',
-  '1M',
+  '7D',
+  '30D',
+  '90D',
   '1Y',
-  '5Y',
-  'Max',
 ] as const
 
 export type LocalUnitSuffix = '/g' | '/kg' | '/ct'
@@ -130,7 +128,7 @@ export function convertToChartUnitUsd(
 
 interface HistoricalProfile {
   /** Net fractional change over each horizon (e.g. 0.28 means +28% over the window) */
-  drift: Record<Exclude<ChartTimeframe, '1D'>, number>
+  drift: Record<ChartTimeframe, number>
   /** Relative noise/oscillation amplitude for realistic commodity price discovery */
   volatility: Record<ChartTimeframe, number>
   /** Multi-cycle wave signature for longer horizons */
@@ -139,60 +137,60 @@ interface HistoricalProfile {
 
 const MINERAL_PROFILES: Record<string, HistoricalProfile> = {
   XAU: {
-    drift: { '5D': 0.024, '1M': 0.058, '1Y': 0.285, '5Y': 0.56, Max: 0.94 },
-    volatility: { '1D': 0.0042, '5D': 0.0095, '1M': 0.018, '1Y': 0.042, '5Y': 0.075, Max: 0.095 },
+    drift: { '7D': 0.026, '30D': 0.058, '90D': 0.118, '1Y': 0.285 },
+    volatility: { '7D': 0.01, '30D': 0.018, '90D': 0.028, '1Y': 0.042 },
     cyclePhase: 0.4,
   },
   XAG: {
-    drift: { '5D': 0.036, '1M': 0.074, '1Y': 0.34, '5Y': 0.48, Max: 0.88 },
-    volatility: { '1D': 0.0075, '5D': 0.016, '1M': 0.032, '1Y': 0.068, '5Y': 0.11, Max: 0.13 },
+    drift: { '7D': 0.038, '30D': 0.074, '90D': 0.152, '1Y': 0.34 },
+    volatility: { '7D': 0.017, '30D': 0.032, '90D': 0.048, '1Y': 0.068 },
     cyclePhase: 1.1,
   },
   HG: {
-    drift: { '5D': 0.018, '1M': 0.034, '1Y': 0.145, '5Y': 0.38, Max: 0.62 },
-    volatility: { '1D': 0.0055, '5D': 0.013, '1M': 0.026, '1Y': 0.058, '5Y': 0.095, Max: 0.115 },
+    drift: { '7D': 0.019, '30D': 0.034, '90D': 0.078, '1Y': 0.145 },
+    volatility: { '7D': 0.014, '30D': 0.026, '90D': 0.04, '1Y': 0.058 },
     cyclePhase: 2.0,
   },
   TZN: {
-    drift: { '5D': 0.022, '1M': 0.046, '1Y': 0.165, '5Y': 0.44, Max: 0.78 },
-    volatility: { '1D': 0.0032, '5D': 0.007, '1M': 0.014, '1Y': 0.032, '5Y': 0.052, Max: 0.068 },
+    drift: { '7D': 0.024, '30D': 0.046, '90D': 0.088, '1Y': 0.165 },
+    volatility: { '7D': 0.0075, '30D': 0.014, '90D': 0.022, '1Y': 0.032 },
     cyclePhase: 0.85,
   },
   RBY: {
-    drift: { '5D': 0.028, '1M': 0.054, '1Y': 0.21, '5Y': 0.52, Max: 0.86 },
-    volatility: { '1D': 0.0036, '5D': 0.0078, '1M': 0.016, '1Y': 0.036, '5Y': 0.058, Max: 0.072 },
+    drift: { '7D': 0.03, '30D': 0.054, '90D': 0.105, '1Y': 0.21 },
+    volatility: { '7D': 0.0082, '30D': 0.016, '90D': 0.024, '1Y': 0.036 },
     cyclePhase: 1.55,
   },
   GRF: {
-    drift: { '5D': 0.038, '1M': 0.068, '1Y': 0.19, '5Y': 0.36, Max: 0.54 },
-    volatility: { '1D': 0.005, '5D': 0.011, '1M': 0.024, '1Y': 0.052, '5Y': 0.088, Max: 0.105 },
+    drift: { '7D': 0.04, '30D': 0.068, '90D': 0.112, '1Y': 0.19 },
+    volatility: { '7D': 0.012, '30D': 0.024, '90D': 0.036, '1Y': 0.052 },
     cyclePhase: 2.6,
   },
   NI: {
-    drift: { '5D': -0.011, '1M': -0.028, '1Y': -0.065, '5Y': 0.14, Max: 0.32 },
-    volatility: { '1D': 0.0062, '5D': 0.015, '1M': 0.032, '1Y': 0.074, '5Y': 0.125, Max: 0.14 },
+    drift: { '7D': -0.013, '30D': -0.028, '90D': -0.045, '1Y': -0.065 },
+    volatility: { '7D': 0.016, '30D': 0.032, '90D': 0.05, '1Y': 0.074 },
     cyclePhase: 3.3,
   },
   LI: {
-    drift: { '5D': 0.032, '1M': 0.062, '1Y': 0.115, '5Y': 0.28, Max: 0.64 },
-    volatility: { '1D': 0.0068, '5D': 0.017, '1M': 0.035, '1Y': 0.082, '5Y': 0.145, Max: 0.16 },
+    drift: { '7D': 0.035, '30D': 0.062, '90D': 0.082, '1Y': 0.115 },
+    volatility: { '7D': 0.018, '30D': 0.035, '90D': 0.056, '1Y': 0.082 },
     cyclePhase: 4.1,
   },
   CO: {
-    drift: { '5D': 0.016, '1M': 0.029, '1Y': -0.042, '5Y': -0.085, Max: 0.18 },
-    volatility: { '1D': 0.0052, '5D': 0.012, '1M': 0.025, '1Y': 0.064, '5Y': 0.11, Max: 0.13 },
+    drift: { '7D': 0.017, '30D': 0.029, '90D': -0.012, '1Y': -0.042 },
+    volatility: { '7D': 0.013, '30D': 0.025, '90D': 0.042, '1Y': 0.064 },
     cyclePhase: 4.9,
   },
   SN: {
-    drift: { '5D': -0.014, '1M': -0.021, '1Y': 0.125, '5Y': 0.42, Max: 0.68 },
-    volatility: { '1D': 0.0058, '5D': 0.014, '1M': 0.028, '1Y': 0.062, '5Y': 0.105, Max: 0.12 },
+    drift: { '7D': -0.015, '30D': -0.021, '90D': 0.048, '1Y': 0.125 },
+    volatility: { '7D': 0.015, '30D': 0.028, '90D': 0.044, '1Y': 0.062 },
     cyclePhase: 5.5,
   },
 }
 
 const DEFAULT_PROFILE: HistoricalProfile = {
-  drift: { '5D': 0.015, '1M': 0.035, '1Y': 0.14, '5Y': 0.34, Max: 0.58 },
-  volatility: { '1D': 0.005, '5D': 0.012, '1M': 0.022, '1Y': 0.05, '5Y': 0.085, Max: 0.105 },
+  drift: { '7D': 0.018, '30D': 0.035, '90D': 0.072, '1Y': 0.14 },
+  volatility: { '7D': 0.012, '30D': 0.022, '90D': 0.035, '1Y': 0.05 },
   cyclePhase: 1.7,
 }
 
@@ -220,16 +218,13 @@ interface TimeframeConfig {
   spanMs: number
 }
 
-const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
 const TIMEFRAME_CONFIG: Record<ChartTimeframe, TimeframeConfig> = {
-  '1D': { count: 48, spanMs: 24 * HOUR_MS },
-  '5D': { count: 60, spanMs: 5 * DAY_MS },
-  '1M': { count: 31, spanMs: 30 * DAY_MS },
+  '7D': { count: 56, spanMs: 7 * DAY_MS },
+  '30D': { count: 31, spanMs: 30 * DAY_MS },
+  '90D': { count: 46, spanMs: 90 * DAY_MS },
   '1Y': { count: 53, spanMs: 365 * DAY_MS },
-  '5Y': { count: 61, spanMs: 5 * 365 * DAY_MS },
-  Max: { count: 85, spanMs: 7 * 365 * DAY_MS },
 }
 
 function sampleNormalizedArray(values: number[], t: number): number {
@@ -268,43 +263,26 @@ export function buildMineralTrendSeries(
       : Date.now())
   const startMs = endMs - spanMs
 
-  // Determine the anchored opening value for this timeframe
-  let startUnitUsd: number
-  if (timeframe === '1D') {
-    if (mineral.day_open_usd && mineral.day_open_usd > 0) {
-      startUnitUsd = convertToChartUnitUsd(
-        mineral.day_open_usd,
-        mineral.unit,
-        mode,
-      ).unitUsd
-    } else {
-      const denom = 1 + (mineral.trend_percentage || 0) / 100
-      startUnitUsd = denom > 0.2 ? currentUnitUsd / denom : currentUnitUsd
-    }
-  } else {
-    const horizonDrift = profile.drift[timeframe]
-    const liveTilt =
-      timeframe === '5D'
-        ? ((mineral.trend_percentage || 0) / 100) * 0.45
-        : timeframe === '1M'
-          ? ((mineral.trend_percentage || 0) / 100) * 0.2
-          : 0
-    const effectiveDrift = Math.max(-0.55, Math.min(2.2, horizonDrift + liveTilt))
-    startUnitUsd = currentUnitUsd / (1 + effectiveDrift)
-  }
+  const horizonDrift = profile.drift[timeframe]
+  const liveTilt =
+    timeframe === '7D'
+      ? ((mineral.trend_percentage || 0) / 100) * 0.45
+      : timeframe === '30D'
+        ? ((mineral.trend_percentage || 0) / 100) * 0.2
+        : 0
+  const effectiveDrift = Math.max(-0.55, Math.min(2.2, horizonDrift + liveTilt))
+  const startUnitUsd = currentUnitUsd / (1 + effectiveDrift)
 
   // Deterministic seed per mineral + timeframe
-  const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v1`))
+  const rng = createPrng(hashSeed(`${mineral.symbol}:${timeframe}:mineconnect-v2`))
   const vol = profile.volatility[timeframe]
 
-  // Generate raw Brownian increments
   const walk: number[] = [0]
   for (let i = 1; i < count; i++) {
     const z = (rng() + rng() + rng() - 1.5) * 1.15
     walk.push(walk[i - 1] + z)
   }
 
-  // Convert raw walk into a Brownian bridge pinned to 0 at both endpoints (t=0 and t=1)
   const walkEnd = walk[count - 1]
   const bridge = walk.map((v, i) => {
     const t = i / (count - 1)
@@ -312,21 +290,11 @@ export function buildMineralTrendSeries(
   })
   const maxAbsBridge = Math.max(0.0001, ...bridge.map((v) => Math.abs(v)))
 
-  // Optional shape influence from stored sparkline_points on 1D
   const sparkConverted =
     mineral.sparkline_points && mineral.sparkline_points.length >= 2
       ? mineral.sparkline_points.map(
           (p) => convertToChartUnitUsd(p, mineral.unit, mode).unitUsd,
         )
-      : null
-
-  const dayLowUnit =
-    mineral.day_low_usd && mineral.day_low_usd > 0
-      ? convertToChartUnitUsd(mineral.day_low_usd, mineral.unit, mode).unitUsd
-      : null
-  const dayHighUnit =
-    mineral.day_high_usd && mineral.day_high_usd > 0
-      ? convertToChartUnitUsd(mineral.day_high_usd, mineral.unit, mode).unitUsd
       : null
 
   const points: MineralTrendPoint[] = []
@@ -349,29 +317,22 @@ export function buildMineralTrendSeries(
     const envelope = Math.sin(Math.PI * t)
 
     const macroWave =
-      timeframe === '1D'
-        ? Math.sin(t * Math.PI * 2.5 + profile.cyclePhase) * 0.25
-        : timeframe === '5D'
-          ? Math.sin(t * Math.PI * 3.0 + profile.cyclePhase) * 0.3
-          : Math.sin(t * Math.PI * 2.4 + profile.cyclePhase) * 0.45 +
-            Math.cos(t * Math.PI * 5.2 + profile.cyclePhase * 1.4) * 0.2
+      timeframe === '7D'
+        ? Math.sin(t * Math.PI * 3.0 + profile.cyclePhase) * 0.3
+        : Math.sin(t * Math.PI * 2.4 + profile.cyclePhase) * 0.45 +
+          Math.cos(t * Math.PI * 5.2 + profile.cyclePhase * 1.4) * 0.2
 
     const bridgeNorm = bridge[i] / maxAbsBridge
     let value =
       linear + meanLevel * vol * (bridgeNorm * 0.72 + macroWave * envelope * 0.55)
 
-    if (timeframe === '1D' && sparkConverted) {
+    // Blend subtle sparkline shape near the tail on 7D
+    if (timeframe === '7D' && sparkConverted) {
       const sparkVal = sampleNormalizedArray(sparkConverted, t)
       const sparkSpan = sparkConverted[sparkConverted.length - 1] - sparkConverted[0]
       const expectedLinearSpark = sparkConverted[0] + sparkSpan * t
       const sparkResidual = sparkVal - expectedLinearSpark
-      value += sparkResidual * 0.45 * envelope
-    }
-
-    if (timeframe === '1D' && dayLowUnit !== null && dayHighUnit !== null) {
-      const lowGuard = Math.min(dayLowUnit, startUnitUsd, currentUnitUsd)
-      const highGuard = Math.max(dayHighUnit, startUnitUsd, currentUnitUsd)
-      value = Math.max(lowGuard, Math.min(highGuard, value))
+      value += sparkResidual * 0.35 * envelope
     }
 
     const positiveFloor = Math.max(0.0001, Math.min(startUnitUsd, currentUnitUsd) * 0.35)
@@ -422,27 +383,15 @@ export function formatChartAxisDate(
   const date = new Date(timestampMs)
 
   try {
-    if (timeframe === '1D') {
-      return new Intl.DateTimeFormat(locale, {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).format(date)
-    }
-    if (timeframe === '5D' || timeframe === '1M') {
+    if (timeframe === '7D' || timeframe === '30D' || timeframe === '90D') {
       return new Intl.DateTimeFormat(locale, {
         month: 'short',
         day: 'numeric',
       }).format(date)
     }
-    if (timeframe === '1Y') {
-      return new Intl.DateTimeFormat(locale, {
-        month: 'short',
-        year: '2-digit',
-      }).format(date)
-    }
     return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
+      month: 'short',
+      year: '2-digit',
     }).format(date)
   } catch {
     return date.toISOString().slice(0, 10)
@@ -458,7 +407,7 @@ export function formatChartTooltipDate(
   const date = new Date(timestampMs)
 
   try {
-    if (timeframe === '1D' || timeframe === '5D') {
+    if (timeframe === '7D') {
       return new Intl.DateTimeFormat(locale, {
         month: 'short',
         day: 'numeric',
@@ -468,15 +417,9 @@ export function formatChartTooltipDate(
         hour12: false,
       }).format(date)
     }
-    if (timeframe === '1M' || timeframe === '1Y') {
-      return new Intl.DateTimeFormat(locale, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }).format(date)
-    }
     return new Intl.DateTimeFormat(locale, {
       month: 'short',
+      day: 'numeric',
       year: 'numeric',
     }).format(date)
   } catch {

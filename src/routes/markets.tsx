@@ -1,16 +1,43 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowRight, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import IndicativeMineralPrices from '../components/IndicativeMineralPrices'
+import type { MarketTerminalView } from '../components/MineralPricesBoard'
 import { useLocalization } from '../context/LocalizationContext'
 import { useAuthState } from '../lib/supabaseAuth'
 
 export const Route = createFileRoute('/markets')({
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { view?: MarketTerminalView; symbol?: string } => ({
+    view:
+      s.view === 'spot' || s.view === 'trend' || s.view === 'matrix'
+        ? s.view
+        : undefined,
+    symbol:
+      typeof s.symbol === 'string' && s.symbol.trim()
+        ? s.symbol.trim().toUpperCase()
+        : undefined,
+  }),
   component: MarketsPageComponent,
 })
 
 function MarketsPageComponent() {
   const { ui, currency, language } = useLocalization()
   const { isAdmin } = useAuthState()
+  const navigate = useNavigate()
+  const { view, symbol } = Route.useSearch()
+
+  const activeView: MarketTerminalView = view ?? 'spot'
+
+  const handleViewChange = (nextView: MarketTerminalView, nextSymbol?: string) => {
+    void navigate({
+      to: '/markets',
+      search: {
+        view: nextView,
+        symbol: nextView === 'trend' ? (nextSymbol ?? symbol) : undefined,
+      },
+    })
+  }
 
   return (
     <div
@@ -18,10 +45,15 @@ function MarketsPageComponent() {
       data-language={language}
       className="min-h-screen bg-paper pt-[72px] text-ink"
     >
-      <IndicativeMineralPrices showHeaderCta={false} />
+      <IndicativeMineralPrices
+        showHeaderCta={false}
+        activeView={activeView}
+        initialSymbol={symbol}
+        onViewChange={handleViewChange}
+      />
 
       {/* Market Structure & Tier Methodology Explainer */}
-      <section className="border-b border-ink/10 bg-paper-2 px-5 py-20 lg:px-8 lg:py-24">
+      <section className="border-b border-ink/10 bg-paper-2 px-5 py-14 lg:px-8 lg:py-16">
         <div className="mx-auto max-w-7xl">
           <div className="mb-10 max-w-2xl">
             <p className="eyebrow mb-3 text-ochre">

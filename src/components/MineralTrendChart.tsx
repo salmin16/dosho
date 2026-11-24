@@ -49,7 +49,7 @@ export default function MineralTrendChart({
   const [internalSymbol, setInternalSymbol] = useState<string>(
     () => minerals[0]?.symbol ?? 'XAU',
   )
-  const [timeframe, setTimeframe] = useState<ChartTimeframe>('1M')
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('30D')
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
@@ -144,28 +144,24 @@ export default function MineralTrendChart({
   const timeframeLabel = useCallback(
     (tf: ChartTimeframe): string => {
       switch (tf) {
-        case '1D':
-          return ui('past 24 hours', 'saa 24 zilizopita', 'últimas 24 horas')
-        case '5D':
-          return ui('past 5 days', 'siku 5 zilizopita', 'últimos 5 días')
-        case '1M':
-          return ui('past 1 month', 'mwezi 1 uliopita', 'último mes')
+        case '7D':
+          return ui('past 7 days', 'siku 7 zilizopita', 'últimos 7 días')
+        case '30D':
+          return ui('past 30 days', 'siku 30 zilizopita', 'últimos 30 días')
+        case '90D':
+          return ui('past 90 days', 'siku 90 zilizopita', 'últimos 90 días')
         case '1Y':
           return ui('past 1 year', 'mwaka 1 uliopita', 'último año')
-        case '5Y':
-          return ui('past 5 years', 'miaka 5 iliyopita', 'últimos 5 años')
-        case 'Max':
-          return ui('all-time reference', 'historia yote', 'histórico máximo')
       }
     },
     [ui],
   )
 
-  // Compute SVG geometry in measured pixel coordinates
+  // Compute SVG geometry in measured pixel coordinates (generous vertical room in focused tab)
   const chartGeometry = useMemo(() => {
     if (!series || series.points.length < 2) return null
 
-    const height = chartWidth < 520 ? 248 : 308
+    const height = chartWidth < 520 ? 268 : 356
     const convertedValues = series.points.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
