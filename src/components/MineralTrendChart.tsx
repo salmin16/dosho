@@ -107,11 +107,30 @@ export default function MineralTrendChart({
 
   // Format a value that is already in the active display currency for Y-axis ticks
   const formatAxisTickValue = useCallback(
-    (displayValue: number): string => {
+    (displayValue: number, step: number, compactMobile: boolean): string => {
       const usdEquivalent =
         rateForSelected > 0 ? displayValue / rateForSelected : displayValue
       const isZeroDecimal = currency === 'TZS' || currency === 'JPY'
       const absVal = Math.abs(displayValue)
+
+      if (compactMobile) {
+        if (absVal >= 1_000_000) {
+          const decimals = step < 100_000 ? 2 : 1
+          return `${(displayValue / 1_000_000).toFixed(decimals)}M`
+        }
+        if (absVal >= 10_000) {
+          const decimals = step < 1_000 ? 1 : 0
+          return `${(displayValue / 1_000).toFixed(decimals)}k`
+        }
+        if (absVal >= 1_000) {
+          return `${(displayValue / 1_000).toFixed(step < 500 ? 2 : 1)}k`
+        }
+        const decimals = isZeroDecimal ? 0 : step < 0.1 ? 2 : step < 1 ? 1 : 0
+        return displayValue.toLocaleString('en-US', {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+        })
+      }
 
       if (absVal >= 1_000_000) {
         const decimals = absVal >= 10_000_000 ? 1 : 2
@@ -144,6 +163,10 @@ export default function MineralTrendChart({
   const timeframeLabel = useCallback(
     (tf: ChartTimeframe): string => {
       switch (tf) {
+        case '1H':
+          return ui('past 1 hour', 'saa 1 iliyopita', 'última hora')
+        case '1D':
+          return ui('past 24 hours', 'saa 24 zilizopita', 'últimas 24 horas')
         case '7D':
           return ui('past 7 days', 'siku 7 zilizopita', 'últimos 7 días')
         case '30D':
@@ -157,35 +180,40 @@ export default function MineralTrendChart({
     [ui],
   )
 
-  // Compute SVG geometry in measured pixel coordinates (generous vertical room in focused tab)
+  // Compute SVG geometry in measured pixel coordinates (mobile-first plot width ~80%+)
   const chartGeometry = useMemo(() => {
     if (!series || series.points.length < 2) return null
 
-    const height = chartWidth < 520 ? 268 : 356
+    const isCompact = chartWidth < 600
+    const height = isCompact ? 256 : 352
     const convertedValues = series.points.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
 
-    const { min: yMin, max: yMax, ticks: yTicks } = computeNiceAxisTicks(
-      minConverted,
-      maxConverted,
-      chartWidth < 520 ? 4 : 5,
-    )
+    const {
+      min: yMin,
+      max: yMax,
+      step: yStep,
+      ticks: yTicks,
+    } = computeNiceAxisTicks(minConverted, maxConverted, isCompact ? 4 : 5)
 
     const yTickLabels = yTicks.map((val) => ({
       value: val,
-      label: formatAxisTickValue(val),
+      label: formatAxisTickValue(val, yStep, isCompact),
     }))
 
     const maxLabelLen = yTickLabels.reduce(
       (max, item) => Math.max(max, item.label.length),
-      4,
+      3,
     )
 
-    const padLeft = Math.min(126, Math.max(66, Math.round(maxLabelLen * 7.2 + 16)))
-    const padRight = 22
-    const padTop = 18
-    const padBottom = 34
+    // Compact left Y-axis margin on mobile so the plot spans ~80%+ of card width
+    const padLeft = isCompact
+      ? Math.min(54, Math.max(38, Math.round(maxLabelLen * 6.4 + 10)))
+      : Math.min(126, Math.max(66, Math.round(maxLabelLen * 7.2 + 16)))
+    const padRight = isCompact ? 12 : 22
+    const padTop = isCompact ? 14 : 18
+    const padBottom = isCompact ? 28 : 34
     const plotWidth = Math.max(120, chartWidth - padLeft - padRight)
     const plotHeight = Math.max(120, height - padTop - padBottom)
     const ySpan = Math.max(1e-9, yMax - yMin)
@@ -208,8 +236,8 @@ export default function MineralTrendChart({
     const openY =
       padTop + (1 - (convertedValues[0] - yMin) / ySpan) * plotHeight
 
-    // Select clean evenly spaced X-axis ticks (4 on mobile, 6 on desktop)
-    const xTickCount = chartWidth < 520 ? 4 : 6
+    // Max 4 X-axis ticks on mobile so labels never collide, 6 on desktop
+    const xTickCount = isCompact ? 4 : 6
     const xTicks: Array<{ x: number; label: string; idx: number }> = []
     for (let i = 0; i < xTickCount; i++) {
       const frac = i / (xTickCount - 1)
@@ -228,6 +256,7 @@ export default function MineralTrendChart({
     }))
 
     return {
+      isCompact,
       width: chartWidth,
       height,
       padLeft,
@@ -314,7 +343,7 @@ export default function MineralTrendChart({
 
   // Classic institutional palette harmonized with MineConnect brand tokens
   const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
-  const fillTopOpacity = seriesPositive ? 0.2 : 0.18
+  const fillTopOpacity = seriesPositive ? 0.25 : 0.22
 
   // Reference statutory benchmarks matched to the active /markets master unit mode
   const sokoTier = convertToChartUnitUsd(
@@ -504,11 +533,11 @@ export default function MineralTrendChart({
           </p>
         </div>
 
-        {/* Classic Timeframe Selector Pills (1D, 5D, 1M, 1Y, 5Y, Max) */}
+        {/* Classic Single-Row Timeframe Selector Pills (1H, 1D, 7D, 30D, 90D, 1Y) */}
         <div
           role="group"
           aria-label={ui('Chart timeframe', 'Muda wa chati', 'Período del gráfico')}
-          className="inline-flex self-start rounded-lg border border-ink/12 bg-paper-2 p-1 lg:self-end"
+          className="grid w-full grid-cols-6 gap-0.5 rounded-lg border border-ink/12 bg-paper-2 p-1 sm:inline-flex sm:w-auto sm:gap-1 lg:self-end"
         >
           {CHART_TIMEFRAMES.map((tf) => {
             const active = tf === timeframe
@@ -518,7 +547,7 @@ export default function MineralTrendChart({
                 type="button"
                 aria-pressed={active}
                 onClick={() => setTimeframe(tf)}
-                className={`rounded-md px-3 py-1.5 font-mono text-xs font-semibold transition ${
+                className={`rounded-md px-1.5 py-1.5 text-center font-mono text-[11px] font-semibold transition sm:px-3.5 sm:text-xs ${
                   active
                     ? 'bg-ink text-gold shadow-xs'
                     : 'text-ink-3 hover:text-ink'
@@ -532,7 +561,7 @@ export default function MineralTrendChart({
       </div>
 
       {/* Interactive Financial Area/Line Chart */}
-      <div className="relative px-3 pb-4 sm:px-6">
+      <div className="relative px-2 pb-3 sm:px-6 sm:pb-4">
         <div ref={chartContainerRef} className="relative w-full select-none">
           <svg
             width={chartGeometry.width}
@@ -561,9 +590,9 @@ export default function MineralTrendChart({
                   stopOpacity={fillTopOpacity}
                 />
                 <stop
-                  offset="88%"
+                  offset="82%"
                   stopColor={strokeColor}
-                  stopOpacity={0.02}
+                  stopOpacity={0.03}
                 />
                 <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
               </linearGradient>
@@ -581,11 +610,11 @@ export default function MineralTrendChart({
                   strokeWidth={1}
                 />
                 <text
-                  x={chartGeometry.padLeft - 10}
+                  x={chartGeometry.padLeft - (chartGeometry.isCompact ? 6 : 10)}
                   y={tick.y + 3.5}
                   textAnchor="end"
                   fill="#776c60"
-                  fontSize="11"
+                  fontSize={chartGeometry.isCompact ? '10' : '11'}
                   fontFamily="var(--font-mono)"
                   style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
@@ -610,10 +639,10 @@ export default function MineralTrendChart({
                   />
                   <text
                     x={tick.x}
-                    y={chartGeometry.baselineY + 20}
+                    y={chartGeometry.baselineY + (chartGeometry.isCompact ? 17 : 20)}
                     textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
                     fill="#776c60"
-                    fontSize="11"
+                    fontSize={chartGeometry.isCompact ? '10' : '11'}
                     fontFamily="var(--font-mono)"
                     style={{ fontVariantNumeric: 'tabular-nums' }}
                   >
@@ -645,7 +674,7 @@ export default function MineralTrendChart({
               d={chartGeometry.linePath}
               fill="none"
               stroke={strokeColor}
-              strokeWidth={2}
+              strokeWidth={2.25}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -674,14 +703,14 @@ export default function MineralTrendChart({
                 <circle
                   cx={activeCoord.x}
                   cy={activeCoord.y}
-                  r={6.5}
+                  r={7}
                   fill={strokeColor}
-                  fillOpacity={0.18}
+                  fillOpacity={0.2}
                 />
                 <circle
                   cx={activeCoord.x}
                   cy={activeCoord.y}
-                  r={3.8}
+                  r={4.2}
                   fill={strokeColor}
                   stroke="#f6f1e7"
                   strokeWidth={2}
@@ -694,17 +723,17 @@ export default function MineralTrendChart({
               <circle
                 cx={terminalCoord.x}
                 cy={terminalCoord.y}
-                r={8.5}
+                r={9}
                 fill={strokeColor}
-                fillOpacity={0.16}
+                fillOpacity={0.2}
               />
               <circle
                 cx={terminalCoord.x}
                 cy={terminalCoord.y}
-                r={4.2}
+                r={4.5}
                 fill={strokeColor}
                 stroke="#f6f1e7"
-                strokeWidth={2}
+                strokeWidth={2.25}
               />
             </g>
           </svg>
@@ -759,29 +788,29 @@ export default function MineralTrendChart({
       </div>
 
       {/* Mode-Matched Benchmark Summary Strip */}
-      <div className="grid grid-cols-2 gap-3 border-t border-ink/10 bg-paper-2/70 px-5 py-3.5 sm:grid-cols-4 lg:px-6">
-        <div>
-          <span className="block font-mono text-[10px] uppercase tracking-wider text-stone">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-ink/10 bg-paper-2/70 px-4 py-3.5 sm:grid-cols-4 sm:px-5 lg:px-6">
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
             {timeframe} {ui('High', 'Juu Zaidi', 'Máximo')} ({series.unitSuffix})
           </span>
-          <span className="font-mono text-xs font-bold text-ink tabular-nums">
+          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
             {formatPrice(series.maxUnitUsd)}
             <span className="font-normal text-stone">{series.unitSuffix}</span>
           </span>
         </div>
 
-        <div>
-          <span className="block font-mono text-[10px] uppercase tracking-wider text-stone">
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
             {timeframe} {ui('Low', 'Chini Zaidi', 'Mínimo')} ({series.unitSuffix})
           </span>
-          <span className="font-mono text-xs font-bold text-ink tabular-nums">
+          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
             {formatPrice(series.minUnitUsd)}
             <span className="font-normal text-stone">{series.unitSuffix}</span>
           </span>
         </div>
 
-        <div>
-          <span className="block font-mono text-[10px] uppercase tracking-wider text-moss">
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-moss sm:text-[10px]">
             {ui(
               'Statutory Soko la Madini',
               'Soko la Madini (Rasmi)',
@@ -789,18 +818,18 @@ export default function MineralTrendChart({
             )}{' '}
             ({sokoTier.unitSuffix})
           </span>
-          <span className="font-mono text-xs font-bold text-moss tabular-nums">
+          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-moss tabular-nums sm:text-xs">
             {formatPrice(sokoTier.unitUsd)}
             <span className="font-normal text-stone">{sokoTier.unitSuffix}</span>
           </span>
         </div>
 
-        <div>
-          <span className="block font-mono text-[10px] uppercase tracking-wider text-ochre">
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-ochre sm:text-[10px]">
             {ui('Buying Centre Floor', 'Kituo cha Ununuzi', 'Centro de Compra')} (
             {buyingTier.unitSuffix})
           </span>
-          <span className="font-mono text-xs font-bold text-ink tabular-nums">
+          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
             {formatPrice(buyingTier.unitUsd)}
             <span className="font-normal text-stone">{buyingTier.unitSuffix}</span>
           </span>
