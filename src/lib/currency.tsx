@@ -58,12 +58,12 @@ const CURRENCY_COOKIE_NAME = 'mc_currency';
 const CURRENCY_CHANGE_EVENT = 'mineconnect:currency-changed';
 const RATES_UPDATED_EVENT = 'mineconnect:fx-rates-updated';
 
-/** Live freshness window before automatic refresh (90 seconds) */
-const LIVE_FRESH_TTL_MS = 90 * 1000;
-/** Periodic background refresh interval while tab is visible (2 minutes) */
-const AUTO_REFRESH_INTERVAL_MS = 120 * 1000;
-/** Per-endpoint network timeout (fast fail on slow mobile networks) */
-const FX_FETCH_TIMEOUT_MS = 2600;
+/** Live freshness window before automatic refresh (15 seconds) */
+const LIVE_FRESH_TTL_MS = 15 * 1000;
+/** Periodic background refresh interval while tab is visible (15 seconds) */
+const AUTO_REFRESH_INTERVAL_MS = 15 * 1000;
+/** Per-endpoint network timeout (3500ms abort guard on slow mobile networks) */
+const FX_FETCH_TIMEOUT_MS = 3500;
 
 export interface CachedRatesPayload {
   /** Epoch ms when rates were last fetched from a live FX provider (0 if offline fallback) */

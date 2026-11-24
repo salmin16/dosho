@@ -410,24 +410,8 @@ export function createContinuousMineralModel(
 
   const seed = hashSeed(`${mineral.symbol.toUpperCase()}:continuous:v6`)
 
-  // Chain continuous yearly anchors backward from live spot all the way to Jan 1, 2000
-  const yearAnchors: Array<{ t: number; price: number }> = [
-    { t: historyEndMs, price: safeLiveUsd },
-  ]
-  let cursorPrice = safeLiveUsd
-
-  for (let yr = endYear; yr >= startYear; yr--) {
-    const ret = resolveHistoricalAnnualReturn(profile, seed, yr, endYear)
-    cursorPrice = Math.max(0.0001, cursorPrice / (1 + ret))
-    yearAnchors.push({
-      t: Date.UTC(yr, 0, 1, 0, 0, 0),
-      price: cursorPrice,
-    })
-  }
-
-  yearAnchors.sort((a, b) => a.t - b.t)
-
-  // Anchor the latest 24h drift to live day_open_usd / trend_percentage when available
+  // Use a stable historical anchor (day_open_usd when available) for the multi-decade chain
+  // so 2-second live ticks smoothly move the live trailing tip without wobbling historical years!
   const dayAgoMs = historyEndMs - DAY_MS
   let dayOpenUsd: number | null = null
   if (mineral.day_open_usd && mineral.day_open_usd > 0) {
@@ -444,6 +428,25 @@ export function createContinuousMineralModel(
     if (denom > 0.4) dayOpenUsd = safeLiveUsd / denom
   }
 
+  const stableBaseUsd = Math.max(0.0001, dayOpenUsd ?? safeLiveUsd)
+
+  // Chain continuous yearly anchors backward from stableBaseUsd all the way to Jan 1, 2000
+  const yearAnchors: Array<{ t: number; price: number }> = [
+    { t: historyEndMs, price: safeLiveUsd },
+  ]
+  let cursorPrice = stableBaseUsd
+
+  for (let yr = endYear; yr >= startYear; yr--) {
+    const ret = resolveHistoricalAnnualReturn(profile, seed, yr, endYear)
+    cursorPrice = Math.max(0.0001, cursorPrice / (1 + ret))
+    yearAnchors.push({
+      t: Date.UTC(yr, 0, 1, 0, 0, 0),
+      price: cursorPrice,
+    })
+  }
+
+  yearAnchors.sort((a, b) => a.t - b.t)
+
   const nodes: AnchorNode[] = yearAnchors.map((a) => ({
     t: a.t,
     logPrice: Math.log(Math.max(0.0001, a.price)),
@@ -456,8 +459,11 @@ export function createContinuousMineralModel(
     })
   }
 
-  const endRefOctaves = MULTI_SCALE_OCTAVES.map((oct, idx) =>
-    smoothNoise1D(seed, idx, historyEndMs / oct.strideMs),
+  // Fixed stable reference timestamp for noise octaves so historical curves stay 100% rock-steady
+  // across 2-second live ticks while a smooth tail envelope converges strictly to safeLiveUsd at historyEndMs!
+  const stableNoiseRefMs = Date.UTC(endYear, 0, 1, 0, 0, 0)
+  const refOctaves = MULTI_SCALE_OCTAVES.map((oct, idx) =>
+    smoothNoise1D(seed, idx, stableNoiseRefMs / oct.strideMs),
   )
 
   const maxSpanMs = Math.max(DAY_MS, historyEndMs - historyStartMs)
@@ -492,6 +498,10 @@ export function createContinuousMineralModel(
       return Math.max(0, Math.min(1, (ratio - 0.35) / 1.2))
     })
 
+    // Smoothly taper synthetic noise to 0 over the trailing 8% of the live edge so the live tip
+    // lands identically on liveUnitUsd with zero jump or historical wobble!
+    const liveTailTaperMs = Math.max(30_000, Math.min(6 * HOUR_MS, span * 0.08))
+
     const points: MineralTrendPoint[] = new Array(count)
     for (let i = 0; i < count; i++) {
       const t = i === count - 1 ? endMs : startMs + i * stepMs
@@ -507,18 +517,27 @@ export function createContinuousMineralModel(
         const w = octaveWeights[o]
         if (w <= 0) continue
         const oct = MULTI_SCALE_OCTAVES[o]
-        const n = smoothNoise1D(seed, o, t / oct.strideMs) - endRefOctaves[o]
+        const n = smoothNoise1D(seed, o, t / oct.strideMs) - refOctaves[o]
         logDelta += n * profile.baseVolatility * oct.relAmp * w
       }
 
-      const yearsFromEnd = (t - historyEndMs) / (365.25 * DAY_MS)
+      const yearsFromRef = (t - stableNoiseRefMs) / (365.25 * DAY_MS)
       const macroWave =
-        (Math.sin(yearsFromEnd * Math.PI * 1.45 + profile.cyclePhase) -
+        (Math.sin(yearsFromRef * Math.PI * 1.45 + profile.cyclePhase) -
           Math.sin(profile.cyclePhase)) *
         profile.baseVolatility *
         0.5
 
-      const unitUsd = Math.max(0.0001, Math.exp(baseLog + logDelta + macroWave))
+      const distFromLive = Math.max(0, historyEndMs - t)
+      const liveEdgeBlend =
+        distFromLive < liveTailTaperMs
+          ? distFromLive / liveTailTaperMs
+          : 1
+
+      const unitUsd = Math.max(
+        0.0001,
+        Math.exp(baseLog + (logDelta + macroWave) * liveEdgeBlend),
+      )
       points[i] = { timestampMs: Math.round(t), unitUsd }
     }
 

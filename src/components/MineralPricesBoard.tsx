@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { executeLiveMarketSync } from '../app/api/market-sync/route'
 import {
+  acquireLiveMarketStream,
   getMarketSyncTelemetry,
   getStoredMineralPrices,
   subscribeMineralPrices,
@@ -140,7 +141,6 @@ export default function MineralPricesBoard({
   )
   const [syncing, setSyncing] = useState(false)
   const [justUpdatedTime, setJustUpdatedTime] = useState<string | null>(null)
-  const [secondsToNextSync, setSecondsToNextSync] = useState(45)
 
   const isSyncingRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -198,11 +198,11 @@ export default function MineralPricesBoard({
       abortRef.current = controller
 
       try {
-        // Non-blocking fail-fast FX refresh guard so slow mobile networks never stall the feed
+        // Non-blocking fail-fast FX refresh guard (3500ms) so slow mobile networks never stall the feed
         const guardedFxRefresh = force
           ? Promise.race([
               refreshRates().catch(() => undefined),
-              new Promise<void>((resolve) => window.setTimeout(resolve, 2600)),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 3500)),
             ])
           : Promise.resolve()
 
@@ -214,7 +214,6 @@ export default function MineralPricesBoard({
         if (!controller.signal.aborted && result.records.length > 0) {
           setMinerals(result.records)
           setTelemetry(result.telemetry)
-          setSecondsToNextSync(45)
           if (force) {
             triggerUpdatedConfirmation(result.telemetry.lastSyncedAt)
           }
@@ -236,32 +235,22 @@ export default function MineralPricesBoard({
     }
   }, [])
 
-  // Live subscription + non-blocking initial sync
+  // Shared single reactive rate store subscription + 2s live tick & 12s zero-cache upstream stream
   useEffect(() => {
     setMinerals(getStoredMineralPrices())
     setTelemetry(getMarketSyncTelemetry())
-    void handleManualSync(false)
 
-    return subscribeMineralPrices(() => {
+    const unsubscribe = subscribeMineralPrices(() => {
       setMinerals(getStoredMineralPrices())
       setTelemetry(getMarketSyncTelemetry())
     })
-  }, [handleManualSync])
+    const releaseStream = acquireLiveMarketStream()
 
-  // Automated 45-second background sync & countdown shared across all 3 views
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setSecondsToNextSync((prev) => {
-        if (prev <= 1) {
-          void handleManualSync(true)
-          return 45
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => window.clearInterval(interval)
-  }, [handleManualSync])
+    return () => {
+      unsubscribe()
+      releaseStream()
+    }
+  }, [])
 
   const selectView = useCallback(
     (nextView: MarketTerminalView, symbol?: string) => {
@@ -521,15 +510,15 @@ export default function MineralPricesBoard({
                 </span>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[10px] text-paper/65 tabular-nums sm:text-[11px]">
-                <Clock size={11} className="text-gold" />
-                <span>
-                  <span className="hidden sm:inline">
-                    {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
-                  </span>
-                  <strong className="text-paper/85">{formattedSyncTime}</strong>{' '}
-                  <span className="hidden text-paper/45 md:inline">({secondsToNextSync}s)</span>
+              <span className="inline-flex items-center gap-1.5 text-[10px] text-paper/75 tabular-nums sm:text-[11px]">
+                <span className="relative flex h-2 w-2" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#9de4b4] opacity-65" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9de4b4]" />
                 </span>
+                <span className="font-semibold text-[#9de4b4]">LIVE · 2s</span>
+                <span className="text-paper/35">·</span>
+                <Clock size={11} className="text-gold" />
+                <strong className="text-paper/90">{formattedSyncTime}</strong>
               </span>
             )}
           </div>

@@ -11,8 +11,8 @@ import type {
   MineralPriceRecord,
 } from '../../../types/database';
 
-const SYNC_CACHE_TTL_MS = 45_000; // 45 seconds cache window
-const EXTERNAL_FETCH_TIMEOUT_MS = 2_200; // Fast fail on slow mobile connections to retain last-known-good rates
+const SYNC_CACHE_TTL_MS = 12_000; // 12-second fast zero-cache background sync cycle
+const EXTERNAL_FETCH_TIMEOUT_MS = 3_500; // 3500ms abort timeout so slow mobile networks never stall
 
 /**
  * Sanity corridors (min/max USD per standard unit) to guard against malformed external API payloads

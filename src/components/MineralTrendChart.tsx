@@ -5,10 +5,12 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Calendar,
+  Clock,
   RotateCcw,
   TrendingUp,
 } from 'lucide-react'
 import { useLocalization } from '../context/LocalizationContext'
+import { acquireLiveMarketStream } from '../data/mineralPrices'
 import {
   DAY_MS,
   TAPE_TOTAL_SLOTS,
@@ -122,8 +124,27 @@ export default function MineralTrendChart({
   const [viewport, setViewport] = useState<ViewportRange | null>(null)
   const [inspectIndex, setInspectIndex] = useState<number | null>(null)
   const [isDragging, setIsDragging] = useState<boolean>(false)
+  const [isStreamPaused, setIsStreamPaused] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? document.hidden : false,
+  )
+  const prevHistoryEndMsRef = useRef<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
+
+  // Ensure the shared 2-second real-time stream is active while the chart is visible
+  useEffect(() => {
+    const release = acquireLiveMarketStream()
+    const syncVisibility = () => {
+      setIsStreamPaused(typeof document !== 'undefined' ? document.hidden : false)
+    }
+    document.addEventListener('visibilitychange', syncVisibility)
+    window.addEventListener('focus', syncVisibility)
+    return () => {
+      release()
+      document.removeEventListener('visibilitychange', syncVisibility)
+      window.removeEventListener('focus', syncVisibility)
+    }
+  }, [])
 
   const activeMineral = useMemo(() => {
     if (!minerals.length) return null
@@ -135,6 +156,33 @@ export default function MineralTrendChart({
     if (!activeMineral) return null
     return createContinuousMineralModel(activeMineral, unitBasis)
   }, [activeMineral, unitBasis])
+
+  // Preserve pan/zoom state across 2-second live ticks:
+  // - If zoomed in at the live trailing edge, smoothly follow the live edge without changing zoom span.
+  // - If panned into historical dates/years, stay 100% locked where the user is inspecting.
+  useEffect(() => {
+    if (!model) return
+    const prevEnd = prevHistoryEndMsRef.current
+    prevHistoryEndMsRef.current = model.historyEndMs
+    if (prevEnd === null) return
+
+    const deltaMs = model.historyEndMs - prevEnd
+    if (deltaMs <= 0 || deltaMs > 60_000) return
+
+    setViewport((cur) => {
+      if (!cur) return null
+      const pinnedToLiveEdge = cur.endMs >= prevEnd - 12_000
+      if (!pinnedToLiveEdge) return cur
+      return clampViewport(
+        cur.startMs + deltaMs,
+        cur.endMs + deltaMs,
+        model.historyStartMs,
+        model.historyEndMs,
+        model.minSpanMs,
+        model.maxSpanMs,
+      )
+    })
+  }, [model])
 
   // Default to latest 5 years so dragging left immediately pans back through 2020 -> 2000,
   // while pinching out expands all the way to 2000–2026 and pinching in dives to hours/minutes.
@@ -908,6 +956,17 @@ export default function MineralTrendChart({
   const tooltipAlignRight =
     activeCoord.x > chartGeometry.padLeft + chartGeometry.plotWidth * 0.56
 
+  let liveClockLabel = ''
+  try {
+    liveClockLabel = new Date(activeMineral.updated_at).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  } catch {
+    liveClockLabel = new Date().toLocaleTimeString()
+  }
+
   return (
     <section
       aria-label={ui(
@@ -920,7 +979,7 @@ export default function MineralTrendChart({
       data-unit-basis={unitBasis}
       className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
     >
-      {/* Slim Masthead Bar */}
+      {/* Slim Masthead Bar With Live 2s Pulse Indicator & Real-Time Timestamp */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-paper-2 px-4 py-2.5 sm:px-5 lg:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
@@ -931,12 +990,29 @@ export default function MineralTrendChart({
               'Tendencia Mineral Interactiva',
             )}
           </span>
-          <span className="rounded border border-ink/15 bg-paper px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
-            {ui(
-              `World Spot Parity (${model.unitSuffix})`,
-              `Soko la Dunia (${model.unitSuffix})`,
-              `Paridad Spot Mundial (${model.unitSuffix})`,
-            )}
+          <span
+            aria-live="off"
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+              isStreamPaused
+                ? 'border-ink/15 bg-paper text-stone'
+                : 'border-moss/35 bg-moss-light text-moss'
+            }`}
+          >
+            <span className="relative flex h-2 w-2" aria-hidden="true">
+              {!isStreamPaused && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-moss opacity-65" />
+              )}
+              <span
+                className={`relative inline-flex h-2 w-2 rounded-full ${
+                  isStreamPaused ? 'bg-stone' : 'bg-moss'
+                }`}
+              />
+            </span>
+            {isStreamPaused ? ui('PAUSED', 'IMESIMAMA', 'PAUSA') : 'LIVE · 2s'}
+          </span>
+          <span className="inline-flex items-center gap-1 font-mono text-[10px] text-stone tabular-nums">
+            <Clock size={10} className="text-ochre" />
+            {liveClockLabel}
           </span>
         </div>
 

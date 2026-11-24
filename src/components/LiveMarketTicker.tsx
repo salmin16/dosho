@@ -17,6 +17,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import {
+  acquireLiveMarketStream,
   getMarketSyncTelemetry,
   getStoredMineralPrices,
   getTradingDeskSessions,
@@ -125,7 +126,6 @@ export default function LiveMarketTicker({
     useState<MarketSyncTelemetry>(() => getMarketSyncTelemetry())
   const [syncing, setSyncing] = useState(false)
   const [justUpdatedTime, setJustUpdatedTime] = useState<string | null>(null)
-  const [secondsToNextSync, setSecondsToNextSync] = useState(45)
 
   const isSyncingRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -164,7 +164,7 @@ export default function LiveMarketTicker({
         const fxRefreshGuarded = force
           ? Promise.race([
               refreshRates().catch(() => undefined),
-              new Promise<void>((resolve) => window.setTimeout(resolve, 2600)),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 3500)),
             ])
           : Promise.resolve()
 
@@ -176,7 +176,6 @@ export default function LiveMarketTicker({
         if (!controller.signal.aborted && result.records.length > 0) {
           setInternalMinerals(result.records)
           setInternalTelemetry(result.telemetry)
-          setSecondsToNextSync(45)
           if (force) {
             showUpdatedConfirmation(result.telemetry.lastSyncedAt)
           }
@@ -198,36 +197,24 @@ export default function LiveMarketTicker({
     }
   }, [])
 
-  // Subscribe to store updates only when managing own data (not controlled by parent)
+  // Subscribe to shared reactive rate store + 2s live stream when managing own data
   useEffect(() => {
     if (mineralsOverride) return
 
     setInternalMinerals(getStoredMineralPrices())
     setInternalTelemetry(getMarketSyncTelemetry())
-    void handleManualSync(false)
 
     const unsubscribe = subscribeMineralPrices(() => {
       setInternalMinerals(getStoredMineralPrices())
       setInternalTelemetry(getMarketSyncTelemetry())
     })
+    const releaseStream = acquireLiveMarketStream()
 
-    return unsubscribe
-  }, [handleManualSync, mineralsOverride])
-
-  useEffect(() => {
-    if (mineralsOverride) return
-    const interval = window.setInterval(() => {
-      setSecondsToNextSync((prev) => {
-        if (prev <= 1) {
-          void handleManualSync(true)
-          return 45
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => window.clearInterval(interval)
-  }, [handleManualSync, mineralsOverride])
+    return () => {
+      unsubscribe()
+      releaseStream()
+    }
+  }, [mineralsOverride])
 
   const deskSessions = useMemo(() => getTradingDeskSessions(), [])
 
@@ -434,11 +421,10 @@ export default function LiveMarketTicker({
                 {ui('Updated', 'Imesasishwa', 'Actualizado')} · {justUpdatedTime}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-paper/65 tabular-nums">
+              <span className="inline-flex items-center gap-1.5 text-paper/75 tabular-nums">
                 <Clock size={12} className="text-gold" />
-                {ui('Synced', 'Imesasishwa', 'Sincronizado')}:{' '}
-                <strong className="text-paper/90">{formattedSyncTime}</strong>
-                <span className="text-paper/45">({secondsToNextSync}s)</span>
+                <strong className="text-paper/95">{formattedSyncTime}</strong>
+                <span className="text-[#9de4b4]">(LIVE · 2s)</span>
               </span>
             )}
 
