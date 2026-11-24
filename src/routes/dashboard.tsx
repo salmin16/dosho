@@ -305,25 +305,25 @@ export function DashboardRouteComponent() {
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Link
             to="/dashboard/opportunities"
-            className="group flex items-center justify-between gap-4 rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 contours"
+            className="group flex min-w-0 max-w-full flex-col items-start justify-between gap-4 overflow-hidden rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 sm:flex-row sm:items-center sm:p-6 md:flex-col md:items-start xl:flex-row xl:items-center contours"
           >
-            <div>
-              <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
-                <Compass size={13} />
+            <div className="w-full min-w-0 flex-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-semibold uppercase tracking-wider text-gold">
+                <Compass size={13} className="shrink-0" />
                 {ui(
                   '3-Step Guided Wizard',
                   'Mfumo wa Hatua 3',
                   'Asistente de 3 Pasos',
                 )}
               </span>
-              <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
+              <h2 className="mt-1.5 font-display text-xl font-semibold leading-snug text-paper transition group-hover:text-gold sm:text-2xl">
                 {ui(
                   'Publish Mining Opportunity →',
                   'Chapisha Fursa ya Madini →',
                   'Publicar Oportunidad Minera →',
                 )}
               </h2>
-              <p className="mt-1 text-xs text-paper/70">
+              <p className="mt-1.5 text-sm leading-relaxed text-paper/75 sm:text-xs">
                 {ui(
                   `Submit tenders, consultancies, exploration grants, JVs, or internships (${userOpportunities.length} submitted).`,
                   `Wasilisha zabuni, ushauri, ruzuku za utafutaji au mafunzo (${userOpportunities.length} zimewasilishwa).`,
@@ -331,32 +331,33 @@ export function DashboardRouteComponent() {
                 )}
               </p>
             </div>
-            <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
-              /dashboard/opportunities
+            <span className="inline-flex w-full shrink-0 items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/15 px-3.5 py-2.5 font-mono text-xs font-semibold text-gold transition group-hover:bg-gold/25 sm:w-auto sm:justify-center sm:py-2 md:w-full md:justify-between xl:w-auto xl:justify-center">
+              <span className="truncate">/dashboard/opportunities</span>
+              <span className="sm:hidden md:inline xl:hidden" aria-hidden="true">→</span>
             </span>
           </Link>
 
           <Link
             to="/dashboard/services"
-            className="group flex items-center justify-between gap-4 rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 contours"
+            className="group flex min-w-0 max-w-full flex-col items-start justify-between gap-4 overflow-hidden rounded-xl border border-ink/15 bg-ink p-5 text-paper shadow-md transition hover:border-gold/60 sm:flex-row sm:items-center sm:p-6 md:flex-col md:items-start xl:flex-row xl:items-center contours"
           >
-            <div>
-              <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
-                <Wrench size={13} />
+            <div className="w-full min-w-0 flex-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-semibold uppercase tracking-wider text-gold">
+                <Wrench size={13} className="shrink-0" />
                 {ui(
                   '3-Step Guided Wizard',
                   'Mfumo wa Hatua 3',
                   'Asistente de 3 Pasos',
                 )}
               </span>
-              <h2 className="mt-1 font-display text-xl font-semibold text-paper group-hover:text-gold">
+              <h2 className="mt-1.5 font-display text-xl font-semibold leading-snug text-paper transition group-hover:text-gold sm:text-2xl">
                 {ui(
                   'Publish Technical Service →',
                   'Chapisha Huduma ya Kitaalamu →',
                   'Publicar Servicio Técnico →',
                 )}
               </h2>
-              <p className="mt-1 text-xs text-paper/70">
+              <p className="mt-1.5 text-sm leading-relaxed text-paper/75 sm:text-xs">
                 {ui(
                   `Register accredited drilling, geological, assay, legal, or ESIA services (${userServices.length} submitted).`,
                   `Sajili huduma za uchorongaji, jiolojia, maabara, sheria au mazingira (${userServices.length} zimewasilishwa).`,
@@ -364,8 +365,9 @@ export function DashboardRouteComponent() {
                 )}
               </p>
             </div>
-            <span className="shrink-0 rounded-lg border border-gold/40 bg-gold/15 px-3 py-2 font-mono text-xs font-semibold text-gold">
-              /dashboard/services
+            <span className="inline-flex w-full shrink-0 items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/15 px-3.5 py-2.5 font-mono text-xs font-semibold text-gold transition group-hover:bg-gold/25 sm:w-auto sm:justify-center sm:py-2 md:w-full md:justify-between xl:w-auto xl:justify-center">
+              <span className="truncate">/dashboard/services</span>
+              <span className="sm:hidden md:inline xl:hidden" aria-hidden="true">→</span>
             </span>
           </Link>
         </div>
