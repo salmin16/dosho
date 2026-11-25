@@ -37,6 +37,7 @@ interface CheckoutRequestBody {
   merchantMobileNumber?: string;
   otp?: string;
   turnstileToken?: string;
+  turnstileBypassReason?: string;
 }
 
 const MNO_PROVIDERS = new Set<string>([
@@ -274,11 +275,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
     maskedContact = maskGenericAccount(rawContact);
   }
 
-  // Optional Cloudflare Turnstile verification if secret & token provided
+  // Per-user checkout rate limiting (max 8 attempts per 10 minutes via payment_transactions)
+  const tenMinutesAgoIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { count: recentAttempts } = await adminClient
+    .from('payment_transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .gte('created_at', tenMinutesAgoIso);
+
+  if (typeof recentAttempts === 'number' && recentAttempts >= 8) {
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          'Too many checkout attempts in the last 10 minutes. Please wait a moment before retrying.',
+      },
+      429,
+    );
+  }
+
+  // Cloudflare Turnstile verification whenever a valid token is provided;
+  // when mobile/cellular widget timed out (`timeout_or_mobile_challenge`), the verified
+  // Supabase user JWT + per-user DB checkout rate limit above protects the endpoint.
   const turnstileSecret = Deno.env
     .get('TURNSTILE_SECRET_KEY')
     ?.trim()
     .replace(/^["']|["']$/g, '');
+  const bypassReason =
+    typeof body.turnstileBypassReason === 'string'
+      ? body.turnstileBypassReason.trim()
+      : '';
+  let turnstileVerificationMode = 'jwt_rate_limited';
+
   if (turnstileSecret && body.turnstileToken?.trim()) {
     try {
       const tsRes = await fetch(TURNSTILE_SITEVERIFY_URL, {
@@ -296,9 +324,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
           400,
         );
       }
+      turnstileVerificationMode = 'turnstile_verified';
     } catch {
-      // Allow checkout to proceed if Turnstile upstream has transient latency
+      turnstileVerificationMode = 'turnstile_upstream_fallback';
     }
+  } else if (bypassReason === 'timeout_or_mobile_challenge') {
+    turnstileVerificationMode = 'timeout_or_mobile_challenge_jwt_verified';
   }
 
   // 3. Verify & trim AzamPay credentials
@@ -376,6 +407,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         env: azamEnv,
         planId: resolvedTier.planId,
         tier: resolvedTier.tier,
+        turnstileVerificationMode,
         initiatedAt: nowIso,
       },
       created_at: nowIso,

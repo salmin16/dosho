@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowRight,
@@ -127,7 +127,10 @@ function Pricing() {
   const [bankMobileInput, setBankMobileInput] = useState('')
   const [bankOtpInput, setBankOtpInput] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
-  const [turnstileResetKey, setTurnstileResetKey] = useState(0)
+  const [turnstileBypassReason, setTurnstileBypassReason] = useState<
+    'timeout_or_mobile_challenge' | null
+  >(null)
+  const [checkoutModalKey, setCheckoutModalKey] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [checkingStatus, setCheckingStatus] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -137,9 +140,28 @@ function Pricing() {
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
 
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setCaptchaToken(token)
+    setTurnstileBypassReason(null)
+  }, [])
+
+  const handleTurnstileExpire = useCallback(() => {
+    setCaptchaToken('')
+  }, [])
+
+  const handleTurnstileFallback = useCallback(
+    (reason: 'timeout_or_mobile_challenge') => {
+      setTurnstileBypassReason(reason)
+    },
+    [],
+  )
+
   useEffect(() => {
     if (initialPlanParam === 'pro' || initialPlanParam === 'enterprise') {
       setCheckoutPlanId(initialPlanParam)
+      setCheckoutModalKey((k) => k + 1)
+      setCaptchaToken('')
+      setTurnstileBypassReason(null)
       setPendingTx(null)
       setReceipt(null)
       setErrorMsg(null)
@@ -231,6 +253,9 @@ function Pricing() {
 
   const openCheckoutSheet = (planSlug: Exclude<SubscriptionPlanId, 'free'>) => {
     setCheckoutPlanId(planSlug)
+    setCheckoutModalKey((k) => k + 1)
+    setCaptchaToken('')
+    setTurnstileBypassReason(null)
     setErrorMsg(null)
     setPendingTx(null)
     setReceipt(null)
@@ -241,6 +266,8 @@ function Pricing() {
 
   const closeCheckoutSheet = () => {
     setCheckoutPlanId(null)
+    setCaptchaToken('')
+    setTurnstileBypassReason(null)
     setErrorMsg(null)
     setPendingTx(null)
     setReceipt(null)
@@ -273,17 +300,18 @@ function Pricing() {
     if (!checkoutPlanId || !selectedPlan) return
     setErrorMsg(null)
 
-    if (turnstileEnabled && !captchaToken) {
+    if (turnstileEnabled && !captchaToken && !turnstileBypassReason) {
       setErrorMsg(
         ui(
-          'Please complete the security check before sending the payment prompt.',
-          'Tafadhali kamilisha uthibitisho wa usalama kabla ya kuendelea.',
-          'Por favor completa la verificación de seguridad antes de continuar.',
+          'Security check is still initializing — please wait a second or click Retry Verification.',
+          'Uthibitisho wa usalama unaendelea — subiri sekunde chache au bonyeza Jaribu Tena.',
+          'Verificación de seguridad en curso — espera un segundo o pulsa Reintentar.',
         ),
       )
       return
     }
 
+    const consumedToken = captchaToken
     setSubmitting(true)
     try {
       const activeProvider: AzamPayProviderCode =
@@ -300,7 +328,10 @@ function Pricing() {
         merchantMobileNumber:
           channel === 'bank_transfer' ? bankMobileInput : undefined,
         otp: channel === 'bank_transfer' ? bankOtpInput : undefined,
-        turnstileToken: captchaToken || undefined,
+        turnstileToken: consumedToken || undefined,
+        turnstileBypassReason: !consumedToken
+          ? (turnstileBypassReason ?? undefined)
+          : undefined,
       })
 
       if (!res.ok || !res.externalId) {
@@ -331,9 +362,10 @@ function Pricing() {
       })
     } finally {
       setSubmitting(false)
-      setCaptchaToken('')
-      setTurnstileResetKey((k) => k + 1)
-      turnstileRef.current?.reset()
+      if (consumedToken) {
+        setCaptchaToken('')
+        turnstileRef.current?.reset()
+      }
     }
   }
 
@@ -1097,13 +1129,19 @@ function Pricing() {
                   )}
 
                   {turnstileEnabled && (
-                    <TurnstileWidget
-                      ref={turnstileRef}
-                      action="subscription-payment"
-                      resetKey={turnstileResetKey}
-                      onVerify={setCaptchaToken}
-                      onExpire={() => setCaptchaToken('')}
-                    />
+                    <div key={`checkout-ts-${checkoutModalKey}`} className="w-full min-w-0">
+                      <TurnstileWidget
+                        ref={turnstileRef}
+                        action="subscription-payment"
+                        appearance="interaction-only"
+                        execution="render"
+                        timeoutMs={8000}
+                        allowMobileFallback
+                        onVerify={handleTurnstileVerify}
+                        onExpire={handleTurnstileExpire}
+                        onFallbackReady={handleTurnstileFallback}
+                      />
+                    </div>
                   )}
 
                   {errorMsg && (

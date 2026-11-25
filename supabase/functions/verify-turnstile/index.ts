@@ -3,6 +3,8 @@
 //   supabase secrets set TURNSTILE_SECRET_KEY=0x4AAAAAAA...
 // Never expose TURNSTILE_SECRET_KEY to browser bundles or client environment variables.
 
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+
 const TURNSTILE_SITEVERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
@@ -20,9 +22,29 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Sliding-window in-memory per-user rate limit for mobile fallback requests (10 reqs / 10 min)
+const FALLBACK_WINDOW_MS = 10 * 60 * 1000;
+const FALLBACK_MAX_REQUESTS = 10;
+const userFallbackAttempts = new Map<string, number[]>();
+
+function checkUserRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const prev = (userFallbackAttempts.get(userId) ?? []).filter(
+    (ts) => now - ts < FALLBACK_WINDOW_MS,
+  );
+  if (prev.length >= FALLBACK_MAX_REQUESTS) {
+    userFallbackAttempts.set(userId, prev);
+    return false;
+  }
+  prev.push(now);
+  userFallbackAttempts.set(userId, prev);
+  return true;
+}
+
 interface VerifyRequestBody {
   token?: string;
   action?: string;
+  turnstileBypassReason?: string;
 }
 
 interface TurnstileSiteverifyOutcome {
@@ -57,7 +79,7 @@ function isHostnameAllowed(hostname: string | undefined): boolean {
 }
 
 function jsonResponse(
-  payload: { success: boolean; error?: string },
+  payload: { success: boolean; error?: string; verifiedBy?: string },
   status: number,
 ): Response {
   return new Response(JSON.stringify(payload), {
@@ -95,6 +117,60 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
+  const bypassReason =
+    typeof body.turnstileBypassReason === 'string'
+      ? body.turnstileBypassReason.trim()
+      : '';
+
+  // Graceful mobile/cellular fallback: when Turnstile widget timed out client-side,
+  // verify the caller's authenticated Supabase user JWT + enforce per-user rate limit.
+  if (!token && bypassReason === 'timeout_or_mobile_challenge') {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
+    const jwt = (req.headers.get('Authorization') ?? '')
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+
+    if (!supabaseUrl || !serviceRoleKey || !jwt) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'User Auth Error: Sign in required for mobile security fallback.',
+        },
+        401,
+      );
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(jwt);
+    if (authErr || !userData?.user) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'User Auth Error: Invalid or expired session for fallback verification.',
+        },
+        401,
+      );
+    }
+
+    if (!checkUserRateLimit(userData.user.id)) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Too many verification attempts. Please wait a few minutes and try again.',
+        },
+        429,
+      );
+    }
+
+    return jsonResponse(
+      { success: true, verifiedBy: 'authenticated_session_fallback' },
+      200,
+    );
+  }
+
   if (!token) {
     return jsonResponse(
       { success: false, error: 'Missing security verification token.' },

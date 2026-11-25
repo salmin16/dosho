@@ -2,13 +2,14 @@
 
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from 'react';
-import { Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 
 const TURNSTILE_SCRIPT_SRC =
   'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -17,6 +18,8 @@ interface CloudflareTurnstileRenderOptions {
   sitekey: string;
   theme?: 'light' | 'dark' | 'auto';
   size?: 'normal' | 'compact' | 'flexible';
+  appearance?: 'always' | 'execute' | 'interaction-only';
+  execution?: 'render' | 'execute';
   action?: string;
   retry?: 'auto' | 'never';
   'refresh-expired'?: 'auto' | 'manual' | 'never';
@@ -197,9 +200,15 @@ export interface TurnstileWidgetProps {
   onExpire?: () => void;
   onError?: (message: string) => void;
   onTimeout?: () => void;
+  /** Called if mobile/cellular Turnstile stalls past timeoutMs or fails so authenticated flows stay non-blocking */
+  onFallbackReady?: (reason: 'timeout_or_mobile_challenge') => void;
+  /** Enables non-blocking fallback UX when widget stalls on mobile/in-app browsers */
+  allowMobileFallback?: boolean;
   /** Incrementing this counter declaratively clears the token and resets the widget */
   resetKey?: number;
   timeoutMs?: number;
+  appearance?: 'always' | 'execute' | 'interaction-only';
+  execution?: 'render' | 'execute';
   action?: string;
   theme?: 'light' | 'dark' | 'auto';
   className?: string;
@@ -234,14 +243,19 @@ export function isTurnstileEnabled(): boolean {
   return getPublicTurnstileSiteKey() !== null;
 }
 
-const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
+const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
   function TurnstileWidget(
     {
       onVerify,
       onExpire,
       onError,
       onTimeout,
+      onFallbackReady,
+      allowMobileFallback = false,
       resetKey,
+      timeoutMs = 8000,
+      appearance = 'interaction-only',
+      execution = 'render',
       action,
       theme = 'light',
       className = '',
@@ -253,24 +267,48 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     const widgetIdRef = useRef<string | null>(null);
     const forceReloadNextRef = useRef<boolean>(false);
     const prevResetKeyRef = useRef<number | undefined>(resetKey);
+    const autoRetriedRef = useRef<boolean>(false);
 
     const onVerifyRef = useRef(onVerify);
     const onExpireRef = useRef(onExpire);
     const onErrorRef = useRef(onError);
     const onTimeoutRef = useRef(onTimeout);
+    const onFallbackReadyRef = useRef(onFallbackReady);
     onVerifyRef.current = onVerify;
     onExpireRef.current = onExpire;
     onErrorRef.current = onError;
     onTimeoutRef.current = onTimeout;
+    onFallbackReadyRef.current = onFallbackReady;
 
     const [widgetState, setWidgetState] = useState<
-      'loading' | 'ready' | 'verified' | 'expired' | 'error'
+      'loading' | 'ready' | 'verified' | 'expired' | 'error' | 'fallback'
     >('loading');
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [diagnosticHint, setDiagnosticHint] = useState<string | null>(null);
     const [renderGeneration, setRenderGeneration] = useState(0);
 
+    const activateFallbackOrError = useCallback(
+      (fallbackMsg: string, hint?: string | null) => {
+        if (allowMobileFallback) {
+          setWidgetState('fallback');
+          setStatusMessage(
+            'Mobile browser verification took too long — secured via your signed-in account.',
+          );
+          setDiagnosticHint(hint ?? 'Mobile fallback active');
+          onFallbackReadyRef.current?.('timeout_or_mobile_challenge');
+          onTimeoutRef.current?.();
+          return;
+        }
+        setWidgetState('expired');
+        setStatusMessage(fallbackMsg);
+        setDiagnosticHint(hint ?? null);
+        onTimeoutRef.current?.();
+      },
+      [allowMobileFallback],
+    );
+
     const resetWidget = useCallback(() => {
+      autoRetriedRef.current = false;
       onExpireRef.current?.();
       setStatusMessage(null);
       setDiagnosticHint(null);
@@ -309,9 +347,44 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
       prevResetKeyRef.current = resetKey;
     }, [resetKey, resetWidget]);
 
+    // 8-second watchdog: auto-retry once around halfway, then trigger non-blocking fallback/retry UI
+    useEffect(() => {
+      if (!siteKey) return;
+      if (widgetState !== 'loading' && widgetState !== 'ready') return;
+
+      const halfDelay = Math.max(3000, Math.round(timeoutMs * 0.55));
+      const retryTimer = window.setTimeout(() => {
+        if (
+          !autoRetriedRef.current &&
+          widgetIdRef.current &&
+          typeof window.turnstile?.reset === 'function'
+        ) {
+          autoRetriedRef.current = true;
+          try {
+            window.turnstile.reset(widgetIdRef.current);
+          } catch {
+            // ignore transient reset error
+          }
+        }
+      }, halfDelay);
+
+      const fallbackTimer = window.setTimeout(() => {
+        activateFallbackOrError(
+          'Security verification timed out on this network. Please retry.',
+          'Challenge timeout (8s)',
+        );
+      }, timeoutMs);
+
+      return () => {
+        window.clearTimeout(retryTimer);
+        window.clearTimeout(fallbackTimer);
+      };
+    }, [siteKey, widgetState, timeoutMs, activateFallbackOrError]);
+
     useEffect(() => {
       if (!siteKey) return;
       let cancelled = false;
+      autoRetriedRef.current = false;
       const shouldForceReload = forceReloadNextRef.current;
       forceReloadNextRef.current = false;
 
@@ -337,6 +410,8 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
             sitekey: siteKey,
             theme,
             size: 'flexible',
+            appearance,
+            execution,
             ...(action ? { action } : {}),
             retry: 'auto',
             'refresh-expired': 'auto',
@@ -349,7 +424,6 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
             },
             'expired-callback': () => {
               if (cancelled) return;
-              // Immediately clear stale token and request a fresh single-use token
               onExpireRef.current?.();
               setWidgetState('ready');
               setStatusMessage(null);
@@ -358,21 +432,19 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
                 try {
                   api.reset(widgetIdRef.current);
                 } catch {
-                  setWidgetState('expired');
-                  setStatusMessage('Security check expired. Please retry.');
+                  activateFallbackOrError('Security check expired. Please retry.');
                 }
               } else {
-                setWidgetState('expired');
-                setStatusMessage('Security check expired. Please retry.');
+                activateFallbackOrError('Security check expired. Please retry.');
               }
             },
             'timeout-callback': () => {
               if (cancelled) return;
               onExpireRef.current?.();
-              setWidgetState('expired');
-              setStatusMessage('Security verification timed out. Please retry.');
-              setDiagnosticHint('Challenge timeout');
-              onTimeoutRef.current?.();
+              activateFallbackOrError(
+                'Security verification timed out. Please retry.',
+                'Challenge timeout',
+              );
             },
             'error-callback': (errorCode?: string | number) => {
               if (cancelled) return;
@@ -382,10 +454,27 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
                 action,
               });
               onExpireRef.current?.();
-              setWidgetState('error');
-              setStatusMessage(described.message);
-              setDiagnosticHint(described.codeHint ?? null);
-              onErrorRef.current?.(described.message);
+              if (
+                !autoRetriedRef.current &&
+                widgetIdRef.current &&
+                typeof api.reset === 'function'
+              ) {
+                autoRetriedRef.current = true;
+                try {
+                  api.reset(widgetIdRef.current);
+                  return;
+                } catch {
+                  // fall through to fallback/error state
+                }
+              }
+              if (allowMobileFallback) {
+                activateFallbackOrError(described.message, described.codeHint);
+              } else {
+                setWidgetState('error');
+                setStatusMessage(described.message);
+                setDiagnosticHint(described.codeHint ?? null);
+                onErrorRef.current?.(described.message);
+              }
             },
           });
 
@@ -394,10 +483,17 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
         } catch (renderErr) {
           console.warn('[MineConnect Turnstile] Render exception:', renderErr);
           onExpireRef.current?.();
-          setWidgetState('error');
-          setStatusMessage('Security verification failed to render. Please retry.');
-          setDiagnosticHint(null);
-          onErrorRef.current?.('Security verification failed to render. Please retry.');
+          if (allowMobileFallback) {
+            activateFallbackOrError(
+              'Security verification failed to render.',
+              'Render fallback',
+            );
+          } else {
+            setWidgetState('error');
+            setStatusMessage('Security verification failed to render. Please retry.');
+            setDiagnosticHint(null);
+            onErrorRef.current?.('Security verification failed to render. Please retry.');
+          }
         }
       };
 
@@ -412,10 +508,14 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
           const described = describeTurnstileError(code);
           console.warn('[MineConnect Turnstile] Script load failed:', code);
           onExpireRef.current?.();
-          setWidgetState('error');
-          setStatusMessage(described.message);
-          setDiagnosticHint(described.codeHint ?? null);
-          onErrorRef.current?.(described.message);
+          if (allowMobileFallback) {
+            activateFallbackOrError(described.message, described.codeHint);
+          } else {
+            setWidgetState('error');
+            setStatusMessage(described.message);
+            setDiagnosticHint(described.codeHint ?? null);
+            onErrorRef.current?.(described.message);
+          }
         });
 
       return () => {
@@ -429,7 +529,16 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
           widgetIdRef.current = null;
         }
       };
-    }, [siteKey, theme, action, renderGeneration]);
+    }, [
+      siteKey,
+      theme,
+      appearance,
+      execution,
+      action,
+      renderGeneration,
+      allowMobileFallback,
+      activateFallbackOrError,
+    ]);
 
     if (!siteKey) {
       return null;
@@ -437,7 +546,7 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
 
     return (
       <div className={`w-full min-w-0 max-w-full ${className}`}>
-        <div className="relative flex min-h-[72px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8">
+        <div className="relative flex min-h-[68px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8">
           {widgetState === 'loading' && (
             <div
               aria-live="polite"
@@ -450,8 +559,37 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
 
           <div
             ref={containerRef}
-            className="flex min-h-[65px] w-full min-w-0 max-w-full items-center justify-center overflow-hidden"
+            className={`flex w-full min-w-0 max-w-full items-center justify-center overflow-hidden ${
+              widgetState === 'fallback' ? 'hidden' : 'min-h-[60px]'
+            }`}
           />
+
+          {widgetState === 'fallback' && (
+            <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="min-w-0 flex-1">
+                <span className="inline-flex items-start gap-1.5 font-medium text-moss">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    {statusMessage ||
+                      'Verified via signed-in session — ready to proceed.'}
+                  </span>
+                </span>
+                {diagnosticHint && (
+                  <span className="mt-0.5 block pl-5 font-mono text-[10px] text-stone">
+                    {diagnosticHint}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={resetWidget}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+              >
+                <RefreshCw size={11} />
+                Retry Verification
+              </button>
+            </div>
+          )}
 
           {(widgetState === 'error' || widgetState === 'expired') && (
             <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 border-t border-ink/8 pt-2 text-xs">
@@ -472,7 +610,7 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
                 className="inline-flex shrink-0 items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
               >
                 <RefreshCw size={11} />
-                Retry
+                Retry Verification
               </button>
             </div>
           )}
@@ -482,4 +620,5 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
   },
 );
 
+const TurnstileWidget = memo(TurnstileWidgetInner);
 export default TurnstileWidget;

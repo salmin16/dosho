@@ -1069,6 +1069,7 @@ export async function initiateAzamPayCheckout(params: {
   merchantMobileNumber?: string;
   otp?: string;
   turnstileToken?: string;
+  turnstileBypassReason?: 'timeout_or_mobile_challenge';
 }): Promise<AzamPayCheckoutResult> {
   const session = await waitForAuthReady();
   if (!session) {
@@ -1136,6 +1137,7 @@ export async function initiateAzamPayCheckout(params: {
           merchantMobileNumber: params.merchantMobileNumber?.trim() || undefined,
           otp: params.otp?.trim() || undefined,
           turnstileToken: params.turnstileToken || undefined,
+          turnstileBypassReason: params.turnstileBypassReason || undefined,
         },
       },
     );
