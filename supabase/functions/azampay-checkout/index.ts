@@ -532,12 +532,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  // 7. Step 2 — MNO / Bank Checkout Request With Exact Headers & Sandbox Gateway Fallback
+  // 7. Step 2 — Canonical AzamPay MNO / Bank Checkout Request
   try {
-    const primaryEndpoint = isMno
+    const checkoutUrl = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
       : `${checkoutBaseUrl}/azampay/bank/checkout`;
-    const altMnoEndpoint = `${checkoutBaseUrl}/api/v1/Checkout/MnoCheckout`;
 
     const mobilePhoneDigits = body.merchantMobileNumber
       ? formatTanzaniaPhone(body.merchantMobileNumber)
@@ -574,12 +573,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     };
 
-    const isAuthOrNotFound = (
+    const isAuthorizationRejection = (
       res: Response,
       parsed: Record<string, unknown>,
       rawText: string,
     ): boolean => {
-      if (res.status === 401 || res.status === 404) return true;
+      if (res.status === 401) return true;
       const msg = `${String(parsed.message ?? '')} ${rawText}`;
       return /please provide valid authorization|unauthorized|invalid.*authorization/i.test(msg);
     };
@@ -600,7 +599,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ...(apiToken ? { 'X-API-Key': apiToken } : {}),
     };
 
-    const apiKeyOnlyHeaders: Record<string, string> = {
+    const apiKeyAndBearerHeaders: Record<string, string> = {
       ...baseJsonHeaders,
       ...(apiToken
         ? {
@@ -614,84 +613,50 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     let attemptCounter = 0;
     const sendCheckout = async (
-      url: string,
       strategy: string,
       headers: Record<string, string>,
     ) => {
       attemptCounter += 1;
-      const res = await fetch(url, {
+      const res = await fetch(checkoutUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
       });
       const text = await res.text();
       const parsed = parseJsonSafe(text);
-      if (isAuthOrNotFound(res, parsed, text)) {
-        console.error('[azampay-checkout-401]', {
+      if (!res.ok) {
+        console.error('[azampay-mno-checkout]', {
           attempt: attemptCounter,
           strategy,
-          url,
+          url: checkoutUrl,
           status: res.status,
+          provider,
           hasAccessToken: Boolean(accessToken),
           tokenPrefix: accessToken.slice(0, 12),
           hasApiToken: Boolean(apiToken),
-          responseText: text,
+          body: text,
         });
       }
-      return { url, res, rawText: text, json: parsed, strategy };
+      return { url: checkoutUrl, res, rawText: text, json: parsed, strategy };
     };
 
-    // Attempt 1: Primary endpoint with Authorization: Bearer <accessToken> ONLY (no X-API-Key)
-    let attempt = await sendCheckout(
-      primaryEndpoint,
-      'primary_bearer_only',
-      bearerOnlyHeaders,
-    );
+    // Attempt 1: Canonical endpoint with Authorization: Bearer <accessToken> ONLY
+    let attempt = await sendCheckout('bearer_only', bearerOnlyHeaders);
 
-    // Attempt 2: Primary endpoint with BOTH Authorization: Bearer <accessToken> AND X-API-Key: <apiToken>
+    // Attempt 2: Retry with BOTH Authorization: Bearer <accessToken> AND X-API-Key: <apiToken> if 401/auth rejection
     if (
       apiToken &&
-      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
+      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
     ) {
-      attempt = await sendCheckout(
-        primaryEndpoint,
-        'primary_bearer_and_apikey',
-        bearerAndApiKeyHeaders,
-      );
+      attempt = await sendCheckout('bearer_and_apikey', bearerAndApiKeyHeaders);
     }
 
-    // Attempt 3: Primary endpoint with X-API-Key: <apiToken> + Bearer <apiToken>
+    // Attempt 3: Retry with X-API-Key: <apiToken> + Authorization: Bearer <apiToken> if still 401/auth rejection
     if (
       apiToken &&
-      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
+      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
     ) {
-      attempt = await sendCheckout(
-        primaryEndpoint,
-        'primary_apikey_and_bearer_token',
-        apiKeyOnlyHeaders,
-      );
-    }
-
-    // Attempt 4: Alternate AzamPay Sandbox v1 MNO Checkout path if primary returned 401/404 across auth attempts
-    if (
-      isMno &&
-      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
-    ) {
-      attempt = await sendCheckout(
-        altMnoEndpoint,
-        'v1_mno_bearer_only',
-        bearerOnlyHeaders,
-      );
-      if (
-        apiToken &&
-        isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
-      ) {
-        attempt = await sendCheckout(
-          altMnoEndpoint,
-          'v1_mno_bearer_and_apikey',
-          bearerAndApiKeyHeaders,
-        );
-      }
+      attempt = await sendCheckout('apikey_and_bearer_token', apiKeyAndBearerHeaders);
     }
 
     const checkoutRes = attempt.res;
@@ -708,20 +673,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
           : null;
 
     if (!azamSuccess) {
-      console.error('[azampay-checkout-failed]', {
-        url: attempt.url,
-        status: checkoutRes.status,
-        body: attempt.rawText,
-        tokenLength: accessToken.length,
-        hasApiKey: Boolean(apiToken),
-        strategy: attempt.strategy,
-        env: azamEnv,
-        provider,
-      });
-      const rawFailure =
+      const parsedMsg =
         typeof checkoutJson.message === 'string' && checkoutJson.message.trim()
           ? checkoutJson.message.trim()
-          : attempt.rawText.trim() || `${provider} checkout declined (HTTP ${checkoutRes.status}).`;
+          : '';
+      const upstreamReason =
+        parsedMsg ||
+        attempt.rawText.trim() ||
+        (checkoutRes.status === 404
+          ? 'Endpoint not found'
+          : `HTTP ${checkoutRes.status}`);
+
+      console.error('[azampay-mno-checkout]', {
+        url: attempt.url,
+        status: checkoutRes.status,
+        provider,
+        body: attempt.rawText,
+        strategy: attempt.strategy,
+        env: azamEnv,
+        hasApiToken: Boolean(apiToken),
+      });
 
       await adminClient
         .from('payment_transactions')
@@ -746,7 +717,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         {
           ok: false,
           externalId,
-          error: `AzamPay Checkout Error (${checkoutRes.status}): ${rawFailure}`,
+          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}`,
           azampayResponse: checkoutJson,
         },
         400,
