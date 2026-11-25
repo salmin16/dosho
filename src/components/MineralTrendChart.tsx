@@ -26,7 +26,6 @@ import {
   formatVisibleDateWindow,
   getEatYear,
   type ChartPricingMode,
-  type TimelineScale,
 } from '../lib/mineralHistory'
 import type { MineralPriceRecord } from '../types/database'
 
@@ -184,8 +183,9 @@ export default function MineralTrendChart({
     })
   }, [model])
 
-  // Default to latest 5 years so dragging left immediately pans back through 2020 -> 2000,
-  // while pinching out expands all the way to 2000–2026 and pinching in dives to hours/minutes.
+  // Default to the last 24 hours (1D) so every user's first look is a crisp,
+  // focused 1-day trend, while dragging left explores full history and
+  // pinching/scrolling zooms continuously out to 2000–2026.
   const defaultViewport = useMemo<ViewportRange | null>(() => {
     if (!model) return null
     return {
@@ -430,36 +430,18 @@ export default function MineralTrendChart({
       const isZeroDecimal = currency === 'TZS' || currency === 'JPY'
       const absVal = Math.abs(displayValue)
 
-      if (compactMobile) {
-        if (absVal >= 1_000_000) {
-          const decimals = step < 10_000 ? 3 : step < 100_000 ? 2 : 1
-          return `${(displayValue / 1_000_000).toFixed(decimals)}M`
-        }
-        if (absVal >= 10_000) {
-          const decimals = step < 100 ? 2 : step < 1_000 ? 1 : 0
-          return `${(displayValue / 1_000).toFixed(decimals)}k`
-        }
-        if (absVal >= 1_000) {
-          return `${(displayValue / 1_000).toFixed(step < 500 ? 2 : 1)}k`
-        }
-        const decimals = isZeroDecimal
-          ? 0
-          : step < 0.02
-            ? 3
-            : step < 0.25
-              ? 2
-              : step < 2
-                ? 2
-                : 1
-        return displayValue.toLocaleString('en-US', {
-          minimumFractionDigits: decimals,
-          maximumFractionDigits: decimals,
-        })
-      }
-
       if (absVal >= 1_000_000) {
         const decimals = step < 100_000 ? 2 : absVal >= 10_000_000 ? 1 : 2
-        return `${currencyMeta.symbol}${(displayValue / 1_000_000).toFixed(decimals)}M`
+        return `${currencyMeta.symbol}${compactMobile ? '' : ' '}${(displayValue / 1_000_000).toFixed(decimals)}M`
+      }
+
+      if (currency === 'TZS') {
+        return `TSh ${Math.round(displayValue).toLocaleString('en-US')}`
+      }
+
+      if (compactMobile && absVal >= 10_000) {
+        const decimals = step < 100 ? 2 : step < 1_000 ? 1 : 0
+        return `${currencyMeta.symbol}${(displayValue / 1_000).toFixed(decimals)}k`
       }
 
       const decimals = isZeroDecimal
@@ -486,28 +468,10 @@ export default function MineralTrendChart({
     [formatPrice],
   )
 
-  const formatScaleBadge = useCallback(
-    (scale: TimelineScale): string => {
-      switch (scale) {
-        case 'min':
-          return ui('min', 'dak', 'min')
-        case 'hours':
-          return ui('hours', 'saa', 'horas')
-        case 'days':
-          return ui('days', 'siku', 'días')
-        case 'months':
-          return ui('months', 'miezi', 'meses')
-        case 'years':
-          return ui('years', 'miaka', 'años')
-      }
-    },
-    [ui],
-  )
-
   const chartGeometry = useMemo(() => {
     if (!visibleStats || visiblePoints.length < 2) return null
 
-    const height = isCompact ? 316 : 412
+    const height = isCompact ? 460 : 560
     const convertedValues = visiblePoints.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
@@ -517,7 +481,7 @@ export default function MineralTrendChart({
       max: yMax,
       step: yStep,
       ticks: yTicks,
-    } = computeNiceAxisTicks(minConverted, maxConverted, isCompact ? 5 : 6)
+    } = computeNiceAxisTicks(minConverted, maxConverted, isCompact ? 6 : 7)
 
     const yTickLabels = yTicks.map((val) => ({
       value: val,
@@ -529,14 +493,14 @@ export default function MineralTrendChart({
       4,
     )
 
-    const padLeft = isCompact ? 6 : 12
+    const padLeft = isCompact ? 8 : 14
     const padRight = isCompact
-      ? Math.min(62, Math.max(48, Math.round(maxLabelLen * 6.3 + 14)))
-      : Math.min(114, Math.max(76, Math.round(maxLabelLen * 7.2 + 20)))
-    const padTop = isCompact ? 14 : 18
-    const padBottom = isCompact ? 28 : 34
+      ? Math.min(92, Math.max(72, Math.round(maxLabelLen * 6.3 + 14)))
+      : Math.min(122, Math.max(88, Math.round(maxLabelLen * 7.2 + 22)))
+    const padTop = isCompact ? 18 : 22
+    const padBottom = isCompact ? 32 : 36
     const plotWidth = Math.max(120, chartWidth - padLeft - padRight)
-    const plotHeight = Math.max(160, height - padTop - padBottom)
+    const plotHeight = Math.max(260, height - padTop - padBottom)
     const ySpan = Math.max(1e-9, yMax - yMin)
     const timeSpan = Math.max(1, visibleStats.endMs - visibleStats.startMs)
 
@@ -894,11 +858,14 @@ export default function MineralTrendChart({
       ? (displayedDeltaUsd / visibleStats.startUnitUsd) * 100
       : 0
 
-  const seriesPositive = visibleStats.changeUnitUsd >= 0
   const displayedPositive = displayedDeltaUsd >= 0
 
-  const strokeColor = seriesPositive ? '#2f6f4e' : '#a33a2a'
-  const fillTopOpacity = seriesPositive ? 0.24 : 0.2
+  // Professional light blue trend line & matching area gradient
+  const strokeColor = '#0ea5e9'
+  const areaGlowColor = '#38bdf8'
+  const areaMidColor = '#7dd3fc'
+  const axisBadgeFill = '#0284c7'
+  const fillTopOpacity = 0.30
 
   const sokoTier = convertToChartUnitUsd(
     activeMineral.local_market_price_usd,
@@ -1107,12 +1074,12 @@ export default function MineralTrendChart({
             <button
               type="button"
               onClick={handleResetView}
-              title={ui('Reset to latest view', 'Rejesha mwonekano wa sasa', 'Restablecer vista actual')}
-              aria-label={ui('Reset to latest view', 'Rejesha mwonekano wa sasa', 'Restablecer vista actual')}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/20 bg-ink px-2.5 font-mono text-[10px] font-semibold text-gold transition hover:bg-ochre hover:text-paper"
+              title={ui('Reset to 24h (1D) view', 'Rejesha mwonekano wa saa 24 (1D)', 'Restablecer vista 24h (1D)')}
+              aria-label={ui('Reset to 24h (1D) view', 'Rejesha mwonekano wa saa 24 (1D)', 'Restablecer vista 24h (1D)')}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/20 bg-ink px-2.5 font-mono text-[10px] font-semibold text-gold transition hover:bg-sky-600 hover:text-white"
             >
               <RotateCcw size={11} />
-              <span>{ui('Reset', 'Rejesha', 'Reset')}</span>
+              <span>{ui('Reset 1D', 'Rejesha 1D', 'Reset 1D')}</span>
             </button>
           )}
         </div>
@@ -1139,12 +1106,6 @@ export default function MineralTrendChart({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
-            <span className="rounded border border-ochre/30 bg-ochre/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-ochre">
-              {formatScaleBadge(visibleStats.scale)}
-            </span>
-            <span className="rounded border border-ink/12 bg-paper px-1.5 py-0.5 font-semibold text-ink-3">
-              {visibleStats.spanCompact}
-            </span>
             <span
               title={ui(
                 `Timeline position (${model.startYear}–${model.endYear})`,
@@ -1159,11 +1120,11 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Generous Direct-Manipulation Trading Canvas (Uncapped 2000 -> Present Drag/Pinch) */}
+      {/* Tall Institutional Direct-Manipulation Trading Canvas (1D Default -> Full 2000–2026 History) */}
       <div className="relative px-2 pb-2 sm:px-5 sm:pb-3 lg:px-6">
         <div
           ref={chartContainerRef}
-          className="relative min-h-[316px] w-full select-none sm:min-h-[412px]"
+          className="relative min-h-[460px] w-full select-none sm:min-h-[560px]"
         >
           <svg
             ref={svgRef}
@@ -1172,8 +1133,8 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} ${model.startYear}–${model.endYear} World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
-            className={`block h-[316px] w-full touch-none rounded-lg border border-ink/8 bg-[#fbf8f2] outline-none focus-visible:ring-2 focus-visible:ring-ochre/40 sm:h-[412px] ${
+            aria-label={`${activeMineral.mineral_name} 24-hour & historical World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
+            className={`block h-[460px] w-full touch-none rounded-lg border border-ink/8 bg-[#fbf8f2] outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 sm:h-[560px] ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
             onPointerDown={handlePointerDown}
@@ -1200,15 +1161,15 @@ export default function MineralTrendChart({
               >
                 <stop
                   offset="0%"
-                  stopColor={strokeColor}
+                  stopColor={areaGlowColor}
                   stopOpacity={fillTopOpacity}
                 />
                 <stop
-                  offset="82%"
-                  stopColor={strokeColor}
-                  stopOpacity={0.03}
+                  offset="72%"
+                  stopColor={areaMidColor}
+                  stopOpacity={0.09}
                 />
-                <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
+                <stop offset="100%" stopColor={areaMidColor} stopOpacity={0} />
               </linearGradient>
               <clipPath id={`plot-clip-${uid}`}>
                 <rect
@@ -1256,7 +1217,7 @@ export default function MineralTrendChart({
                   y={tick.y + 3.5}
                   textAnchor="start"
                   fill="#776c60"
-                  fontSize={chartGeometry.isCompact ? '10' : '11'}
+                  fontSize={chartGeometry.isCompact ? '9.5' : '11'}
                   fontFamily="var(--font-mono)"
                   style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
@@ -1300,7 +1261,7 @@ export default function MineralTrendChart({
                 d={chartGeometry.linePath}
                 fill="none"
                 stroke={strokeColor}
-                strokeWidth={chartGeometry.isCompact ? 1.9 : 2.2}
+                strokeWidth={chartGeometry.isCompact ? 2.2 : 2.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -1313,7 +1274,7 @@ export default function MineralTrendChart({
               x2={chartGeometry.plotRightX}
               y2={terminalCoord.y}
               stroke={strokeColor}
-              strokeOpacity={0.65}
+              strokeOpacity={0.55}
               strokeWidth={1}
               strokeDasharray="3 3"
             />
@@ -1323,14 +1284,14 @@ export default function MineralTrendChart({
               <circle
                 cx={terminalCoord.x}
                 cy={terminalCoord.y}
-                r={7}
-                fill={strokeColor}
-                fillOpacity={0.2}
+                r={7.5}
+                fill={areaGlowColor}
+                fillOpacity={0.26}
               />
               <circle
                 cx={terminalCoord.x}
                 cy={terminalCoord.y}
-                r={3.6}
+                r={3.8}
                 fill={strokeColor}
                 stroke="#fbf8f2"
                 strokeWidth={1.8}
@@ -1342,17 +1303,17 @@ export default function MineralTrendChart({
               <rect
                 x={chartGeometry.plotRightX + 2}
                 y={terminalBadgeY - badgeHalf}
-                width={Math.max(42, chartGeometry.padRight - 4)}
+                width={Math.max(48, chartGeometry.padRight - 4)}
                 height={badgeHeight}
                 rx={4}
-                fill={strokeColor}
+                fill={axisBadgeFill}
               />
               <text
                 x={chartGeometry.plotRightX + (chartGeometry.isCompact ? 5 : 8)}
                 y={terminalBadgeY + 3.5}
                 textAnchor="start"
-                fill="#f6f1e7"
-                fontSize={chartGeometry.isCompact ? '10' : '10.5'}
+                fill="#ffffff"
+                fontSize={chartGeometry.isCompact ? '9.5' : '10.5'}
                 fontWeight="700"
                 fontFamily="var(--font-mono)"
                 style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -1503,11 +1464,11 @@ export default function MineralTrendChart({
         </div>
 
         {/* Minimal Direct-Manipulation Hint */}
-        <p className="mt-1.5 text-center font-mono text-[10px] text-stone/85">
+        <p className="mt-2 text-center font-mono text-[10.5px] text-stone/90">
           {ui(
-            `Drag left/right across ${model.startYear}–${model.endYear} · Pinch or scroll to zoom (years → min) · Tap to inspect`,
-            `Buruta kushoto/kulia (${model.startYear}–${model.endYear}) · Bana au zungusha kukuza (miaka → dakika) · Gusa kukagua`,
-            `Arrastra (${model.startYear}–${model.endYear}) · Pellizca o haz scroll para zoom (años → min)`,
+            `Drag left/right to see full history. Pinch or scroll to zoom (1D → ${model.endYear})`,
+            `Buruta kushoto/kulia kuona historia kamili. Bana au zungusha kukuza (1D → ${model.endYear})`,
+            `Arrastra izquierda/derecha para ver el historial completo. Pellizca o haz scroll para zoom (1D → ${model.endYear})`,
           )}
         </p>
       </div>

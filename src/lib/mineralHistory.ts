@@ -468,9 +468,10 @@ export function createContinuousMineralModel(
 
   const maxSpanMs = Math.max(DAY_MS, historyEndMs - historyStartMs)
   const minSpanMs = 2 * MINUTE_MS
-  // Open on the latest 5 years so dragging left immediately explores 2020 -> 2000,
-  // while pinching out expands all the way to 2000–2026 and pinching in dives to minutes.
-  const defaultSpanMs = Math.min(maxSpanMs, Math.round(5 * 365.25 * DAY_MS))
+  // Default to the last 24 hours (1D) so every user's first look is a crisp,
+  // focused intraday trend, while dragging left pans through full history and
+  // pinching/scrolling zooms smoothly out to 2000–2026.
+  const defaultSpanMs = Math.min(maxSpanMs, DAY_MS)
 
   const sampleWindow = (
     rawViewStartMs: number,
@@ -627,6 +628,9 @@ export function formatSpanCompact(visibleSpanMs: number): string {
   const span = Math.max(MINUTE_MS, visibleSpanMs)
   if (span < 90 * MINUTE_MS) {
     return `${Math.max(1, Math.round(span / MINUTE_MS))}m`
+  }
+  if (Math.abs(span - DAY_MS) <= 30 * MINUTE_MS) {
+    return '1D'
   }
   if (span < 48 * HOUR_MS) {
     return `${Math.max(1, Math.round(span / HOUR_MS))}H`
@@ -1005,43 +1009,63 @@ export function computeNiceTimeTicks(params: {
 }
 
 /**
- * Computes institutional, nicely rounded Y-axis ticks directly in the active display currency.
+ * Computes institutional, nicely rounded Y-axis ticks directly in the active display currency
+ * using clean {1, 2, 5} × 10^k intervals (e.g. TSh 20,000 steps: TSh 280,000, TSh 300,000,
+ * TSh 320,000) so focused 24-hour trends stay legible and never over-zoomed on micro-ticks.
  */
 export function computeNiceAxisTicks(
   minVal: number,
   maxVal: number,
-  targetTicks = 5,
+  targetTicks = 6,
 ): { min: number; max: number; step: number; ticks: number[] } {
   if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
-    return { min: 0, max: 1, step: 0.25, ticks: [0, 0.25, 0.5, 0.75, 1] }
+    return { min: 0, max: 1, step: 0.2, ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] }
   }
 
   let lo = minVal
   let hi = maxVal
+  const midVal = Math.max(1e-6, Math.abs((lo + hi) / 2))
+
   if (hi <= lo) {
-    const pad = Math.abs(lo) * 0.05 || 1
+    const pad = midVal * 0.08 || 1
     lo = Math.max(0, lo - pad)
     hi = hi + pad
   } else {
     const span = hi - lo
-    lo = Math.max(0, lo - span * 0.1)
-    hi = hi + span * 0.1
+    lo = Math.max(0, lo - span * 0.14)
+    hi = hi + span * 0.14
   }
 
-  const rawStep = (hi - lo) / Math.max(2, targetTicks - 1)
+  // Ensure reasonable round step intervals (~4.5% of price magnitude snapped to 1/2/5 × 10^k),
+  // e.g. for ~TSh 300,000/g gold: 300,000 * 0.045 = 13,500 -> clean TSh 20,000 increments!
+  const minReasonableStep = midVal * 0.045
+  const rawStep = Math.max(
+    minReasonableStep,
+    (hi - lo) / Math.max(3, targetTicks - 1),
+  )
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
   const residual = rawStep / magnitude
 
   let niceFraction: number
-  if (residual <= 1.2) niceFraction = 1
-  else if (residual <= 2.2) niceFraction = 2
-  else if (residual <= 3.5) niceFraction = 2.5
-  else if (residual <= 6.5) niceFraction = 5
+  if (residual <= 1.05) niceFraction = 1
+  else if (residual <= 2.1) niceFraction = 2
+  else if (residual <= 5.2) niceFraction = 5
   else niceFraction = 10
 
   const step = niceFraction * magnitude
-  const niceMin = Math.max(0, Math.floor(lo / step) * step)
-  const niceMax = Math.ceil(hi / step) * step
+  let niceMin = Math.max(0, Math.floor(lo / step) * step)
+  let niceMax = Math.ceil(hi / step) * step
+
+  // Guarantee at least 4 clean intervals (5 ticks) on the taller vertical canvas
+  // so the 24-hour trend line sits comfortably centered with clear Y-axis landmarks.
+  while (Math.round((niceMax - niceMin) / step) < 4) {
+    if (niceMin - step >= 0) {
+      niceMin = Math.max(0, niceMin - step)
+    }
+    if (Math.round((niceMax - niceMin) / step) < 4) {
+      niceMax += step
+    }
+  }
 
   const ticks: number[] = []
   const maxSteps = 10
