@@ -76,6 +76,7 @@ interface PendingAzamPaySession {
   azampayTransactionId: string | null
   provider: AzamPayProviderCode
   providerLabel: string
+  recipientContact: string
   channel: 'mno' | 'bank'
   planName: string
   amountTzs: number
@@ -346,7 +347,7 @@ function Pricing() {
           : undefined,
       })
 
-      if (!res.ok || !res.externalId) {
+      if (!res.ok) {
         setErrorMsg(
           res.error ||
             'Could not initiate AzamPay payment prompt. Please check your details and try again.',
@@ -354,13 +355,16 @@ function Pricing() {
         return
       }
 
+      const confirmedPhone = accountInput.trim()
+
       setPendingTx({
-        externalId: res.externalId,
+        externalId: res.externalId || res.transactionId || `MC-${Date.now()}`,
         azampayTransactionId: res.azampayTransactionId ?? null,
         provider: activeProvider,
         providerLabel: providerMeta
           ? `${providerMeta.label} (${providerMeta.sublabel})`
           : activeProvider,
+        recipientContact: confirmedPhone,
         channel: res.channel ?? (channel === 'bank_transfer' ? 'bank' : 'mno'),
         planName: res.planName || selectedPlan.name,
         amountTzs: res.amountTzs ?? billedAmountTzs,
@@ -368,7 +372,7 @@ function Pricing() {
         promptMessage:
           res.message ||
           (channel === 'mobile_money'
-            ? 'Check your phone to enter your Mobile Money PIN.'
+            ? `STK Push Sent to ${confirmedPhone} — Enter your mobile money PIN to complete payment. Your plan activates automatically once confirmed.`
             : `Complete your ${activeProvider} bank authorization to unlock your subscription.`),
         status: 'pending',
       })
@@ -724,7 +728,11 @@ function Pricing() {
         >
           <div
             className="absolute inset-0 bg-ink/70 backdrop-blur-xs animate-fade"
-            onClick={closeCheckoutSheet}
+            onClick={() => {
+              if (!submitting && pendingTx?.status !== 'pending') {
+                closeCheckoutSheet()
+              }
+            }}
           />
           <div className="relative z-10 max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-ink/15 bg-paper text-ink shadow-2xl animate-rise sm:max-w-lg sm:rounded-2xl">
             {/* Sheet Header */}
@@ -841,19 +849,19 @@ function Pricing() {
                   </div>
                 </div>
               ) : pendingTx ? (
-                /* STK Push / Bank Authorization Live Awaiting Webhook Screen */
+                /* STK Push / Bank Authorization Confirmation & Live Webhook Listener Screen */
                 <div className="py-2 text-center">
                   <div
                     className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${
                       pendingTx.status === 'failed'
                         ? 'bg-danger/15 text-danger'
-                        : 'bg-ochre/15 text-ochre'
+                        : 'bg-moss-light text-moss'
                     }`}
                   >
                     {pendingTx.status === 'failed' ? (
                       <AlertCircle size={30} />
                     ) : (
-                      <Smartphone size={28} className="animate-pulse" />
+                      <CheckCircle2 size={30} />
                     )}
                   </div>
 
@@ -862,7 +870,7 @@ function Pricing() {
                       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
                         pendingTx.status === 'failed'
                           ? 'bg-danger/15 text-danger'
-                          : 'bg-ochre/15 text-ochre'
+                          : 'bg-moss-light text-moss'
                       }`}
                     >
                       {pendingTx.status === 'pending' && (
@@ -870,7 +878,9 @@ function Pricing() {
                       )}
                       {pendingTx.status === 'failed'
                         ? ui('Payment Not Completed', 'Malipo Hayajakamilika', 'Pago No Completado')
-                        : ui('Awaiting Confirmation', 'Inasubiri Uthibitisho', 'Esperando Confirmación')}
+                        : pendingTx.channel === 'mno'
+                          ? ui('STK Push Sent', 'Ombi la PIN Limetumwa', 'STK Push Enviado')
+                          : ui('Authorization Sent', 'Ombi la Benki Limetumwa', 'Autorización Enviada')}
                     </span>
                     {pendingTx.environment === 'sandbox' && (
                       <span className="rounded-full border border-ink/15 bg-paper-2 px-2 py-0.5 font-mono text-[9.5px] font-semibold uppercase text-stone">
@@ -884,9 +894,9 @@ function Pricing() {
                       ? ui('Payment Declined or Cancelled', 'Malipo Yamekataliwa', 'Pago Rechazado')
                       : pendingTx.channel === 'mno'
                         ? ui(
-                            'Check your phone to enter your Mobile Money PIN',
-                            'Angalia simu yako uweke namba yako ya siri (PIN)',
-                            'Revisa tu teléfono para ingresar tu PIN móvil',
+                            `STK Push Sent to ${pendingTx.recipientContact}`,
+                            `Ombi la PIN Limetumwa kwa ${pendingTx.recipientContact}`,
+                            `STK Push Enviado a ${pendingTx.recipientContact}`,
                           )
                         : ui(
                             `Complete ${pendingTx.provider} Bank Authorization`,
@@ -895,7 +905,7 @@ function Pricing() {
                           )}
                   </h3>
 
-                  <p className="mt-2 text-xs leading-relaxed text-stone">
+                  <p className="mt-2.5 rounded-xl border border-moss/25 bg-moss-light/40 px-3.5 py-2.5 text-xs leading-relaxed text-ink">
                     {pendingTx.status === 'failed'
                       ? errorMsg ||
                         ui(
@@ -903,25 +913,35 @@ function Pricing() {
                           'Hakuna malipo yaliyokatwa. Unaweza kujaribu tena.',
                           'No se realizó ningún cobro. Puedes intentarlo de nuevo.',
                         )
-                      : ui(
-                          'This screen listens live for AzamPay confirmation and unlocks your subscription automatically the moment you approve.',
-                          'Skrini hii inasubiri uthibitisho wa AzamPay moja kwa moja na itafungua mpango wako papo hapo.',
-                          'Esta pantalla escucha en vivo la confirmación de AzamPay y desbloqueará tu plan automáticamente.',
-                        )}
+                      : pendingTx.channel === 'mno'
+                        ? ui(
+                            `STK Push Sent to ${pendingTx.recipientContact} — Enter your mobile money PIN to complete payment. Your plan activates automatically once confirmed.`,
+                            `Ombi la PIN limetumwa kwa ${pendingTx.recipientContact} — Weka namba yako ya siri (PIN) kukamilisha malipo. Mpango wako utawashwa kiotomatiki ukithibitishwa.`,
+                            `STK Push enviado a ${pendingTx.recipientContact} — Ingresa tu PIN de dinero móvil para completar el pago. Tu plan se activará automáticamente al confirmarse.`,
+                          )
+                        : ui(
+                            `Authorization sent for ${pendingTx.recipientContact} (${pendingTx.provider}). Complete approval to activate your plan automatically.`,
+                            `Ombi limetumwa kwa ${pendingTx.recipientContact} (${pendingTx.provider}). Kamilisha uthibitisho ili mpango wako uwashe kiotomatiki.`,
+                            `Autorización enviada para ${pendingTx.recipientContact} (${pendingTx.provider}). Completa la aprobación para activar tu plan automáticamente.`,
+                          )}
                   </p>
 
-                  <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-paper-2 p-4 text-left font-mono text-xs">
+                  <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-paper-2 p-4 text-left font-mono text-xs">
                     <div className="min-w-0">
-                      <dt className="text-[10px] uppercase text-stone">Reference</dt>
-                      <dd className="mt-0.5 truncate font-bold text-ink">{pendingTx.externalId}</dd>
+                      <dt className="text-[10px] uppercase text-stone">
+                        {pendingTx.channel === 'mno' ? 'Phone' : 'Account'}
+                      </dt>
+                      <dd className="mt-0.5 truncate font-bold text-ink tabular-nums">
+                        {pendingTx.recipientContact}
+                      </dd>
                     </div>
                     <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Provider</dt>
                       <dd className="mt-0.5 truncate text-ink">{pendingTx.providerLabel}</dd>
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-[10px] uppercase text-stone">Plan</dt>
-                      <dd className="mt-0.5 truncate font-semibold text-ink">{pendingTx.planName}</dd>
+                      <dt className="text-[10px] uppercase text-stone">Reference</dt>
+                      <dd className="mt-0.5 truncate font-semibold text-ink">{pendingTx.externalId}</dd>
                     </div>
                     <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Amount</dt>
@@ -932,37 +952,66 @@ function Pricing() {
                   </dl>
 
                   <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
-                    {pendingTx.status === 'pending' && (
-                      <button
-                        type="button"
-                        onClick={() => void handleManualStatusCheck()}
-                        disabled={checkingStatus}
-                        className="btn-primary flex-1 justify-center text-xs disabled:opacity-60"
-                      >
-                        <RefreshCw
-                          size={13}
-                          className={checkingStatus ? 'animate-spin' : ''}
-                        />
-                        {checkingStatus
-                          ? ui('Checking Status...', 'Inaangalia Hali...', 'Verificando...')
-                          : ui('Check Payment Status', 'Angalia Hali ya Malipo', 'Verificar Estado')}
-                      </button>
+                    {pendingTx.status === 'pending' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={closeCheckoutSheet}
+                          className="btn-primary flex-1 justify-center text-xs"
+                        >
+                          <Check size={14} />
+                          {ui('Done', 'Nimemaliza', 'Listo')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleManualStatusCheck()}
+                          disabled={checkingStatus}
+                          className="btn-ghost flex-1 justify-center text-xs disabled:opacity-60"
+                        >
+                          <RefreshCw
+                            size={13}
+                            className={checkingStatus ? 'animate-spin' : ''}
+                          />
+                          {checkingStatus
+                            ? ui('Checking Status...', 'Inaangalia Hali...', 'Verificando...')
+                            : ui('Check Payment Status', 'Angalia Hali ya Malipo', 'Verificar Estado')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingTx(null)
+                            setErrorMsg(null)
+                          }}
+                          className="btn-primary flex-1 justify-center text-xs"
+                        >
+                          {ui('Try Again', 'Jaribu Tena', 'Intentar de Nuevo')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeCheckoutSheet}
+                          className="btn-ghost flex-1 justify-center text-xs"
+                        >
+                          {ui('Done', 'Funga', 'Listo')}
+                        </button>
+                      </>
                     )}
+                  </div>
+
+                  {pendingTx.status === 'pending' && (
                     <button
                       type="button"
                       onClick={() => {
                         setPendingTx(null)
                         setErrorMsg(null)
                       }}
-                      className={`${
-                        pendingTx.status === 'failed' ? 'btn-primary' : 'btn-ghost'
-                      } flex-1 justify-center text-xs`}
+                      className="mt-3 font-mono text-[11px] text-stone underline decoration-stone/40 underline-offset-4 transition hover:text-ink"
                     >
-                      {pendingTx.status === 'failed'
-                        ? ui('Try Again', 'Jaribu Tena', 'Intentar de Nuevo')
-                        : ui('Change Number / Method', 'Badili Namba / Njia', 'Cambiar Método')}
+                      {ui('Wrong number? Change number or method', 'Namba si sahihi? Badili namba au njia', '¿Número incorrecto? Cambiar método')}
                     </button>
-                  </div>
+                  )}
                 </div>
               ) : (
                 /* Clean AzamPay Mobile Money & Bank Transfer Checkout Form */
