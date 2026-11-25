@@ -546,7 +546,13 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
 
     return (
       <div className={`w-full min-w-0 max-w-full ${className}`}>
-        <div className="relative flex min-h-[68px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8">
+        <div
+          className={
+            widgetState === 'fallback'
+              ? 'flex w-full min-w-0 max-w-full items-center justify-between gap-2 rounded-lg border border-moss/25 bg-moss-light/50 px-3 py-2 text-xs'
+              : 'relative flex min-h-[68px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8'
+          }
+        >
           {widgetState === 'loading' && (
             <div
               aria-live="polite"
@@ -559,36 +565,30 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
 
           <div
             ref={containerRef}
-            className={`flex w-full min-w-0 max-w-full items-center justify-center overflow-hidden ${
-              widgetState === 'fallback' ? 'hidden' : 'min-h-[60px]'
-            }`}
+            className={
+              widgetState === 'fallback'
+                ? 'hidden'
+                : 'flex min-h-[60px] w-full min-w-0 max-w-full items-center justify-center overflow-hidden'
+            }
           />
 
           {widgetState === 'fallback' && (
-            <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="min-w-0 flex-1">
-                <span className="inline-flex items-start gap-1.5 font-medium text-moss">
-                  <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-                  <span>
-                    {statusMessage ||
-                      'Verified via signed-in session — ready to proceed.'}
-                  </span>
+            <>
+              <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] font-medium text-moss">
+                <CheckCircle2 size={13} className="shrink-0" />
+                <span className="truncate">
+                  Verified via signed-in session
                 </span>
-                {diagnosticHint && (
-                  <span className="mt-0.5 block pl-5 font-mono text-[10px] text-stone">
-                    {diagnosticHint}
-                  </span>
-                )}
-              </div>
+              </span>
               <button
                 type="button"
                 onClick={resetWidget}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-moss/30 bg-white px-2 py-1 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
               >
-                <RefreshCw size={11} />
-                Retry Verification
+                <RefreshCw size={10} />
+                Retry
               </button>
-            </div>
+            </>
           )}
 
           {(widgetState === 'error' || widgetState === 'expired') && (

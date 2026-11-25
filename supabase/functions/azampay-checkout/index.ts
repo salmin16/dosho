@@ -476,10 +476,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
       '';
     accessToken = String(rawAccessToken).replace(/^Bearer\s+/i, '').trim();
 
-    if (!tokenRes.ok || !accessToken) {
-      console.error('[azampay-token-failed]', {
+    if (
+      !tokenRes.ok ||
+      json?.success === false ||
+      !accessToken ||
+      accessToken === 'undefined' ||
+      accessToken === 'null'
+    ) {
+      console.error('[azampay-token-invalid]', {
         status: tokenRes.status,
-        body: rawText,
+        success: json?.success,
+        message: json?.message,
+        keys: Object.keys(json || {}),
         appName,
         env: azamEnv,
         hasClientId: Boolean(clientId),
@@ -487,7 +495,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         hasApiToken: Boolean(apiToken),
       });
       const errDetail =
-        json?.message || rawText || 'No accessToken returned';
+        json?.message || rawText || 'Empty accessToken returned from GenerateToken';
       await adminClient
         .from('payment_transactions')
         .update({
@@ -501,14 +509,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           ok: false,
-          error: `AzamPay Token Error (${tokenRes.status}): ${errDetail}`,
+          error: `AzamPay Token Failed: ${errDetail}`,
         },
         502,
       );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unable to reach AzamPay authenticator.';
-    console.error('[azampay-token-failed]', { stage: 'network', message: msg, appName, env: azamEnv });
+    console.error('[azampay-token-invalid]', { stage: 'network', message: msg, appName, env: azamEnv });
     await adminClient
       .from('payment_transactions')
       .update({
@@ -520,16 +528,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq('id', txRow.id);
 
     return jsonResponse(
-      { ok: false, error: `AzamPay Token Error (network): ${msg}` },
+      { ok: false, error: `AzamPay Token Failed: ${msg}` },
       502,
     );
   }
 
-  // 7. Step 2 — MNO / Bank Checkout Request With Authorization: Bearer + X-API-Key & Auth Retries
+  // 7. Step 2 — MNO / Bank Checkout Request With Exact Headers & Sandbox Gateway Fallback
   try {
-    const endpoint = isMno
+    const primaryEndpoint = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
       : `${checkoutBaseUrl}/azampay/bank/checkout`;
+    const altMnoEndpoint = `${checkoutBaseUrl}/api/v1/Checkout/MnoCheckout`;
 
     const mobilePhoneDigits = body.merchantMobileNumber
       ? formatTanzaniaPhone(body.merchantMobileNumber)
@@ -569,75 +578,84 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const isAuthorizationRejection = (
       res: Response,
       parsed: Record<string, unknown>,
+      rawText: string,
     ): boolean => {
       if (res.status === 401) return true;
-      const msg = `${String(parsed.message ?? '')} ${String(parsed.rawText ?? '')}`;
+      const msg = `${String(parsed.message ?? '')} ${rawText}`;
       return /please provide valid authorization|unauthorized|invalid.*authorization/i.test(msg);
     };
 
+    const checkoutHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    };
+    if (apiToken) {
+      checkoutHeaders['X-API-Key'] = apiToken;
+    }
+
     const sendCheckout = async (
-      strategy: 'bearer_and_apikey' | 'bearer_only' | 'apitoken_auth_and_apikey',
+      url: string,
+      strategy: string,
       headers: Record<string, string>,
     ) => {
-      const res = await fetch(endpoint, {
+      const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
       });
       const text = await res.text();
-      return { res, rawText: text, json: parseJsonSafe(text), strategy };
+      return { url, res, rawText: text, json: parseJsonSafe(text), strategy };
     };
 
-    // Attempt 1: Authorization: Bearer <accessToken> + X-API-Key (when apiToken is configured)
+    // Attempt 1: Primary endpoint with Authorization: Bearer <accessToken> + X-API-Key (if set)
     let attempt = await sendCheckout(
-      apiToken ? 'bearer_and_apikey' : 'bearer_only',
-      {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        ...(apiToken ? { 'X-API-Key': apiToken } : {}),
-      },
+      primaryEndpoint,
+      apiToken ? 'primary_bearer_and_apikey' : 'primary_bearer_only',
+      checkoutHeaders,
     );
 
-    // Attempt 2: If X-API-Key was sent and AzamPay returned 401 or "Please Provide Valid Authorization",
-    // retry once with ONLY Content-Type, Accept, and Authorization: Bearer <accessToken>
+    // Attempt 2: If MNO primary returned "Please Provide Valid Authorization" despite valid accessToken (> 20 chars),
+    // try AzamPay's alternate v1 Checkout path `/api/v1/Checkout/MnoCheckout` with the same headers
     if (
-      apiToken &&
-      attempt.strategy === 'bearer_and_apikey' &&
-      isAuthorizationRejection(attempt.res, attempt.json)
+      isMno &&
+      accessToken.length > 20 &&
+      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
     ) {
       console.warn('[azampay-checkout-retry]', {
-        previousStrategy: attempt.strategy,
+        previousUrl: attempt.url,
         status: attempt.res.status,
         body: attempt.rawText,
-        nextStrategy: 'bearer_only',
+        nextUrl: altMnoEndpoint,
       });
-      attempt = await sendCheckout('bearer_only', {
+      attempt = await sendCheckout(
+        altMnoEndpoint,
+        apiToken ? 'v1_bearer_and_apikey' : 'v1_bearer_only',
+        checkoutHeaders,
+      );
+    }
+
+    // Attempt 3: If X-API-Key was sent and gateway still rejected authorization, retry primary with Bearer-only
+    if (
+      apiToken &&
+      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
+    ) {
+      const bearerOnlyHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         Authorization: `Bearer ${accessToken}`,
-      });
-    }
-
-    // Attempt 3: If Bearer-only returned 401 or "Please Provide Valid Authorization" and apiToken exists,
-    // retry once with X-API-Key: apiToken and Authorization: apiToken
-    if (
-      apiToken &&
-      attempt.strategy === 'bearer_only' &&
-      isAuthorizationRejection(attempt.res, attempt.json)
-    ) {
+      };
       console.warn('[azampay-checkout-retry]', {
-        previousStrategy: attempt.strategy,
+        previousUrl: attempt.url,
         status: attempt.res.status,
         body: attempt.rawText,
-        nextStrategy: 'apitoken_auth_and_apikey',
+        nextStrategy: 'primary_bearer_only_fallback',
       });
-      attempt = await sendCheckout('apitoken_auth_and_apikey', {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'X-API-Key': apiToken,
-        Authorization: apiToken,
-      });
+      attempt = await sendCheckout(
+        primaryEndpoint,
+        'primary_bearer_only_fallback',
+        bearerOnlyHeaders,
+      );
     }
 
     const checkoutRes = attempt.res;
@@ -655,13 +673,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!azamSuccess) {
       console.error('[azampay-checkout-failed]', {
+        url: attempt.url,
         status: checkoutRes.status,
+        body: attempt.rawText,
+        tokenLength: accessToken.length,
+        hasApiKey: Boolean(apiToken),
         strategy: attempt.strategy,
         env: azamEnv,
         provider,
-        hasApiToken: Boolean(apiToken),
-        body: attempt.rawText,
-        parsed: checkoutJson,
       });
       const rawFailure =
         typeof checkoutJson.message === 'string' && checkoutJson.message.trim()
@@ -676,8 +695,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
           azampay_transaction_id: azampayTransactionId,
           raw_callback: {
             stage: 'checkout',
+            url: attempt.url,
             httpStatus: checkoutRes.status,
             authStrategy: attempt.strategy,
+            tokenLength: accessToken.length,
+            hasApiKey: Boolean(apiToken),
             response: checkoutJson,
           },
           updated_at: new Date().toISOString(),
