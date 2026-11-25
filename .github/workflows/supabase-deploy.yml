@@ -36,6 +36,14 @@ jobs:
         with:
           version: 2.22.6
 
+      - name: Clean up leftover Supabase containers & ports
+        run: |
+          supabase stop --no-backup || true
+          LEFTOVER=$(docker ps -aq --filter "name=supabase_")
+          if [ -n "$LEFTOVER" ]; then
+            docker rm -f $LEFTOVER || true
+          fi
+
       - name: Start isolated local Supabase stack
         run: >
           supabase start --exclude
@@ -102,14 +110,6 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Deploy Supabase Edge Functions (if present)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          if [ -d "supabase/functions" ] && [ -n "$(ls -A supabase/functions 2>/dev/null)" ]; then
-            supabase functions deploy --no-verify-jwt
-          fi
-
       - name: Regenerate TypeScript types from live schema
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -125,4 +125,34 @@ jobs:
             git add types/supabase.ts
             git commit -m "chore(db): sync generated Supabase TypeScript types"
             git push
+          fi
+
+  deploy-edge-functions:
+    name: Deploy Supabase Edge Functions
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.22.6
+
+      - name: Link to production Supabase project
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy AzamPay & Turnstile Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy azampay-checkout --no-verify-jwt
+          supabase functions deploy azampay-callback --no-verify-jwt
+          if [ -d "supabase/functions/verify-turnstile" ]; then
+            supabase functions deploy verify-turnstile --no-verify-jwt
           fi
