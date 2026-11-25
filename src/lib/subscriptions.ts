@@ -1104,9 +1104,16 @@ export async function initiateAzamPayCheckout(params: {
   }
 
   try {
+    const { data: liveSessionData } = await supabase.auth.getSession();
+    const bearerToken =
+      liveSessionData?.session?.access_token || session.accessToken;
+
     const { data, error } = await supabase.functions.invoke<AzamPayCheckoutResult>(
       'azampay-checkout',
       {
+        headers: bearerToken
+          ? { Authorization: `Bearer ${bearerToken}` }
+          : undefined,
         body: {
           tier,
           planId: params.planId,

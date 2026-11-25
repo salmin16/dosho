@@ -292,15 +292,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  // 3. Verify AzamPay credentials
-  const azamAppName = Deno.env.get('AZAMPAY_APP_NAME')?.trim();
-  const azamClientId = Deno.env.get('AZAMPAY_CLIENT_ID')?.trim();
-  const azamClientSecret = Deno.env.get('AZAMPAY_CLIENT_SECRET')?.trim();
-  const azamEnv = (Deno.env.get('AZAMPAY_ENV')?.trim().toLowerCase() === 'production')
-    ? 'production'
-    : 'sandbox';
+  // 3. Verify & trim AzamPay credentials
+  const cleanSecret = (val?: string | null): string =>
+    (val ?? '').trim().replace(/^["']|["']$/g, '');
 
-  if (!azamAppName || !azamClientId || !azamClientSecret) {
+  const appName = cleanSecret(Deno.env.get('AZAMPAY_APP_NAME')) || 'MineConnect';
+  const clientId = cleanSecret(Deno.env.get('AZAMPAY_CLIENT_ID'));
+  const clientSecret = cleanSecret(Deno.env.get('AZAMPAY_CLIENT_SECRET'));
+  const apiToken = cleanSecret(Deno.env.get('AZAMPAY_TOKEN'));
+  const azamEnv =
+    (cleanSecret(Deno.env.get('AZAMPAY_ENV')) || 'sandbox').toLowerCase() === 'production'
+      ? 'production'
+      : 'sandbox';
+
+  if (!appName || !clientId || !clientSecret) {
+    console.error('[azampay-checkout] Missing AzamPay env secrets:', {
+      hasAppName: Boolean(appName),
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+      hasApiToken: Boolean(apiToken),
+      env: azamEnv,
+    });
     return jsonResponse(
       {
         ok: false,
@@ -374,11 +386,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  // 6. Authenticate with AzamPay Token Endpoint
-  const authBaseUrl =
+  // 6. Step A — Exchange Credentials for AzamPay JWT Access Token
+  const authUrl =
     azamEnv === 'production'
-      ? 'https://authenticator.azampay.co.tz'
-      : 'https://authenticator-sandbox.azampay.co.tz';
+      ? 'https://authenticator.azampay.co.tz/AppRegistration/GenerateToken'
+      : 'https://authenticator-sandbox.azampay.co.tz/AppRegistration/GenerateToken';
   const checkoutBaseUrl =
     azamEnv === 'production'
       ? 'https://checkout.azampay.co.tz'
@@ -386,24 +398,37 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let accessToken = '';
   try {
-    const tokenRes = await fetch(`${authBaseUrl}/AppRegistration/GenerateToken`, {
+    const tokenRes = await fetch(authUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        appName: azamAppName,
-        clientId: azamClientId,
-        clientSecret: azamClientSecret,
+        appName,
+        clientId,
+        clientSecret,
       }),
     });
 
-    const tokenJson = (await tokenRes.json().catch(() => ({}))) as {
+    const tokenText = await tokenRes.text();
+    let tokenJson: {
       success?: boolean;
       message?: string;
+      accessToken?: string;
       data?: { accessToken?: string; expire?: string };
-    };
+    } = {};
+    try {
+      tokenJson = tokenText ? JSON.parse(tokenText) : {};
+    } catch {
+      tokenJson = { message: tokenText };
+    }
 
-    accessToken = tokenJson?.data?.accessToken?.trim() ?? '';
+    accessToken = (
+      tokenJson?.data?.accessToken ??
+      tokenJson?.accessToken ??
+      ''
+    ).trim();
+
     if (!tokenRes.ok || !accessToken) {
+      console.error('AzamPay GenerateToken failed:', tokenRes.status, tokenJson);
       const errDetail =
         tokenJson?.message || `AzamPay token auth failed (HTTP ${tokenRes.status}).`;
       await adminClient
@@ -420,6 +445,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unable to reach AzamPay authenticator.';
+    console.error('AzamPay GenerateToken network error:', msg);
     await adminClient
       .from('payment_transactions')
       .update({
@@ -433,7 +459,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ ok: false, error: `AzamPay authentication error: ${msg}` }, 502);
   }
 
-  // 7. Send MNO or Bank Checkout Request to AzamPay
+  // 7. Step B — Send MNO or Bank Checkout Request with Bearer Token & X-API-Key
   try {
     const endpoint = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
@@ -474,12 +500,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
           },
         };
 
+    const checkoutHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      ...(apiToken ? { 'X-API-Key': apiToken } : {}),
+    };
+
     const checkoutRes = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: checkoutHeaders,
       body: JSON.stringify(requestPayload),
     });
 
@@ -502,6 +531,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           : null;
 
     if (!azamSuccess) {
+      console.error('AzamPay checkout error:', checkoutRes.status, checkoutJson);
       const failureMsg =
         typeof checkoutJson.message === 'string' && checkoutJson.message.trim()
           ? checkoutJson.message
