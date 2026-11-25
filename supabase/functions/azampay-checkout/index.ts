@@ -332,9 +332,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     turnstileVerificationMode = 'timeout_or_mobile_challenge_jwt_verified';
   }
 
-  // 3. Sanitize & verify AzamPay credentials
+  // 3. Sanitize & validate AzamPay credentials (including 36-char UUID check)
   const cleanSecret = (val?: string | null): string =>
     (val ?? '').trim().replace(/^["']|["']$/g, '');
+  const UUID_V4_REGEX =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const appName = cleanSecret(Deno.env.get('AZAMPAY_APP_NAME')) || 'MineConnect';
   const clientId = cleanSecret(Deno.env.get('AZAMPAY_CLIENT_ID'));
@@ -358,9 +360,41 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse(
       {
         ok: false,
-        error: `AzamPay Configuration Error: Missing required Supabase secret(s): ${missingSecrets.join(', ')}.`,
+        error: `Configuration Error: Missing required Supabase secret(s): ${missingSecrets.join(', ')}.`,
       },
-      503,
+      500,
+    );
+  }
+
+  if (!UUID_V4_REGEX.test(clientId)) {
+    console.error('[azampay-checkout] Invalid AZAMPAY_CLIENT_ID format:', {
+      clientIdLen: clientId.length,
+      appName,
+      env: azamEnv,
+    });
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          'Configuration Error: AZAMPAY_CLIENT_ID is incomplete or invalid (must be a full 36-character UUID from AzamPay Portal).',
+      },
+      500,
+    );
+  }
+
+  if (!isProd && !UUID_V4_REGEX.test(apiKey)) {
+    console.error('[azampay-checkout] Invalid AZAMPAY_TOKEN format:', {
+      apiKeyLen: apiKey.length,
+      appName,
+      env: azamEnv,
+    });
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          'Configuration Error: AZAMPAY_TOKEN is incomplete (must be a full 36-character UUID from AzamPay Portal).',
+      },
+      500,
     );
   }
 
@@ -471,22 +505,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
       tokenJson?.Data?.accessToken ??
       '';
     accessToken = String(rawAccessToken).replace(/^Bearer\s+/i, '').trim();
+    const jwtOk = accessToken.startsWith('eyJ');
 
-    if (
-      !tokenRes.ok ||
-      tokenJson?.success === false ||
-      !accessToken ||
-      accessToken === 'undefined' ||
-      accessToken === 'null'
-    ) {
+    if (!tokenRes.ok || tokenJson?.success === false || !jwtOk) {
       console.error('[azampay-token-failed]', {
         status: tokenRes.status,
         success: tokenJson?.success,
         message: tokenJson?.message,
+        jwtOk,
+        tokenLen: accessToken.length,
         body: rawText,
         appName,
         env: azamEnv,
-        hasApiKey: Boolean(apiKey),
+        apiKeyLen: apiKey.length,
       });
       await adminClient
         .from('payment_transactions')
@@ -501,7 +532,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           ok: false,
-          error: `AzamPay Token Error (${tokenRes.status}): ${tokenJson?.message || 'Failed to generate token'}`,
+          error: `AzamPay Token Error (${tokenRes.status}): ${tokenJson?.message || 'Invalid JWT returned'}`,
         },
         502,
       );
@@ -525,7 +556,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  // 7. Step 2 — Call Canonical MNO / Bank Checkout With Exact Required Headers
+  // 7. Step 2 — Canonical MNO / Bank Checkout Request With Exact Required Headers
   try {
     const checkoutUrl = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
@@ -544,6 +575,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           currency: 'TZS',
           externalId,
           provider,
+          additionalProperties: null,
         }
       : {
           merchantAccountNumber: accountNumber,
@@ -556,16 +588,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
           referenceId: externalId,
           provider,
           ...(body.otp?.trim() ? { otp: body.otp.trim() } : {}),
+          additionalProperties: null,
         };
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       Authorization: `Bearer ${accessToken}`,
+      ...(isProd || !apiKey ? {} : { 'X-API-KEY': apiKey }),
     };
-    if (apiKey) {
-      headers['X-API-KEY'] = apiKey;
-    }
 
     const checkoutRes = await fetch(checkoutUrl, {
       method: 'POST',
@@ -605,13 +636,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
           ? 'Endpoint not found'
           : `HTTP ${checkoutRes.status}`);
 
+      const responseHeadersObj = Object.fromEntries(checkoutRes.headers.entries());
       console.error('[azampay-mno-checkout]', {
         url: checkoutUrl,
         status: checkoutRes.status,
         provider,
         env: azamEnv,
-        hasApiKey: Boolean(apiKey),
+        appName,
+        jwtOk: accessToken.startsWith('eyJ'),
         tokenLength: accessToken.length,
+        apiKeyLen: apiKey.length,
+        wwwAuthenticate: checkoutRes.headers.get('www-authenticate'),
+        responseHeaders: responseHeadersObj,
         body: checkoutText,
       });
 
@@ -625,19 +661,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
             stage: 'checkout',
             url: checkoutUrl,
             httpStatus: checkoutRes.status,
+            jwtOk: accessToken.startsWith('eyJ'),
             tokenLength: accessToken.length,
-            hasApiKey: Boolean(apiKey),
+            apiKeyLen: apiKey.length,
+            wwwAuthenticate: checkoutRes.headers.get('www-authenticate'),
             response: checkoutJson,
           },
           updated_at: new Date().toISOString(),
         })
         .eq('id', txRow.id);
 
+      const diagSuffix =
+        checkoutRes.status === 401
+          ? ` [jwtOk=${accessToken.startsWith('eyJ')}, apiKeyLen=${apiKey.length}, appName=${appName}, env=${azamEnv}]`
+          : '';
+
       return jsonResponse(
         {
           ok: false,
           externalId,
-          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}`,
+          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}${diagSuffix}`,
           azampayResponse: checkoutJson,
         },
         400,

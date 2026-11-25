@@ -550,7 +550,11 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
           className={
             widgetState === 'fallback'
               ? 'flex w-full min-w-0 max-w-full items-center justify-between gap-2 rounded-lg border border-moss/25 bg-moss-light/50 px-3 py-2 text-xs'
-              : 'relative flex min-h-[68px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8'
+              : widgetState === 'verified'
+                ? 'flex w-full min-w-0 max-w-full flex-col items-center justify-center'
+                : widgetState === 'loading'
+                  ? 'relative flex min-h-[56px] w-full min-w-0 max-w-full flex-col items-center justify-center rounded-lg bg-paper/55 px-2.5 py-2 ring-1 ring-inset ring-ink/8'
+                  : 'relative flex w-full min-w-0 max-w-full flex-col items-center justify-center'
           }
         >
           {widgetState === 'loading' && (
@@ -568,7 +572,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
             className={
               widgetState === 'fallback'
                 ? 'hidden'
-                : 'flex min-h-[60px] w-full min-w-0 max-w-full items-center justify-center overflow-hidden'
+                : 'flex w-full min-w-0 max-w-full items-center justify-center overflow-hidden'
             }
           />
 
@@ -576,9 +580,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
             <>
               <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] font-medium text-moss">
                 <CheckCircle2 size={13} className="shrink-0" />
-                <span className="truncate">
-                  Verified via signed-in session
-                </span>
+                <span className="truncate">Verified via signed-in session</span>
               </span>
               <button
                 type="button"
@@ -592,7 +594,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
           )}
 
           {(widgetState === 'error' || widgetState === 'expired') && (
-            <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 border-t border-ink/8 pt-2 text-xs">
+            <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-paper/70 px-3 py-2 text-xs">
               <div className="min-w-0 flex-1">
                 <span className="inline-flex items-start gap-1.5 text-danger">
                   <ShieldAlert size={13} className="mt-0.5 shrink-0" />
