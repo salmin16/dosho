@@ -355,74 +355,98 @@ export type Database = {
       payment_transactions: {
         Row: {
           account_or_phone_masked: string | null
-          billing_cycle: string
-          charged_amount: number
+          amount_tzs: number | null
+          azampay_transaction_id: string | null
+          billing_cycle: string | null
+          charged_amount: number | null
           charged_currency: string
           clickpesa_control_number: string | null
-          clickpesa_order_id: string
+          clickpesa_order_id: string | null
           created_at: string
+          external_id: string | null
           gateway: string
           id: string
-          idempotency_key: string
+          idempotency_key: string | null
           metadata: Json
-          payment_method_label: string
-          provider_code: string
-          rail: string
+          payment_method_label: string | null
+          phone_number: string | null
+          provider: string | null
+          provider_code: string | null
+          rail: string | null
+          raw_callback: Json | null
           reconciled_at: string | null
           state: string
-          tier_name: string
+          status: string
+          tier: string | null
+          tier_name: string | null
           updated_at: string
           user_id: string
-          verified_amount_tzs: number
-          verified_amount_usd: number
+          verified_amount_tzs: number | null
+          verified_amount_usd: number | null
           webhook_signature_verified: boolean
         }
         Insert: {
           account_or_phone_masked?: string | null
-          billing_cycle: string
-          charged_amount: number
+          amount_tzs?: number | null
+          azampay_transaction_id?: string | null
+          billing_cycle?: string | null
+          charged_amount?: number | null
           charged_currency?: string
           clickpesa_control_number?: string | null
-          clickpesa_order_id: string
+          clickpesa_order_id?: string | null
           created_at?: string
+          external_id?: string | null
           gateway?: string
           id?: string
-          idempotency_key: string
+          idempotency_key?: string | null
           metadata?: Json
-          payment_method_label: string
-          provider_code: string
-          rail: string
+          payment_method_label?: string | null
+          phone_number?: string | null
+          provider?: string | null
+          provider_code?: string | null
+          rail?: string | null
+          raw_callback?: Json | null
           reconciled_at?: string | null
           state?: string
-          tier_name: string
+          status?: string
+          tier?: string | null
+          tier_name?: string | null
           updated_at?: string
           user_id: string
-          verified_amount_tzs: number
-          verified_amount_usd: number
+          verified_amount_tzs?: number | null
+          verified_amount_usd?: number | null
           webhook_signature_verified?: boolean
         }
         Update: {
           account_or_phone_masked?: string | null
-          billing_cycle?: string
-          charged_amount?: number
+          amount_tzs?: number | null
+          azampay_transaction_id?: string | null
+          billing_cycle?: string | null
+          charged_amount?: number | null
           charged_currency?: string
           clickpesa_control_number?: string | null
-          clickpesa_order_id?: string
+          clickpesa_order_id?: string | null
           created_at?: string
+          external_id?: string | null
           gateway?: string
           id?: string
-          idempotency_key?: string
+          idempotency_key?: string | null
           metadata?: Json
-          payment_method_label?: string
-          provider_code?: string
-          rail?: string
+          payment_method_label?: string | null
+          phone_number?: string | null
+          provider?: string | null
+          provider_code?: string | null
+          rail?: string | null
+          raw_callback?: Json | null
           reconciled_at?: string | null
           state?: string
-          tier_name?: string
+          status?: string
+          tier?: string | null
+          tier_name?: string | null
           updated_at?: string
           user_id?: string
-          verified_amount_tzs?: number
-          verified_amount_usd?: number
+          verified_amount_tzs?: number | null
+          verified_amount_usd?: number | null
           webhook_signature_verified?: boolean
         }
         Relationships: []
