@@ -332,32 +332,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
     turnstileVerificationMode = 'timeout_or_mobile_challenge_jwt_verified';
   }
 
-  // 3. Verify & trim AzamPay credentials
+  // 3. Sanitize & verify AzamPay credentials
   const cleanSecret = (val?: string | null): string =>
     (val ?? '').trim().replace(/^["']|["']$/g, '');
 
   const appName = cleanSecret(Deno.env.get('AZAMPAY_APP_NAME')) || 'MineConnect';
   const clientId = cleanSecret(Deno.env.get('AZAMPAY_CLIENT_ID'));
   const clientSecret = cleanSecret(Deno.env.get('AZAMPAY_CLIENT_SECRET'));
-  const apiToken = cleanSecret(Deno.env.get('AZAMPAY_TOKEN'));
-  const azamEnv =
-    (cleanSecret(Deno.env.get('AZAMPAY_ENV')) || 'sandbox').toLowerCase() === 'production'
-      ? 'production'
-      : 'sandbox';
+  const apiKey = cleanSecret(Deno.env.get('AZAMPAY_TOKEN'));
+  const isProd =
+    (cleanSecret(Deno.env.get('AZAMPAY_ENV')) || 'sandbox').toLowerCase() === 'production';
+  const azamEnv = isProd ? 'production' : 'sandbox';
 
-  if (!appName || !clientId || !clientSecret) {
+  const missingSecrets: string[] = [];
+  if (!clientId) missingSecrets.push('AZAMPAY_CLIENT_ID');
+  if (!clientSecret) missingSecrets.push('AZAMPAY_CLIENT_SECRET');
+  if (!isProd && !apiKey) missingSecrets.push('AZAMPAY_TOKEN');
+
+  if (missingSecrets.length > 0) {
     console.error('[azampay-checkout] Missing AzamPay env secrets:', {
-      hasAppName: Boolean(appName),
-      hasClientId: Boolean(clientId),
-      hasClientSecret: Boolean(clientSecret),
-      hasApiToken: Boolean(apiToken),
+      missingSecrets,
+      appName,
       env: azamEnv,
     });
     return jsonResponse(
       {
         ok: false,
-        error:
-          'AzamPay gateway credentials are not configured on the server. Set AZAMPAY_APP_NAME, AZAMPAY_CLIENT_ID, and AZAMPAY_CLIENT_SECRET.',
+        error: `AzamPay Configuration Error: Missing required Supabase secret(s): ${missingSecrets.join(', ')}.`,
       },
       503,
     );
@@ -427,26 +428,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  // 6. Step 1 — Explicit `GenerateToken` Exchange With Full Logging
-  const tokenUrl =
-    azamEnv === 'production'
-      ? 'https://authenticator.azampay.co.tz/AppRegistration/GenerateToken'
-      : 'https://authenticator-sandbox.azampay.co.tz/AppRegistration/GenerateToken';
-  const checkoutBaseUrl =
-    azamEnv === 'production'
-      ? 'https://checkout.azampay.co.tz'
-      : 'https://sandbox.azampay.co.tz';
+  // 6. Step 1 — Get OAuth JWT (`GenerateToken`)
+  const tokenUrl = isProd
+    ? 'https://authenticator.azampay.co.tz/AppRegistration/GenerateToken'
+    : 'https://authenticator-sandbox.azampay.co.tz/AppRegistration/GenerateToken';
+  const checkoutBaseUrl = isProd
+    ? 'https://checkout.azampay.co.tz'
+    : 'https://sandbox.azampay.co.tz';
 
   let accessToken = '';
   try {
-    const tokenHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
-
     const tokenRes = await fetch(tokenUrl, {
       method: 'POST',
-      headers: tokenHeaders,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
       body: JSON.stringify({
         appName,
         clientId,
@@ -455,7 +452,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
 
     const rawText = await tokenRes.text();
-    let json: {
+    let tokenJson: {
       success?: boolean;
       message?: string;
       accessToken?: string;
@@ -463,44 +460,40 @@ Deno.serve(async (req: Request): Promise<Response> => {
       Data?: { accessToken?: string; expire?: string };
     } = {};
     try {
-      json = rawText ? JSON.parse(rawText) : {};
+      tokenJson = rawText ? JSON.parse(rawText) : {};
     } catch {
-      json = { message: rawText };
+      tokenJson = { message: rawText };
     }
 
     const rawAccessToken =
-      json?.data?.accessToken ??
-      json?.accessToken ??
-      json?.Data?.accessToken ??
+      tokenJson?.data?.accessToken ??
+      tokenJson?.accessToken ??
+      tokenJson?.Data?.accessToken ??
       '';
     accessToken = String(rawAccessToken).replace(/^Bearer\s+/i, '').trim();
 
     if (
       !tokenRes.ok ||
-      json?.success === false ||
+      tokenJson?.success === false ||
       !accessToken ||
       accessToken === 'undefined' ||
       accessToken === 'null'
     ) {
-      console.error('[azampay-token-invalid]', {
+      console.error('[azampay-token-failed]', {
         status: tokenRes.status,
-        success: json?.success,
-        message: json?.message,
-        keys: Object.keys(json || {}),
+        success: tokenJson?.success,
+        message: tokenJson?.message,
+        body: rawText,
         appName,
         env: azamEnv,
-        hasClientId: Boolean(clientId),
-        hasClientSecret: Boolean(clientSecret),
-        hasApiToken: Boolean(apiToken),
+        hasApiKey: Boolean(apiKey),
       });
-      const errDetail =
-        json?.message || rawText || 'Empty accessToken returned from GenerateToken';
       await adminClient
         .from('payment_transactions')
         .update({
           status: 'failed',
           state: 'FAILED',
-          raw_callback: { stage: 'token', status: tokenRes.status, response: json },
+          raw_callback: { stage: 'token', status: tokenRes.status, response: tokenJson },
           updated_at: new Date().toISOString(),
         })
         .eq('id', txRow.id);
@@ -508,14 +501,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           ok: false,
-          error: `AzamPay Token Failed: ${errDetail}`,
+          error: `AzamPay Token Error (${tokenRes.status}): ${tokenJson?.message || 'Failed to generate token'}`,
         },
         502,
       );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unable to reach AzamPay authenticator.';
-    console.error('[azampay-token-invalid]', { stage: 'network', message: msg, appName, env: azamEnv });
+    console.error('[azampay-token-failed]', { stage: 'network', message: msg, appName, env: azamEnv });
     await adminClient
       .from('payment_transactions')
       .update({
@@ -527,12 +520,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq('id', txRow.id);
 
     return jsonResponse(
-      { ok: false, error: `AzamPay Token Failed: ${msg}` },
+      { ok: false, error: `AzamPay Token Error (network): ${msg}` },
       502,
     );
   }
 
-  // 7. Step 2 — Canonical AzamPay MNO / Bank Checkout Request
+  // 7. Step 2 — Call Canonical MNO / Bank Checkout With Exact Required Headers
   try {
     const checkoutUrl = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
@@ -565,102 +558,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
           ...(body.otp?.trim() ? { otp: body.otp.trim() } : {}),
         };
 
-    const parseJsonSafe = (raw: string): Record<string, unknown> => {
-      try {
-        return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      } catch {
-        return { rawText: raw };
-      }
-    };
-
-    const isAuthorizationRejection = (
-      res: Response,
-      parsed: Record<string, unknown>,
-      rawText: string,
-    ): boolean => {
-      if (res.status === 401) return true;
-      const msg = `${String(parsed.message ?? '')} ${rawText}`;
-      return /please provide valid authorization|unauthorized|invalid.*authorization/i.test(msg);
-    };
-
-    const baseJsonHeaders: Record<string, string> = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    };
-
-    const bearerOnlyHeaders: Record<string, string> = {
-      ...baseJsonHeaders,
       Authorization: `Bearer ${accessToken}`,
     };
-
-    const bearerAndApiKeyHeaders: Record<string, string> = {
-      ...baseJsonHeaders,
-      Authorization: `Bearer ${accessToken}`,
-      ...(apiToken ? { 'X-API-Key': apiToken } : {}),
-    };
-
-    const apiKeyAndBearerHeaders: Record<string, string> = {
-      ...baseJsonHeaders,
-      ...(apiToken
-        ? {
-            'X-API-Key': apiToken,
-            Authorization: apiToken.startsWith('Bearer ')
-              ? apiToken
-              : `Bearer ${apiToken}`,
-          }
-        : { Authorization: `Bearer ${accessToken}` }),
-    };
-
-    let attemptCounter = 0;
-    const sendCheckout = async (
-      strategy: string,
-      headers: Record<string, string>,
-    ) => {
-      attemptCounter += 1;
-      const res = await fetch(checkoutUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestPayload),
-      });
-      const text = await res.text();
-      const parsed = parseJsonSafe(text);
-      if (!res.ok) {
-        console.error('[azampay-mno-checkout]', {
-          attempt: attemptCounter,
-          strategy,
-          url: checkoutUrl,
-          status: res.status,
-          provider,
-          hasAccessToken: Boolean(accessToken),
-          tokenPrefix: accessToken.slice(0, 12),
-          hasApiToken: Boolean(apiToken),
-          body: text,
-        });
-      }
-      return { url: checkoutUrl, res, rawText: text, json: parsed, strategy };
-    };
-
-    // Attempt 1: Canonical endpoint with Authorization: Bearer <accessToken> ONLY
-    let attempt = await sendCheckout('bearer_only', bearerOnlyHeaders);
-
-    // Attempt 2: Retry with BOTH Authorization: Bearer <accessToken> AND X-API-Key: <apiToken> if 401/auth rejection
-    if (
-      apiToken &&
-      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
-    ) {
-      attempt = await sendCheckout('bearer_and_apikey', bearerAndApiKeyHeaders);
+    if (apiKey) {
+      headers['X-API-KEY'] = apiKey;
     }
 
-    // Attempt 3: Retry with X-API-Key: <apiToken> + Authorization: Bearer <apiToken> if still 401/auth rejection
-    if (
-      apiToken &&
-      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
-    ) {
-      attempt = await sendCheckout('apikey_and_bearer_token', apiKeyAndBearerHeaders);
-    }
+    const checkoutRes = await fetch(checkoutUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestPayload),
+    });
 
-    const checkoutRes = attempt.res;
-    const checkoutJson = attempt.json;
+    const checkoutText = await checkoutRes.text();
+    let checkoutJson: Record<string, unknown> = {};
+    try {
+      checkoutJson = checkoutText
+        ? (JSON.parse(checkoutText) as Record<string, unknown>)
+        : {};
+    } catch {
+      checkoutJson = { rawText: checkoutText };
+    }
 
     const azamSuccess =
       checkoutRes.ok && checkoutJson.success !== false;
@@ -679,19 +600,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
           : '';
       const upstreamReason =
         parsedMsg ||
-        attempt.rawText.trim() ||
+        checkoutText.trim() ||
         (checkoutRes.status === 404
           ? 'Endpoint not found'
           : `HTTP ${checkoutRes.status}`);
 
       console.error('[azampay-mno-checkout]', {
-        url: attempt.url,
+        url: checkoutUrl,
         status: checkoutRes.status,
         provider,
-        body: attempt.rawText,
-        strategy: attempt.strategy,
         env: azamEnv,
-        hasApiToken: Boolean(apiToken),
+        hasApiKey: Boolean(apiKey),
+        tokenLength: accessToken.length,
+        body: checkoutText,
       });
 
       await adminClient
@@ -702,11 +623,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
           azampay_transaction_id: azampayTransactionId,
           raw_callback: {
             stage: 'checkout',
-            url: attempt.url,
+            url: checkoutUrl,
             httpStatus: checkoutRes.status,
-            authStrategy: attempt.strategy,
             tokenLength: accessToken.length,
-            hasApiKey: Boolean(apiToken),
+            hasApiKey: Boolean(apiKey),
             response: checkoutJson,
           },
           updated_at: new Date().toISOString(),
