@@ -418,6 +418,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     (cleanSecret(Deno.env.get('AZAMPAY_ENV')) || 'sandbox').toLowerCase() === 'production';
   const azamEnv = isProd ? 'production' : 'sandbox';
 
+  if (!isProd && !apiKey) {
+    console.error('[azampay-checkout] Missing AZAMPAY_TOKEN secret in sandbox mode');
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Configuration Error: AZAMPAY_TOKEN secret is missing in Supabase.',
+      },
+      500,
+    );
+  }
+
   const missingSecrets: string[] = [];
   if (!clientId) missingSecrets.push('AZAMPAY_CLIENT_ID');
   if (!clientSecret) missingSecrets.push('AZAMPAY_CLIENT_SECRET');
@@ -433,7 +444,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         ok: false,
         error: `AzamPay Configuration Error: Missing required Supabase secret(s): ${missingSecrets.join(', ')}.`,
       },
-      503,
+      500,
     );
   }
 
@@ -548,7 +559,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     accessToken = extractAccessToken(tokenJson);
 
-    if (!tokenRes.ok || tokenJson?.success === false || accessToken.length <= 10) {
+    if (!tokenRes.ok || tokenJson?.success === false || !accessToken) {
       const shapeKeys = collectShapeKeys(tokenJson);
       const tokenMessage =
         typeof tokenJson?.message === 'string' && tokenJson.message.trim()
@@ -580,7 +591,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           ok: false,
-          error: `AzamPay Token Error (${tokenRes.status}): ${tokenMessage} [keys: ${shapeKeys.join(', ') || 'none'}]`,
+          error: `AzamPay Token Error (${tokenRes.status}): ${tokenMessage}`,
         },
         502,
       );
@@ -620,6 +631,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ? {
           accountNumber,
           amount: roundedAmount,
+          currencyCode: forcedCurrency,
           currency: forcedCurrency,
           externalId,
           provider,
@@ -641,8 +653,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       Authorization: `Bearer ${accessToken}`,
-      ...(!isProd && apiKey ? { 'X-API-KEY': apiKey } : {}),
     };
+    if (!isProd && apiKey) {
+      headers['X-API-KEY'] = apiKey;
+    }
 
     const checkoutRes = await fetch(checkoutUrl, {
       method: 'POST',
@@ -677,6 +691,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
           : '';
       const upstreamReason =
         parsedMsg || checkoutText.trim() || 'Authorization failed';
+      const diagSuffix =
+        checkoutRes.status === 401
+          ? ` [env=${isProd ? 'prod' : 'sandbox'}, tokenLen=${accessToken.length}, apiKeyLen=${apiKey.length}]`
+          : '';
 
       console.error('[azampay-mno-checkout]', {
         url: checkoutUrl,
@@ -685,6 +703,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         env: azamEnv,
         appName,
         hasApiKey: Boolean(apiKey),
+        apiKeyLen: apiKey.length,
         tokenLength: accessToken.length,
         body: checkoutText,
       });
@@ -700,6 +719,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             url: checkoutUrl,
             httpStatus: checkoutRes.status,
             tokenLength: accessToken.length,
+            apiKeyLen: apiKey.length,
             hasApiKey: Boolean(apiKey),
             response: checkoutJson,
           },
@@ -711,7 +731,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         {
           ok: false,
           externalId,
-          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}`,
+          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}${diagSuffix}`,
           azampayResponse: checkoutJson,
         },
         400,
