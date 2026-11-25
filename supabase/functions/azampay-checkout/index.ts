@@ -631,7 +631,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ? {
           accountNumber,
           amount: roundedAmount,
-          currencyCode: forcedCurrency,
           currency: forcedCurrency,
           externalId,
           provider,
@@ -649,33 +648,79 @@ Deno.serve(async (req: Request): Promise<Response> => {
           ...(body.otp?.trim() ? { otp: body.otp.trim() } : {}),
         };
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    };
-    if (!isProd && apiKey) {
-      headers['X-API-KEY'] = apiKey;
+    const authModes: Array<{ name: string; headers: Record<string, string> }> = [
+      {
+        name: 'mode1_oauth_bearer',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    ];
+
+    if (apiKey) {
+      authModes.push(
+        {
+          name: 'mode2_oauth_bearer_x_api_key',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+            'X-API-KEY': apiKey,
+          },
+        },
+        {
+          name: 'mode3_static_token_bearer',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+        },
+        {
+          name: 'mode4_static_token_x_api_key_only',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': apiKey,
+          },
+        },
+      );
     }
 
-    const checkoutRes = await fetch(checkoutUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestPayload),
-    });
-
-    const checkoutText = await checkoutRes.text();
+    let checkoutRes: Response | null = null;
+    let checkoutText = '';
     let checkoutJson: Record<string, unknown> = {};
-    try {
-      checkoutJson = checkoutText
-        ? (JSON.parse(checkoutText) as Record<string, unknown>)
-        : {};
-    } catch {
-      checkoutJson = { rawText: checkoutText };
+    let matchedAuthMode = authModes[0].name;
+    let lastWwwAuth = '';
+    const attemptTrace: Array<{ mode: string; status: number; wwwAuth: string }> = [];
+
+    for (const mode of authModes) {
+      matchedAuthMode = mode.name;
+      const res = await fetch(checkoutUrl, {
+        method: 'POST',
+        headers: mode.headers,
+        body: JSON.stringify(requestPayload),
+      });
+      const text = await res.text();
+      const wwwAuth = res.headers.get('www-authenticate') ?? '';
+
+      checkoutRes = res;
+      checkoutText = text;
+      lastWwwAuth = wwwAuth;
+      attemptTrace.push({ mode: mode.name, status: res.status, wwwAuth });
+
+      try {
+        checkoutJson = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      } catch {
+        checkoutJson = { rawText: text };
+      }
+
+      if (res.ok || res.status !== 401) {
+        break;
+      }
     }
 
+    const finalStatus = checkoutRes?.status ?? 502;
     const azamSuccess =
-      checkoutRes.ok && checkoutJson.success !== false;
+      Boolean(checkoutRes?.ok) && checkoutJson.success !== false;
 
     const azampayTransactionId =
       typeof checkoutJson.transactionId === 'string'
@@ -689,22 +734,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
         typeof checkoutJson.message === 'string' && checkoutJson.message.trim()
           ? checkoutJson.message.trim()
           : '';
-      const upstreamReason =
-        parsedMsg || checkoutText.trim() || 'Authorization failed';
-      const diagSuffix =
-        checkoutRes.status === 401
-          ? ` [env=${isProd ? 'prod' : 'sandbox'}, tokenLen=${accessToken.length}, apiKeyLen=${apiKey.length}]`
-          : '';
+      const rawBody = checkoutText.trim() || 'empty';
+      const all401 =
+        finalStatus === 401 &&
+        attemptTrace.length > 0 &&
+        attemptTrace.every((a) => a.status === 401);
+
+      const errorMessage = all401
+        ? `AzamPay ${isProd ? 'Production' : 'Sandbox'} rejected all ${attemptTrace.length} auth modes (401) — appName="${appName}", www-authenticate="${lastWwwAuth}", body=${rawBody}. Check that App Name matches AzamPay Portal exact casing and MNO Sandbox is active on this app.`
+        : `AzamPay Checkout Error (${finalStatus}): ${parsedMsg || rawBody}`;
 
       console.error('[azampay-mno-checkout]', {
         url: checkoutUrl,
-        status: checkoutRes.status,
+        status: finalStatus,
+        matchedAuthMode,
+        attemptTrace,
         provider,
         env: azamEnv,
         appName,
         hasApiKey: Boolean(apiKey),
         apiKeyLen: apiKey.length,
         tokenLength: accessToken.length,
+        wwwAuthenticate: lastWwwAuth,
         body: checkoutText,
       });
 
@@ -717,10 +768,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
           raw_callback: {
             stage: 'checkout',
             url: checkoutUrl,
-            httpStatus: checkoutRes.status,
+            httpStatus: finalStatus,
+            matchedAuthMode,
+            attemptTrace,
             tokenLength: accessToken.length,
             apiKeyLen: apiKey.length,
             hasApiKey: Boolean(apiKey),
+            wwwAuthenticate: lastWwwAuth,
             response: checkoutJson,
           },
           updated_at: new Date().toISOString(),
@@ -731,7 +785,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         {
           ok: false,
           externalId,
-          error: `AzamPay Checkout Error (${checkoutRes.status}): ${upstreamReason}${diagSuffix}`,
+          error: errorMessage,
           azampayResponse: checkoutJson,
         },
         400,
@@ -748,6 +802,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           env: azamEnv,
           planId: resolvedTier.planId,
           tier: resolvedTier.tier,
+          matchedAuthMode,
           checkoutResponse: checkoutJson,
         },
         updated_at: new Date().toISOString(),
