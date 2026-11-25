@@ -36,8 +36,39 @@ interface CheckoutRequestBody {
   accountNumber?: string;
   merchantMobileNumber?: string;
   otp?: string;
+  currency?: string;
+  displayCurrency?: string;
+  amountTzs?: number;
+  amountUsd?: number;
   turnstileToken?: string;
   turnstileBypassReason?: string;
+}
+
+const STATUTORY_TZS_PER_USD = 2685;
+
+function resolveForcedTzsAmount(
+  dbPriceTzs: unknown,
+  dbPriceUsd: unknown,
+  fallbackTzs: number,
+  fallbackUsd: number,
+): { amountTzs: number; amountUsd: number } {
+  const parsedUsd = Number(dbPriceUsd);
+  const amountUsd =
+    Number.isFinite(parsedUsd) && parsedUsd > 0 ? parsedUsd : fallbackUsd;
+
+  const parsedTzs = Number(dbPriceTzs);
+  if (Number.isFinite(parsedTzs) && parsedTzs >= 1000) {
+    return { amountTzs: Math.round(parsedTzs), amountUsd };
+  }
+
+  if (Number.isFinite(parsedUsd) && parsedUsd > 0) {
+    return {
+      amountTzs: Math.max(1000, Math.round(parsedUsd * STATUTORY_TZS_PER_USD)),
+      amountUsd,
+    };
+  }
+
+  return { amountTzs: Math.max(1000, Math.round(fallbackTzs)), amountUsd };
 }
 
 const MNO_PROVIDERS = new Set<string>([
@@ -411,6 +442,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // 4. Authoritative server-side plan pricing lookup from `subscription_plans`
+  // AzamPay Tanzania MNO & Bank rails ALWAYS settle in integer TZS regardless of
+  // the user's storefront display currency (e.g. USD / EUR).
   const { data: planRow } = await adminClient
     .from('subscription_plans')
     .select('id, name, price_tzs, price_usd, billing_cycle')
@@ -418,8 +451,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .maybeSingle();
 
   const planName = planRow?.name || resolvedTier.fallbackName;
-  const amountTzs = Number(planRow?.price_tzs ?? resolvedTier.fallbackTzs);
-  const amountUsd = Number(planRow?.price_usd ?? resolvedTier.fallbackUsd);
+  const { amountTzs, amountUsd } = resolveForcedTzsAmount(
+    planRow?.price_tzs,
+    planRow?.price_usd,
+    resolvedTier.fallbackTzs,
+    resolvedTier.fallbackUsd,
+  );
+  const requestedDisplayCurrency = (
+    body.displayCurrency ||
+    body.currency ||
+    'TZS'
+  )
+    .trim()
+    .toUpperCase();
+  const forcedCurrency = 'TZS' as const;
 
   // 5. Generate unique externalId and insert `pending` record into `payment_transactions`
   const externalId = `MC-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
@@ -445,13 +490,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       account_or_phone_masked: maskedContact,
       verified_amount_tzs: amountTzs,
       verified_amount_usd: amountUsd,
-      charged_currency: 'TZS',
+      charged_currency: forcedCurrency,
       charged_amount: amountTzs,
       state: 'INITIATED',
       metadata: {
         env: azamEnv,
         planId: resolvedTier.planId,
         tier: resolvedTier.tier,
+        chargedCurrency: forcedCurrency,
+        displayCurrency: requestedDisplayCurrency,
         turnstileVerificationMode,
         initiatedAt: nowIso,
       },
@@ -571,13 +618,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ? formatTanzaniaPhone(body.merchantMobileNumber)
       : formatTanzaniaPhone(accountNumber);
 
-    const roundedAmount = String(Math.round(Number(amountTzs)));
+    const roundedAmount = String(Math.max(1000, Math.round(Number(amountTzs))));
 
     const requestPayload = isMno
       ? {
           accountNumber,
           amount: roundedAmount,
-          currency: 'TZS',
+          currency: forcedCurrency,
           externalId,
           provider,
         }
@@ -588,7 +635,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             : accountNumber,
           merchantName: 'MineConnect',
           amount: roundedAmount,
-          currencyCode: 'TZS',
+          currencyCode: forcedCurrency,
           referenceId: externalId,
           provider,
           ...(body.otp?.trim() ? { otp: body.otp.trim() } : {}),
@@ -699,6 +746,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         azampayTransactionId,
         provider,
         channel: isBank ? 'bank' : 'mno',
+        currency: forcedCurrency,
         amountTzs,
         tier: resolvedTier.tier,
         planId: resolvedTier.planId,

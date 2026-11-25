@@ -902,6 +902,7 @@ export interface AzamPayCheckoutResult {
   azampayTransactionId?: string | null;
   provider?: AzamPayProviderCode;
   channel?: 'mno' | 'bank';
+  currency?: 'TZS';
   amountTzs?: number;
   tier?: AzamPayTierSlug;
   planId?: Exclude<SubscriptionPlanId, 'free'>;
@@ -910,6 +911,23 @@ export interface AzamPayCheckoutResult {
   environment?: 'sandbox' | 'production';
   message?: string;
   error?: string;
+}
+
+export function resolveForcedTzsAmountForPlan(
+  planId: Exclude<SubscriptionPlanId, 'free'>,
+  priceTzs?: number | null,
+  priceUsd?: number | null,
+): number {
+  const canonical =
+    CANONICAL_SUBSCRIPTION_PLANS.find((p) => p.id === planId) ??
+    CANONICAL_SUBSCRIPTION_PLANS[1];
+  if (typeof priceTzs === 'number' && Number.isFinite(priceTzs) && priceTzs >= 1000) {
+    return Math.round(priceTzs);
+  }
+  if (typeof priceUsd === 'number' && Number.isFinite(priceUsd) && priceUsd > 0) {
+    return Math.max(1000, Math.round(priceUsd * STATUTORY_TZS_PER_USD));
+  }
+  return canonical.price_tzs;
 }
 
 export interface AzamPayTransactionStatus {
@@ -931,6 +949,8 @@ export async function initiateAzamPayCheckout(params: {
   planId: Exclude<SubscriptionPlanId, 'free'>;
   provider: AzamPayProviderCode;
   phoneOrAccount: string;
+  amountTzs?: number;
+  displayCurrency?: SupportedCurrency;
   merchantMobileNumber?: string;
   otp?: string;
   turnstileToken?: string;
@@ -948,6 +968,14 @@ export async function initiateAzamPayCheckout(params: {
 
   const tier: AzamPayTierSlug =
     params.planId === 'enterprise' ? 'institutional_jv' : 'operator_pro';
+  const matchedPlan =
+    cachedPlans.find((p) => p.id === params.planId) ??
+    CANONICAL_SUBSCRIPTION_PLANS.find((p) => p.id === params.planId);
+  const forcedAmountTzs = resolveForcedTzsAmountForPlan(
+    params.planId,
+    params.amountTzs ?? matchedPlan?.price_tzs,
+    matchedPlan?.price_usd,
+  );
   const isBank =
     params.provider === 'CRDB' ||
     params.provider === 'NMB' ||
@@ -997,6 +1025,9 @@ export async function initiateAzamPayCheckout(params: {
           tier,
           planId: params.planId,
           provider: params.provider,
+          currency: 'TZS',
+          amountTzs: forcedAmountTzs,
+          displayCurrency: params.displayCurrency || 'TZS',
           phoneNumber: !isBank ? cleanInput : undefined,
           accountNumber: isBank ? cleanInput : undefined,
           merchantMobileNumber: params.merchantMobileNumber?.trim() || undefined,

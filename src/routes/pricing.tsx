@@ -26,6 +26,7 @@ import {
   fetchAzamPayTransactionStatus,
   initiateAzamPayCheckout,
   normalizePlanId,
+  resolveForcedTzsAmountForPlan,
   subscribeToAzamPayTransaction,
   syncSubscriptionAfterPayment,
   useSubscription,
@@ -241,6 +242,15 @@ function Pricing() {
       plans[0])
     : null
 
+  const billedAmountTzs =
+    checkoutPlanId && selectedPlan
+      ? resolveForcedTzsAmountForPlan(
+          checkoutPlanId,
+          selectedPlan.price_tzs,
+          selectedPlan.price_usd,
+        )
+      : 0
+
   const formatPlanPrice = (priceTzs: number, priceUsd: number) => {
     if (priceTzs === 0 && priceUsd === 0) {
       return ui('Free', 'Bure', 'Gratis')
@@ -325,6 +335,8 @@ function Pricing() {
         planId: checkoutPlanId,
         provider: activeProvider,
         phoneOrAccount: accountInput,
+        amountTzs: billedAmountTzs,
+        displayCurrency: currency,
         merchantMobileNumber:
           channel === 'bank_transfer' ? bankMobileInput : undefined,
         otp: channel === 'bank_transfer' ? bankOtpInput : undefined,
@@ -351,7 +363,7 @@ function Pricing() {
           : activeProvider,
         channel: res.channel ?? (channel === 'bank_transfer' ? 'bank' : 'mno'),
         planName: res.planName || selectedPlan.name,
-        amountTzs: res.amountTzs ?? selectedPlan.price_tzs,
+        amountTzs: res.amountTzs ?? billedAmountTzs,
         environment: res.environment ?? 'sandbox',
         promptMessage:
           res.message ||
@@ -726,10 +738,10 @@ function Pricing() {
                   {selectedPlan.name}
                 </h2>
                 <p className="mt-0.5 font-mono text-xs text-paper/75 tabular-nums">
-                  TSh {selectedPlan.price_tzs.toLocaleString('en-US')}
+                  TSh {billedAmountTzs.toLocaleString('en-US')}
                   {ui(' / 30 days', ' / siku 30', ' / 30 días')}
                   {currency !== 'TZS' &&
-                    ` · ≈ ${formatPlanPrice(selectedPlan.price_tzs, selectedPlan.price_usd)}`}
+                    ` · ≈ ${formatPlanPrice(billedAmountTzs, selectedPlan.price_usd)} (billed in TZS)`}
                 </p>
               </div>
               <button
@@ -1153,6 +1165,16 @@ function Pricing() {
                     </div>
                   )}
 
+                  {currency !== 'TZS' && (
+                    <div className="rounded-lg border border-ochre/25 bg-ochre/8 px-3 py-2 font-mono text-[10.5px] leading-relaxed text-ink tabular-nums">
+                      {ui(
+                        `AzamPay settles in Tanzanian Shillings (TZS). Your ${formatPlanPrice(billedAmountTzs, selectedPlan.price_usd)} plan will be charged at TSh ${billedAmountTzs.toLocaleString('en-US')}.`,
+                        `AzamPay inatoza kwa Shilingi za Tanzania (TZS). Utalipa TSh ${billedAmountTzs.toLocaleString('en-US')}.`,
+                        `AzamPay liquida en chelines tanzanos (TZS). Se cobrarán TSh ${billedAmountTzs.toLocaleString('en-US')}.`,
+                      )}
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={submitting}
@@ -1167,14 +1189,14 @@ function Pricing() {
                       ? ui('Sending AzamPay Prompt...', 'Inatuma Ombi la AzamPay...', 'Enviando Solicitud...')
                       : channel === 'mobile_money'
                         ? ui(
-                            `Pay TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} via AzamPay`,
-                            `Lipa TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} kwa AzamPay`,
-                            `Pagar TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} vía AzamPay`,
+                            `Pay TSh ${billedAmountTzs.toLocaleString('en-US')} via AzamPay`,
+                            `Lipa TSh ${billedAmountTzs.toLocaleString('en-US')} kwa AzamPay`,
+                            `Pagar TSh ${billedAmountTzs.toLocaleString('en-US')} vía AzamPay`,
                           )
                         : ui(
-                            `Authorize ${bankProvider} Transfer`,
-                            `Thibitisha Malipo ya ${bankProvider}`,
-                            `Autorizar Transferencia ${bankProvider}`,
+                            `Authorize ${bankProvider} · TSh ${billedAmountTzs.toLocaleString('en-US')}`,
+                            `Thibitisha ${bankProvider} · TSh ${billedAmountTzs.toLocaleString('en-US')}`,
+                            `Autorizar ${bankProvider} · TSh ${billedAmountTzs.toLocaleString('en-US')}`,
                           )}
                   </button>
 

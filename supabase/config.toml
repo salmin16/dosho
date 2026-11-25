@@ -31,6 +31,10 @@ enabled = true
 port = 54323
 api_url = "http://127.0.0.1"
 
+[inbucket]
+enabled = false
+port = 54394
+
 [auth]
 enabled = true
 site_url = "https://mineconnect-mocha.vercel.app"
