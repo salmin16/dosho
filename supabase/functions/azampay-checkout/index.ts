@@ -442,7 +442,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const tokenHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...(apiToken ? { 'X-API-Key': apiToken } : {}),
     };
 
     const tokenRes = await fetch(tokenUrl, {
@@ -575,87 +574,124 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     };
 
-    const isAuthorizationRejection = (
+    const isAuthOrNotFound = (
       res: Response,
       parsed: Record<string, unknown>,
       rawText: string,
     ): boolean => {
-      if (res.status === 401) return true;
+      if (res.status === 401 || res.status === 404) return true;
       const msg = `${String(parsed.message ?? '')} ${rawText}`;
       return /please provide valid authorization|unauthorized|invalid.*authorization/i.test(msg);
     };
 
-    const checkoutHeaders: Record<string, string> = {
+    const baseJsonHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
+    };
+
+    const bearerOnlyHeaders: Record<string, string> = {
+      ...baseJsonHeaders,
       Authorization: `Bearer ${accessToken}`,
     };
-    if (apiToken) {
-      checkoutHeaders['X-API-Key'] = apiToken;
-    }
 
+    const bearerAndApiKeyHeaders: Record<string, string> = {
+      ...baseJsonHeaders,
+      Authorization: `Bearer ${accessToken}`,
+      ...(apiToken ? { 'X-API-Key': apiToken } : {}),
+    };
+
+    const apiKeyOnlyHeaders: Record<string, string> = {
+      ...baseJsonHeaders,
+      ...(apiToken
+        ? {
+            'X-API-Key': apiToken,
+            Authorization: apiToken.startsWith('Bearer ')
+              ? apiToken
+              : `Bearer ${apiToken}`,
+          }
+        : { Authorization: `Bearer ${accessToken}` }),
+    };
+
+    let attemptCounter = 0;
     const sendCheckout = async (
       url: string,
       strategy: string,
       headers: Record<string, string>,
     ) => {
+      attemptCounter += 1;
       const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
       });
       const text = await res.text();
-      return { url, res, rawText: text, json: parseJsonSafe(text), strategy };
+      const parsed = parseJsonSafe(text);
+      if (isAuthOrNotFound(res, parsed, text)) {
+        console.error('[azampay-checkout-401]', {
+          attempt: attemptCounter,
+          strategy,
+          url,
+          status: res.status,
+          hasAccessToken: Boolean(accessToken),
+          tokenPrefix: accessToken.slice(0, 12),
+          hasApiToken: Boolean(apiToken),
+          responseText: text,
+        });
+      }
+      return { url, res, rawText: text, json: parsed, strategy };
     };
 
-    // Attempt 1: Primary endpoint with Authorization: Bearer <accessToken> + X-API-Key (if set)
+    // Attempt 1: Primary endpoint with Authorization: Bearer <accessToken> ONLY (no X-API-Key)
     let attempt = await sendCheckout(
       primaryEndpoint,
-      apiToken ? 'primary_bearer_and_apikey' : 'primary_bearer_only',
-      checkoutHeaders,
+      'primary_bearer_only',
+      bearerOnlyHeaders,
     );
 
-    // Attempt 2: If MNO primary returned "Please Provide Valid Authorization" despite valid accessToken (> 20 chars),
-    // try AzamPay's alternate v1 Checkout path `/api/v1/Checkout/MnoCheckout` with the same headers
+    // Attempt 2: Primary endpoint with BOTH Authorization: Bearer <accessToken> AND X-API-Key: <apiToken>
     if (
-      isMno &&
-      accessToken.length > 20 &&
-      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
+      apiToken &&
+      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
     ) {
-      console.warn('[azampay-checkout-retry]', {
-        previousUrl: attempt.url,
-        status: attempt.res.status,
-        body: attempt.rawText,
-        nextUrl: altMnoEndpoint,
-      });
       attempt = await sendCheckout(
-        altMnoEndpoint,
-        apiToken ? 'v1_bearer_and_apikey' : 'v1_bearer_only',
-        checkoutHeaders,
+        primaryEndpoint,
+        'primary_bearer_and_apikey',
+        bearerAndApiKeyHeaders,
       );
     }
 
-    // Attempt 3: If X-API-Key was sent and gateway still rejected authorization, retry primary with Bearer-only
+    // Attempt 3: Primary endpoint with X-API-Key: <apiToken> + Bearer <apiToken>
     if (
       apiToken &&
-      isAuthorizationRejection(attempt.res, attempt.json, attempt.rawText)
+      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
     ) {
-      const bearerOnlyHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      };
-      console.warn('[azampay-checkout-retry]', {
-        previousUrl: attempt.url,
-        status: attempt.res.status,
-        body: attempt.rawText,
-        nextStrategy: 'primary_bearer_only_fallback',
-      });
       attempt = await sendCheckout(
         primaryEndpoint,
-        'primary_bearer_only_fallback',
+        'primary_apikey_and_bearer_token',
+        apiKeyOnlyHeaders,
+      );
+    }
+
+    // Attempt 4: Alternate AzamPay Sandbox v1 MNO Checkout path if primary returned 401/404 across auth attempts
+    if (
+      isMno &&
+      isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
+    ) {
+      attempt = await sendCheckout(
+        altMnoEndpoint,
+        'v1_mno_bearer_only',
         bearerOnlyHeaders,
       );
+      if (
+        apiToken &&
+        isAuthOrNotFound(attempt.res, attempt.json, attempt.rawText)
+      ) {
+        attempt = await sendCheckout(
+          altMnoEndpoint,
+          'v1_mno_bearer_and_apikey',
+          bearerAndApiKeyHeaders,
+        );
+      }
     }
 
     const checkoutRes = attempt.res;
