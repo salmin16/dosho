@@ -237,7 +237,7 @@ export const LEGAL_DOCUMENTS: LegalDocumentDefinition[] = [
         heading: '2. Payment Settlement & Statutory Fee Separation',
         paragraphs: [
           'All Mine Connect membership and facilitation fees are strictly commercial platform charges invoiced in USD or TZS equivalent and are entirely separate from government application fees, annual mineral rents, royalties, or inspection charges payable directly to the United Republic of Tanzania.',
-          'Invoices are payable within fourteen (14) calendar days of milestone settlement via authorized bank transfer or ClickPesa settlement channels.',
+          'Invoices are payable within fourteen (14) calendar days of milestone settlement via authorized bank transfer or AzamPay settlement channels.',
         ],
       },
       {
