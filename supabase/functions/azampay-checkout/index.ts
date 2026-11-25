@@ -186,38 +186,34 @@ function maskGenericAccount(raw: string): string {
   return `${clean.slice(0, 4)}••••${clean.slice(-3)}`;
 }
 
-function extractJwt(obj: unknown): string {
-  if (typeof obj === 'string') {
-    const trimmed = obj.replace(/^Bearer\s+/i, '').trim();
-    if (trimmed.startsWith('eyJ') && trimmed.split('.').length === 3) {
-      return trimmed;
-    }
-    return '';
-  }
-  if (!obj || typeof obj !== 'object') return '';
-  const rec = obj as Record<string, unknown>;
-  const priorityKeys = [
-    'accessToken',
-    'AccessToken',
-    'token',
-    'Token',
-    'jwt',
-    'data',
-    'Data',
-    'result',
-    'Result',
-  ];
-  for (const key of priorityKeys) {
-    if (key in rec) {
-      const found = extractJwt(rec[key]);
-      if (found) return found;
-    }
-  }
-  for (const val of Object.values(rec)) {
-    const found = extractJwt(val);
-    if (found) return found;
-  }
-  return '';
+function extractAccessToken(tokenJson: Record<string, unknown>): string {
+  const dataObj =
+    tokenJson?.data && typeof tokenJson.data === 'object'
+      ? (tokenJson.data as Record<string, unknown>)
+      : undefined;
+  const upperDataObj =
+    tokenJson?.Data && typeof tokenJson.Data === 'object'
+      ? (tokenJson.Data as Record<string, unknown>)
+      : undefined;
+
+  const candidate =
+    dataObj?.accessToken ??
+    dataObj?.AccessToken ??
+    dataObj?.token ??
+    dataObj?.Token ??
+    upperDataObj?.AccessToken ??
+    upperDataObj?.accessToken ??
+    upperDataObj?.Token ??
+    upperDataObj?.token ??
+    tokenJson?.accessToken ??
+    tokenJson?.AccessToken ??
+    tokenJson?.token ??
+    tokenJson?.Token ??
+    '';
+
+  return String(candidate ?? '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
 }
 
 function collectShapeKeys(obj: unknown, prefix = ''): string[] {
@@ -550,14 +546,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       tokenJson = { message: rawText };
     }
 
-    accessToken = extractJwt(tokenJson) || extractJwt(rawText);
+    accessToken = extractAccessToken(tokenJson);
 
-    if (!tokenRes.ok || tokenJson?.success === false || !accessToken) {
+    if (!tokenRes.ok || tokenJson?.success === false || accessToken.length <= 10) {
       const shapeKeys = collectShapeKeys(tokenJson);
       const tokenMessage =
         typeof tokenJson?.message === 'string' && tokenJson.message.trim()
           ? tokenJson.message.trim()
-          : rawText || 'No JWT returned';
+          : rawText || 'No access token returned';
       console.error('[azampay-token-failed]', {
         status: tokenRes.status,
         success: tokenJson?.success,
