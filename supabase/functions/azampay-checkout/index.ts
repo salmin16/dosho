@@ -174,27 +174,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // 1. Validate logged-in user JWT from Authorization header
-  const authHeader = req.headers.get('authorization') ?? '';
-  const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!jwt) {
+  const token = (req.headers.get('Authorization') ?? '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+  if (!token) {
     return jsonResponse(
-      { ok: false, error: 'Authentication required. Please sign in first.' },
+      {
+        ok: false,
+        error: 'User Auth Error: Missing Authorization bearer token. Please sign in again.',
+      },
       401,
     );
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: userData, error: authErr } = await adminClient.auth.getUser(jwt);
+  const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(token);
   if (authErr || !userData?.user) {
+    console.error('User Auth Error:', authErr?.message || 'No user returned');
     return jsonResponse(
-      { ok: false, error: 'Invalid or expired session. Please sign in again.' },
+      {
+        ok: false,
+        error: `User Auth Error: ${authErr?.message || 'Invalid or expired session. Please sign in again.'}`,
+      },
       401,
     );
   }
   const user = userData.user;
+  const adminClient = supabaseAdmin;
 
   // 2. Parse and validate request payload
   let body: CheckoutRequestBody;
@@ -430,7 +439,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (!tokenRes.ok || !accessToken) {
       console.error('AzamPay GenerateToken failed:', tokenRes.status, tokenJson);
       const errDetail =
-        tokenJson?.message || `AzamPay token auth failed (HTTP ${tokenRes.status}).`;
+        tokenJson?.message || `GenerateToken failed (HTTP ${tokenRes.status}).`;
       await adminClient
         .from('payment_transactions')
         .update({
@@ -441,7 +450,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         })
         .eq('id', txRow.id);
 
-      return jsonResponse({ ok: false, error: errDetail }, 502);
+      return jsonResponse(
+        { ok: false, error: `AzamPay Token Error: ${errDetail}` },
+        502,
+      );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unable to reach AzamPay authenticator.';
@@ -456,10 +468,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
       })
       .eq('id', txRow.id);
 
-    return jsonResponse({ ok: false, error: `AzamPay authentication error: ${msg}` }, 502);
+    return jsonResponse(
+      { ok: false, error: `AzamPay Token Error: ${msg}` },
+      502,
+    );
   }
 
-  // 7. Step B — Send MNO or Bank Checkout Request with Bearer Token & X-API-Key
+  // 7. Step B — Send MNO or Bank Checkout Request:
+  //    Try ONLY Content-Type + Authorization: Bearer <accessToken> first (no X-API-Key)
+  //    so AzamPay does not reject duplicate auth headers; if 400 or 401 and AZAMPAY_TOKEN
+  //    is configured, automatically retry once with X-API-Key included.
   try {
     const endpoint = isMno
       ? `${checkoutBaseUrl}/azampay/mno/checkout`
@@ -500,25 +518,43 @@ Deno.serve(async (req: Request): Promise<Response> => {
           },
         };
 
-    const checkoutHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-      ...(apiToken ? { 'X-API-Key': apiToken } : {}),
+    const parseJsonSafe = (raw: string): Record<string, unknown> => {
+      try {
+        return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      } catch {
+        return { rawText: raw };
+      }
     };
 
-    const checkoutRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: checkoutHeaders,
-      body: JSON.stringify(requestPayload),
-    });
+    const sendCheckout = async (includeApiKey: boolean) => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        ...(includeApiKey && apiToken ? { 'X-API-Key': apiToken } : {}),
+      };
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+      });
+      const text = await res.text();
+      return { res, json: parseJsonSafe(text), usedApiKey: includeApiKey };
+    };
 
-    const checkoutText = await checkoutRes.text();
-    let checkoutJson: Record<string, unknown> = {};
-    try {
-      checkoutJson = checkoutText ? (JSON.parse(checkoutText) as Record<string, unknown>) : {};
-    } catch {
-      checkoutJson = { rawText: checkoutText };
+    // Attempt 1: Bearer token ONLY (omit X-API-Key)
+    let attempt = await sendCheckout(false);
+
+    // Attempt 2: Retry once with X-API-Key if AzamPay returned 400 or 401 and AZAMPAY_TOKEN exists
+    if ((attempt.res.status === 400 || attempt.res.status === 401) && apiToken) {
+      console.warn(
+        `AzamPay checkout attempt 1 (Bearer only) returned HTTP ${attempt.res.status}; retrying once with X-API-Key.`,
+        attempt.json,
+      );
+      attempt = await sendCheckout(true);
     }
+
+    const checkoutRes = attempt.res;
+    const checkoutJson = attempt.json;
 
     const azamSuccess =
       checkoutRes.ok && checkoutJson.success !== false;
@@ -532,10 +568,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!azamSuccess) {
       console.error('AzamPay checkout error:', checkoutRes.status, checkoutJson);
-      const failureMsg =
+      const rawFailure =
         typeof checkoutJson.message === 'string' && checkoutJson.message.trim()
-          ? checkoutJson.message
-          : `AzamPay ${provider} checkout declined (HTTP ${checkoutRes.status}).`;
+          ? checkoutJson.message.trim()
+          : `${provider} checkout declined (HTTP ${checkoutRes.status}).`;
 
       await adminClient
         .from('payment_transactions')
@@ -546,6 +582,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           raw_callback: {
             stage: 'checkout',
             httpStatus: checkoutRes.status,
+            usedApiKey: attempt.usedApiKey,
             response: checkoutJson,
           },
           updated_at: new Date().toISOString(),
@@ -556,7 +593,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         {
           ok: false,
           externalId,
-          error: failureMsg,
+          error: `AzamPay Checkout Error: ${rawFailure}`,
           azampayResponse: checkoutJson,
         },
         400,
@@ -604,6 +641,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unable to reach AzamPay checkout API.';
+    console.error('AzamPay Checkout Error:', msg);
     await adminClient
       .from('payment_transactions')
       .update({
@@ -614,6 +652,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       })
       .eq('id', txRow.id);
 
-    return jsonResponse({ ok: false, error: `AzamPay checkout error: ${msg}` }, 502);
+    return jsonResponse({ ok: false, error: `AzamPay Checkout Error: ${msg}` }, 502);
   }
 });

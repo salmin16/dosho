@@ -1104,16 +1104,29 @@ export async function initiateAzamPayCheckout(params: {
   }
 
   try {
-    const { data: liveSessionData } = await supabase.auth.getSession();
-    const bearerToken =
-      liveSessionData?.session?.access_token || session.accessToken;
+    let {
+      data: { session: liveSession },
+    } = await supabase.auth.getSession();
+
+    if (!liveSession?.access_token) {
+      const refreshed = await supabase.auth.refreshSession();
+      liveSession = refreshed.data.session;
+    }
+
+    const userAccessToken = liveSession?.access_token?.trim();
+    if (!userAccessToken) {
+      return {
+        ok: false,
+        error: 'User Auth Error: Your session expired. Please sign in again before paying.',
+      };
+    }
 
     const { data, error } = await supabase.functions.invoke<AzamPayCheckoutResult>(
       'azampay-checkout',
       {
-        headers: bearerToken
-          ? { Authorization: `Bearer ${bearerToken}` }
-          : undefined,
+        headers: {
+          Authorization: `Bearer ${userAccessToken}`,
+        },
         body: {
           tier,
           planId: params.planId,
