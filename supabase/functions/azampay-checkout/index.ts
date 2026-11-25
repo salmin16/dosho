@@ -155,6 +155,53 @@ function maskGenericAccount(raw: string): string {
   return `${clean.slice(0, 4)}••••${clean.slice(-3)}`;
 }
 
+function extractJwt(obj: unknown): string {
+  if (typeof obj === 'string') {
+    const trimmed = obj.replace(/^Bearer\s+/i, '').trim();
+    if (trimmed.startsWith('eyJ') && trimmed.split('.').length === 3) {
+      return trimmed;
+    }
+    return '';
+  }
+  if (!obj || typeof obj !== 'object') return '';
+  const rec = obj as Record<string, unknown>;
+  const priorityKeys = [
+    'accessToken',
+    'AccessToken',
+    'token',
+    'Token',
+    'jwt',
+    'data',
+    'Data',
+    'result',
+    'Result',
+  ];
+  for (const key of priorityKeys) {
+    if (key in rec) {
+      const found = extractJwt(rec[key]);
+      if (found) return found;
+    }
+  }
+  for (const val of Object.values(rec)) {
+    const found = extractJwt(val);
+    if (found) return found;
+  }
+  return '';
+}
+
+function collectShapeKeys(obj: unknown, prefix = ''): string[] {
+  if (!obj || typeof obj !== 'object') return [];
+  const keys: string[] = [];
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    keys.push(path);
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      keys.push(...collectShapeKeys(v, path));
+    }
+  }
+  return keys;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
@@ -449,39 +496,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
 
     const rawText = await tokenRes.text();
-    let tokenJson: {
-      success?: boolean;
-      message?: string;
-      accessToken?: string;
-      data?: { accessToken?: string; expire?: string };
-      Data?: { accessToken?: string; expire?: string };
-    } = {};
+    let tokenJson: Record<string, unknown> = {};
     try {
-      tokenJson = rawText ? JSON.parse(rawText) : {};
+      tokenJson = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
     } catch {
       tokenJson = { message: rawText };
     }
 
-    const rawAccessToken =
-      tokenJson?.data?.accessToken ??
-      tokenJson?.accessToken ??
-      tokenJson?.Data?.accessToken ??
-      '';
-    accessToken = String(rawAccessToken).replace(/^Bearer\s+/i, '').trim();
+    accessToken = extractJwt(tokenJson) || extractJwt(rawText);
 
-    if (
-      !tokenRes.ok ||
-      tokenJson?.success === false ||
-      !accessToken ||
-      accessToken === 'undefined' ||
-      accessToken === 'null'
-    ) {
+    if (!tokenRes.ok || tokenJson?.success === false || !accessToken) {
+      const shapeKeys = collectShapeKeys(tokenJson);
+      const tokenMessage =
+        typeof tokenJson?.message === 'string' && tokenJson.message.trim()
+          ? tokenJson.message.trim()
+          : rawText || 'No JWT returned';
       console.error('[azampay-token-failed]', {
         status: tokenRes.status,
         success: tokenJson?.success,
-        message: tokenJson?.message,
-        tokenLen: accessToken.length,
-        body: rawText,
+        message: tokenMessage,
+        keys: shapeKeys,
         appName,
         env: azamEnv,
       });
@@ -490,7 +524,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .update({
           status: 'failed',
           state: 'FAILED',
-          raw_callback: { stage: 'token', status: tokenRes.status, response: tokenJson },
+          raw_callback: {
+            stage: 'token',
+            status: tokenRes.status,
+            keys: shapeKeys,
+            message: tokenMessage,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq('id', txRow.id);
@@ -498,7 +537,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           ok: false,
-          error: `AzamPay Token Error (${tokenRes.status}): ${tokenJson?.message || rawText || 'No accessToken returned'}`,
+          error: `AzamPay Token Error (${tokenRes.status}): ${tokenMessage} [keys: ${shapeKeys.join(', ') || 'none'}]`,
         },
         502,
       );
