@@ -492,6 +492,14 @@ export interface PaymentTransactionRecord {
   state: ClickPesaTransactionState;
   webhook_signature_verified: boolean;
   reconciled_at?: string | null;
+  external_id?: string | null;
+  provider?: string | null;
+  phone_number?: string | null;
+  amount_tzs?: number | null;
+  tier?: 'operator_pro' | 'institutional_jv' | null;
+  status?: 'pending' | 'completed' | 'failed';
+  azampay_transaction_id?: string | null;
+  raw_callback?: Json | null;
   created_at: string;
   updated_at?: string;
 }

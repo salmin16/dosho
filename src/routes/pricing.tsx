@@ -1,13 +1,16 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import {
+  AlertCircle,
   ArrowRight,
   Building2,
   Check,
   CheckCircle2,
   CreditCard,
   Crown,
+  Loader2,
   Lock,
+  RefreshCw,
   ShieldCheck,
   Smartphone,
   X,
@@ -20,9 +23,13 @@ import TurnstileWidget, {
 } from '../components/TurnstileWidget'
 import {
   PLAN_FEATURE_BULLETS,
-  activateSubscriptionDirect,
+  fetchAzamPayTransactionStatus,
+  initiateAzamPayCheckout,
   normalizePlanId,
+  subscribeToAzamPayTransaction,
+  syncSubscriptionAfterPayment,
   useSubscription,
+  type AzamPayProviderCode,
 } from '../lib/subscriptions'
 import { useAuthState } from '../lib/supabaseAuth'
 import type { SubscriptionPlanId } from '../types/database'
@@ -41,19 +48,40 @@ export const Route = createFileRoute('/pricing')({
   component: Pricing,
 })
 
-const MOBILE_MONEY_NETWORKS = [
-  'M-Pesa',
-  'Tigo Pesa',
-  'Airtel Money',
-  'Halopesa',
+const MOBILE_MONEY_NETWORKS: ReadonlyArray<{
+  code: AzamPayProviderCode
+  label: string
+  sublabel: string
+}> = [
+  { code: 'Mpesa', label: 'Vodacom', sublabel: 'M-Pesa' },
+  { code: 'Tigo', label: 'Yas / Mixx', sublabel: 'Tigo Pesa' },
+  { code: 'Airtel', label: 'Airtel', sublabel: 'Airtel Money' },
+  { code: 'Halopesa', label: 'Halotel', sublabel: 'Halopesa' },
+  { code: 'Azampesa', label: 'AzamPesa', sublabel: 'Azam Wallet' },
 ] as const
 
-const BANK_CARD_PROVIDERS = [
-  'NMB Bank',
-  'CRDB Bank',
-  'NBC Bank',
-  'Visa / Mastercard',
+const BANK_PROVIDERS: ReadonlyArray<{
+  code: AzamPayProviderCode
+  label: string
+  sublabel: string
+}> = [
+  { code: 'CRDB', label: 'CRDB Bank', sublabel: 'Direct Transfer' },
+  { code: 'NMB', label: 'NMB Bank', sublabel: 'Direct Transfer' },
+  { code: 'NBC', label: 'NBC Bank', sublabel: 'Direct Transfer' },
 ] as const
+
+interface PendingAzamPaySession {
+  externalId: string
+  azampayTransactionId: string | null
+  provider: AzamPayProviderCode
+  providerLabel: string
+  channel: 'mno' | 'bank'
+  planName: string
+  amountTzs: number
+  environment: 'sandbox' | 'production'
+  promptMessage: string
+  status: 'pending' | 'failed'
+}
 
 interface ActivationReceipt {
   planName: string
@@ -73,6 +101,7 @@ function Pricing() {
     planId: activePlanId,
     accountState,
     isPaidActive,
+    refreshSubscription,
   } = useSubscription()
   const { t, fixtures, currency, formatPrice, convertText, ui } =
     useLocalization()
@@ -87,20 +116,22 @@ function Pricing() {
         : null,
   )
 
-  const [channel, setChannel] = useState<'mobile_money' | 'bank_card'>(
+  const [channel, setChannel] = useState<'mobile_money' | 'bank_transfer'>(
     'mobile_money',
   )
-  const [mobileNetwork, setMobileNetwork] = useState<string>(
-    MOBILE_MONEY_NETWORKS[0],
-  )
-  const [bankProvider, setBankProvider] = useState<string>(
-    BANK_CARD_PROVIDERS[0],
-  )
+  const [mobileProvider, setMobileProvider] =
+    useState<AzamPayProviderCode>('Mpesa')
+  const [bankProvider, setBankProvider] =
+    useState<AzamPayProviderCode>('CRDB')
   const [accountInput, setAccountInput] = useState('')
+  const [bankMobileInput, setBankMobileInput] = useState('')
+  const [bankOtpInput, setBankOtpInput] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [checkingStatus, setCheckingStatus] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [pendingTx, setPendingTx] = useState<PendingAzamPaySession | null>(null)
   const [receipt, setReceipt] = useState<ActivationReceipt | null>(null)
 
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
@@ -109,10 +140,78 @@ function Pricing() {
   useEffect(() => {
     if (initialPlanParam === 'pro' || initialPlanParam === 'enterprise') {
       setCheckoutPlanId(initialPlanParam)
+      setPendingTx(null)
       setReceipt(null)
       setErrorMsg(null)
     }
   }, [initialPlanParam])
+
+  const handleTransactionSettled = async (
+    tx: PendingAzamPaySession,
+    azampayTxId?: string | null,
+  ) => {
+    await syncSubscriptionAfterPayment()
+    await refreshSubscription()
+    setPendingTx(null)
+    setReceipt({
+      planName: tx.planName,
+      referenceCode: azampayTxId || tx.azampayTransactionId || tx.externalId,
+      paymentMethod: `AzamPay · ${tx.providerLabel}`,
+      amount: tx.amountTzs,
+      currency: 'TZS',
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    })
+  }
+
+  // Subscribe via Supabase Realtime + 3s poll on `payment_transactions` while awaiting AzamPay webhook
+  useEffect(() => {
+    if (!pendingTx || pendingTx.status !== 'pending') return
+
+    let active = true
+
+    const applyUpdate = async (
+      status: 'pending' | 'completed' | 'failed',
+      azampayTxId?: string | null,
+    ) => {
+      if (!active) return
+      if (status === 'completed') {
+        await handleTransactionSettled(pendingTx, azampayTxId)
+      } else if (status === 'failed') {
+        setPendingTx((prev) => (prev ? { ...prev, status: 'failed' } : null))
+        setErrorMsg(
+          ui(
+            'Payment was declined or cancelled on your device. You can retry right away.',
+            'Malipo yamekataliwa au kughairiwa kwenye simu yako. Unaweza kujaribu tena sasa.',
+            'El pago fue rechazado o cancelado. Puedes intentarlo de nuevo.',
+          ),
+        )
+      }
+    }
+
+    const unsubscribe = subscribeToAzamPayTransaction(
+      pendingTx.externalId,
+      (updated) => {
+        void applyUpdate(updated.status, updated.azampay_transaction_id)
+      },
+    )
+
+    const pollOnce = async () => {
+      const latest = await fetchAzamPayTransactionStatus(pendingTx.externalId)
+      if (latest && latest.status !== 'pending') {
+        await applyUpdate(latest.status, latest.azampay_transaction_id)
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pollOnce()
+    }, 3000)
+
+    return () => {
+      active = false
+      unsubscribe()
+      window.clearInterval(intervalId)
+    }
+  }, [pendingTx?.externalId, pendingTx?.status])
 
   const selectedPlan = checkoutPlanId
     ? (plans.find((p) => p.id === checkoutPlanId) ??
@@ -133,17 +232,43 @@ function Pricing() {
   const openCheckoutSheet = (planSlug: Exclude<SubscriptionPlanId, 'free'>) => {
     setCheckoutPlanId(planSlug)
     setErrorMsg(null)
+    setPendingTx(null)
     setReceipt(null)
     setAccountInput('')
+    setBankMobileInput('')
+    setBankOtpInput('')
   }
 
   const closeCheckoutSheet = () => {
     setCheckoutPlanId(null)
     setErrorMsg(null)
+    setPendingTx(null)
     setReceipt(null)
   }
 
-  const handlePayAndActivate = async (e: React.FormEvent) => {
+  const handleManualStatusCheck = async () => {
+    if (!pendingTx) return
+    setCheckingStatus(true)
+    try {
+      const latest = await fetchAzamPayTransactionStatus(pendingTx.externalId)
+      if (latest?.status === 'completed') {
+        await handleTransactionSettled(pendingTx, latest.azampay_transaction_id)
+      } else if (latest?.status === 'failed') {
+        setPendingTx((prev) => (prev ? { ...prev, status: 'failed' } : null))
+        setErrorMsg(
+          ui(
+            'Payment was declined or expired. Please retry below.',
+            'Malipo yamekataliwa au muda umeisha. Tafadhali jaribu tena.',
+            'El pago fue rechazado o expiró. Inténtalo nuevamente.',
+          ),
+        )
+      }
+    } finally {
+      setCheckingStatus(false)
+    }
+  }
+
+  const handleStartAzamPayCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!checkoutPlanId || !selectedPlan) return
     setErrorMsg(null)
@@ -151,7 +276,7 @@ function Pricing() {
     if (turnstileEnabled && !captchaToken) {
       setErrorMsg(
         ui(
-          'Please complete the security check before activating.',
+          'Please complete the security check before sending the payment prompt.',
           'Tafadhali kamilisha uthibitisho wa usalama kabla ya kuendelea.',
           'Por favor completa la verificación de seguridad antes de continuar.',
         ),
@@ -161,44 +286,49 @@ function Pricing() {
 
     setSubmitting(true)
     try {
-      const activeProvider =
-        channel === 'mobile_money' ? mobileNetwork : bankProvider
-      const payCurrency =
-        currency === 'TZS' || currency === 'USD' || currency === 'EUR'
-          ? currency
-          : 'TZS'
+      const activeProvider: AzamPayProviderCode =
+        channel === 'mobile_money' ? mobileProvider : bankProvider
+      const providerMeta =
+        channel === 'mobile_money'
+          ? MOBILE_MONEY_NETWORKS.find((n) => n.code === activeProvider)
+          : BANK_PROVIDERS.find((b) => b.code === activeProvider)
 
-      const res = await activateSubscriptionDirect({
+      const res = await initiateAzamPayCheckout({
         planId: checkoutPlanId,
-        channel,
         provider: activeProvider,
-        accountInput,
-        currency: payCurrency,
+        phoneOrAccount: accountInput,
+        merchantMobileNumber:
+          channel === 'bank_transfer' ? bankMobileInput : undefined,
+        otp: channel === 'bank_transfer' ? bankOtpInput : undefined,
         turnstileToken: captchaToken || undefined,
       })
 
-      if (!res.ok) {
+      if (!res.ok || !res.externalId) {
         setErrorMsg(
-          res.error || 'Could not activate subscription. Please try again.',
+          res.error ||
+            'Could not initiate AzamPay payment prompt. Please check your details and try again.',
         )
         return
       }
 
-      setReceipt({
+      setPendingTx({
+        externalId: res.externalId,
+        azampayTransactionId: res.azampayTransactionId ?? null,
+        provider: activeProvider,
+        providerLabel: providerMeta
+          ? `${providerMeta.label} (${providerMeta.sublabel})`
+          : activeProvider,
+        channel: res.channel ?? (channel === 'bank_transfer' ? 'bank' : 'mno'),
         planName: res.planName || selectedPlan.name,
-        referenceCode: res.referenceCode || 'MC-ACTIVE',
-        paymentMethod: res.paymentMethod || activeProvider,
-        amount:
-          res.amount ??
-          (payCurrency === 'TZS'
-            ? selectedPlan.price_tzs
-            : selectedPlan.price_usd),
-        currency: res.currency || payCurrency,
-        expiresAt:
-          res.expiresAt ||
-          new Date(Date.now() + 30 * 86_400_000).toISOString(),
+        amountTzs: res.amountTzs ?? selectedPlan.price_tzs,
+        environment: res.environment ?? 'sandbox',
+        promptMessage:
+          res.message ||
+          (channel === 'mobile_money'
+            ? 'Check your phone to enter your Mobile Money PIN.'
+            : `Complete your ${activeProvider} bank authorization to unlock your subscription.`),
+        status: 'pending',
       })
-      setAccountInput('')
     } finally {
       setSubmitting(false)
       setCaptchaToken('')
@@ -558,16 +688,16 @@ function Pricing() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-gold">
                   <Zap size={11} />
-                  {ui('Direct Instant Activation', 'Uwezeshaji wa Papo Hapo', 'Activación Directa')}
+                  {ui('AzamPay Instant Checkout', 'Malipo ya Papo Hapo · AzamPay', 'Pago Instantáneo · AzamPay')}
                 </div>
                 <h2 className="mt-0.5 font-display text-2xl font-medium">
                   {selectedPlan.name}
                 </h2>
                 <p className="mt-0.5 font-mono text-xs text-paper/75 tabular-nums">
-                  {formatPlanPrice(selectedPlan.price_tzs, selectedPlan.price_usd)}
+                  TSh {selectedPlan.price_tzs.toLocaleString('en-US')}
                   {ui(' / 30 days', ' / siku 30', ' / 30 días')}
                   {currency !== 'TZS' &&
-                    ` · TSh ${selectedPlan.price_tzs.toLocaleString('en-US')}`}
+                    ` · ≈ ${formatPlanPrice(selectedPlan.price_tzs, selectedPlan.price_usd)}`}
                 </p>
               </div>
               <button
@@ -606,13 +736,13 @@ function Pricing() {
                   </Link>
                 </div>
               ) : receipt ? (
-                /* Instant Activation Success Confirmation */
+                /* Instant Webhook Activation Success Confirmation */
                 <div className="py-2 text-center">
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-moss-light text-moss">
                     <CheckCircle2 size={28} />
                   </div>
                   <span className="mt-3 inline-block rounded-full bg-moss-light px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-moss">
-                    {ui('Subscription Active · 30 Days', 'Mpango Hai · Siku 30', 'Suscripción Activa · 30 Días')}
+                    {ui('Payment Confirmed · Active 30 Days', 'Malipo Yamethibitishwa · Siku 30', 'Pago Confirmado · 30 Días')}
                   </span>
                   <h3 className="mt-2 font-display text-3xl font-medium text-ink">
                     {receipt.planName} {ui('Unlocked!', 'Imefunguliwa!', '¡Activado!')}
@@ -626,21 +756,21 @@ function Pricing() {
                   </p>
 
                   <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-paper-2 p-4 text-left font-mono text-xs">
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Reference</dt>
-                      <dd className="mt-0.5 font-bold text-ink">{receipt.referenceCode}</dd>
+                      <dd className="mt-0.5 truncate font-bold text-ink">{receipt.referenceCode}</dd>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Channel</dt>
                       <dd className="mt-0.5 truncate text-ink">{receipt.paymentMethod}</dd>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Amount</dt>
                       <dd className="mt-0.5 font-bold text-moss tabular-nums">
                         {receipt.currency} {receipt.amount.toLocaleString('en-US')}
                       </dd>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <dt className="text-[10px] uppercase text-stone">Valid Until</dt>
                       <dd className="mt-0.5 font-bold text-ink tabular-nums">
                         {new Date(receipt.expiresAt).toLocaleDateString()}
@@ -666,10 +796,134 @@ function Pricing() {
                     </Link>
                   </div>
                 </div>
+              ) : pendingTx ? (
+                /* STK Push / Bank Authorization Live Awaiting Webhook Screen */
+                <div className="py-2 text-center">
+                  <div
+                    className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${
+                      pendingTx.status === 'failed'
+                        ? 'bg-danger/15 text-danger'
+                        : 'bg-ochre/15 text-ochre'
+                    }`}
+                  >
+                    {pendingTx.status === 'failed' ? (
+                      <AlertCircle size={30} />
+                    ) : (
+                      <Smartphone size={28} className="animate-pulse" />
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                        pendingTx.status === 'failed'
+                          ? 'bg-danger/15 text-danger'
+                          : 'bg-ochre/15 text-ochre'
+                      }`}
+                    >
+                      {pendingTx.status === 'pending' && (
+                        <Loader2 size={11} className="animate-spin" />
+                      )}
+                      {pendingTx.status === 'failed'
+                        ? ui('Payment Not Completed', 'Malipo Hayajakamilika', 'Pago No Completado')
+                        : ui('Awaiting Confirmation', 'Inasubiri Uthibitisho', 'Esperando Confirmación')}
+                    </span>
+                    {pendingTx.environment === 'sandbox' && (
+                      <span className="rounded-full border border-ink/15 bg-paper-2 px-2 py-0.5 font-mono text-[9.5px] font-semibold uppercase text-stone">
+                        AzamPay Sandbox
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="mt-3 font-display text-2xl font-medium text-ink sm:text-3xl">
+                    {pendingTx.status === 'failed'
+                      ? ui('Payment Declined or Cancelled', 'Malipo Yamekataliwa', 'Pago Rechazado')
+                      : pendingTx.channel === 'mno'
+                        ? ui(
+                            'Check your phone to enter your Mobile Money PIN',
+                            'Angalia simu yako uweke namba yako ya siri (PIN)',
+                            'Revisa tu teléfono para ingresar tu PIN móvil',
+                          )
+                        : ui(
+                            `Complete ${pendingTx.provider} Bank Authorization`,
+                            `Kamilisha Uthibitisho wa Benki (${pendingTx.provider})`,
+                            `Completa la Autorización Bancaria (${pendingTx.provider})`,
+                          )}
+                  </h3>
+
+                  <p className="mt-2 text-xs leading-relaxed text-stone">
+                    {pendingTx.status === 'failed'
+                      ? errorMsg ||
+                        ui(
+                          'No charge was settled. You can retry with the same or another network.',
+                          'Hakuna malipo yaliyokatwa. Unaweza kujaribu tena.',
+                          'No se realizó ningún cobro. Puedes intentarlo de nuevo.',
+                        )
+                      : ui(
+                          'This screen listens live for AzamPay confirmation and unlocks your subscription automatically the moment you approve.',
+                          'Skrini hii inasubiri uthibitisho wa AzamPay moja kwa moja na itafungua mpango wako papo hapo.',
+                          'Esta pantalla escucha en vivo la confirmación de AzamPay y desbloqueará tu plan automáticamente.',
+                        )}
+                  </p>
+
+                  <dl className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-paper-2 p-4 text-left font-mono text-xs">
+                    <div className="min-w-0">
+                      <dt className="text-[10px] uppercase text-stone">Reference</dt>
+                      <dd className="mt-0.5 truncate font-bold text-ink">{pendingTx.externalId}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-[10px] uppercase text-stone">Provider</dt>
+                      <dd className="mt-0.5 truncate text-ink">{pendingTx.providerLabel}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-[10px] uppercase text-stone">Plan</dt>
+                      <dd className="mt-0.5 truncate font-semibold text-ink">{pendingTx.planName}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-[10px] uppercase text-stone">Amount</dt>
+                      <dd className="mt-0.5 font-bold text-ochre tabular-nums">
+                        TSh {pendingTx.amountTzs.toLocaleString('en-US')}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+                    {pendingTx.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleManualStatusCheck()}
+                        disabled={checkingStatus}
+                        className="btn-primary flex-1 justify-center text-xs disabled:opacity-60"
+                      >
+                        <RefreshCw
+                          size={13}
+                          className={checkingStatus ? 'animate-spin' : ''}
+                        />
+                        {checkingStatus
+                          ? ui('Checking Status...', 'Inaangalia Hali...', 'Verificando...')
+                          : ui('Check Payment Status', 'Angalia Hali ya Malipo', 'Verificar Estado')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingTx(null)
+                        setErrorMsg(null)
+                      }}
+                      className={`${
+                        pendingTx.status === 'failed' ? 'btn-primary' : 'btn-ghost'
+                      } flex-1 justify-center text-xs`}
+                    >
+                      {pendingTx.status === 'failed'
+                        ? ui('Try Again', 'Jaribu Tena', 'Intentar de Nuevo')
+                        : ui('Change Number / Method', 'Badili Namba / Njia', 'Cambiar Método')}
+                    </button>
+                  </div>
+                </div>
               ) : (
-                /* Clean 2-Option Payment Form (No Receipt Uploads, Single Pay & Activate Button) */
-                <form onSubmit={handlePayAndActivate} className="space-y-4">
-                  {/* Switch between Option A (Mobile Money) and Option B (Bank / Card) */}
+                /* Clean AzamPay Mobile Money & Bank Transfer Checkout Form */
+                <form onSubmit={handleStartAzamPayCheckout} className="space-y-4">
+                  {/* Switch between Option A (Mobile Money STK) and Option B (Bank Transfer) */}
                   <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink/12 bg-paper-2 p-1">
                     <button
                       type="button"
@@ -690,18 +944,20 @@ function Pricing() {
                     <button
                       type="button"
                       onClick={() => {
-                        setChannel('bank_card')
+                        setChannel('bank_transfer')
                         setAccountInput('')
+                        setBankMobileInput('')
+                        setBankOtpInput('')
                         setErrorMsg(null)
                       }}
                       className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition ${
-                        channel === 'bank_card'
+                        channel === 'bank_transfer'
                           ? 'bg-ink text-gold shadow-xs'
                           : 'text-stone hover:text-ink'
                       }`}
                     >
                       <CreditCard size={13} />
-                      {ui('Bank / Card', 'Benki / Kadi', 'Banco / Tarjeta')}
+                      {ui('Bank Transfer', 'Benki (CRDB/NMB)', 'Transferencia Bancaria')}
                     </button>
                   </div>
 
@@ -709,23 +965,28 @@ function Pricing() {
                     <>
                       <div>
                         <span className="label">
-                          {ui('Select Network (Tanzania)', 'Chagua Mtandao', 'Seleccionar Red')}
+                          {ui('Select Network (Tanzania · AzamPay)', 'Chagua Mtandao (AzamPay)', 'Seleccionar Red (AzamPay)')}
                         </span>
                         <div className="grid grid-cols-2 gap-2">
                           {MOBILE_MONEY_NETWORKS.map((net) => {
-                            const active = mobileNetwork === net
+                            const active = mobileProvider === net.code
                             return (
                               <button
-                                key={net}
+                                key={net.code}
                                 type="button"
-                                onClick={() => setMobileNetwork(net)}
-                                className={`rounded-lg border px-3 py-2.5 text-left font-mono text-xs font-semibold transition ${
+                                onClick={() => setMobileProvider(net.code)}
+                                className={`min-w-0 rounded-lg border px-3 py-2 text-left transition ${
                                   active
                                     ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
                                     : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
                                 }`}
                               >
-                                {net}
+                                <span className="block truncate font-mono text-xs font-bold text-ink">
+                                  {net.label}
+                                </span>
+                                <span className="block truncate font-mono text-[10px] text-stone">
+                                  {net.sublabel}
+                                </span>
                               </button>
                             )
                           })}
@@ -743,33 +1004,45 @@ function Pricing() {
                           autoComplete="tel"
                           value={accountInput}
                           onChange={(e) => setAccountInput(e.target.value)}
-                          placeholder="07XX XXX XXX"
+                          placeholder="07XX XXX XXX or 2557XX XXX XXX"
                           className="field font-mono text-sm"
                         />
+                        <p className="mt-1 font-mono text-[10px] text-stone">
+                          {ui(
+                            'An STK PIN prompt will be sent directly to this number via AzamPay.',
+                            'Ombi la kuweka PIN litatumwa moja kwa moja kwenye namba hii kupitia AzamPay.',
+                            'Se enviará una solicitud de PIN directamente a este número vía AzamPay.',
+                          )}
+                        </p>
                       </div>
                     </>
                   ) : (
                     <>
                       <div>
                         <span className="label">
-                          {ui('Select Bank or Card', 'Chagua Benki au Kadi', 'Banco o Tarjeta')}
+                          {ui('Select Tanzania Bank (AzamPay)', 'Chagua Benki (AzamPay)', 'Seleccionar Banco (AzamPay)')}
                         </span>
-                        <div className="grid grid-cols-2 gap-2">
-                          {BANK_CARD_PROVIDERS.map((prov) => {
-                            const active = bankProvider === prov
+                        <div className="grid grid-cols-3 gap-2">
+                          {BANK_PROVIDERS.map((prov) => {
+                            const active = bankProvider === prov.code
                             return (
                               <button
-                                key={prov}
+                                key={prov.code}
                                 type="button"
-                                onClick={() => setBankProvider(prov)}
-                                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-left font-mono text-xs font-semibold transition ${
+                                onClick={() => setBankProvider(prov.code)}
+                                className={`flex min-w-0 flex-col rounded-lg border px-2.5 py-2.5 text-left transition ${
                                   active
                                     ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
                                     : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
                                 }`}
                               >
-                                <Building2 size={12} className="shrink-0 text-ochre" />
-                                <span className="truncate">{prov}</span>
+                                <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-ink">
+                                  <Building2 size={12} className="shrink-0 text-ochre" />
+                                  <span className="truncate">{prov.code}</span>
+                                </span>
+                                <span className="mt-0.5 truncate font-mono text-[9.5px] text-stone">
+                                  {prov.label}
+                                </span>
                               </button>
                             )
                           })}
@@ -777,23 +1050,48 @@ function Pricing() {
                       </div>
 
                       <div>
-                        <label className="label" htmlFor="bank-ref">
-                          {ui(
-                            'Account, Card, or Transfer Reference',
-                            'Namba ya Akaunti, Kadi, au Kumbukumbu',
-                            'Cuenta, Tarjeta o Referencia',
-                          )}
+                        <label className="label" htmlFor="bank-acct">
+                          {ui('Bank Account Number', 'Namba ya Akaunti ya Benki', 'Número de Cuenta Bancaria')}
                         </label>
                         <input
-                          id="bank-ref"
+                          id="bank-acct"
                           type="text"
                           required
                           minLength={4}
                           value={accountInput}
                           onChange={(e) => setAccountInput(e.target.value)}
-                          placeholder="e.g. NMB-EFT-88412 or 4532 •••• 9910"
+                          placeholder={`e.g. ${bankProvider} account number`}
                           className="field font-mono text-sm"
                         />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="label" htmlFor="bank-mobile">
+                            {ui('Registered Phone', 'Namba ya Simu', 'Teléfono')}
+                          </label>
+                          <input
+                            id="bank-mobile"
+                            type="tel"
+                            value={bankMobileInput}
+                            onChange={(e) => setBankMobileInput(e.target.value)}
+                            placeholder="07XX XXX XXX"
+                            className="field font-mono text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="label" htmlFor="bank-otp">
+                            {ui('Bank OTP (if prompted)', 'OTP ya Benki (hiari)', 'OTP Bancario (opcional)')}
+                          </label>
+                          <input
+                            id="bank-otp"
+                            type="text"
+                            value={bankOtpInput}
+                            onChange={(e) => setBankOtpInput(e.target.value)}
+                            placeholder="Optional"
+                            className="field font-mono text-sm"
+                          />
+                        </div>
                       </div>
                     </>
                   )}
@@ -822,18 +1120,32 @@ function Pricing() {
                     disabled={submitting}
                     className="btn-primary w-full justify-center py-3 text-sm disabled:opacity-60"
                   >
-                    <Zap size={15} />
+                    {submitting ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <Zap size={15} />
+                    )}
                     {submitting
-                      ? ui('Activating Subscription...', 'Inawasha Mpango...', 'Activando...')
-                      : ui('Pay & Activate Now', 'Lipa na Uwashe Sasa', 'Pagar y Activar Ahora')}
+                      ? ui('Sending AzamPay Prompt...', 'Inatuma Ombi la AzamPay...', 'Enviando Solicitud...')
+                      : channel === 'mobile_money'
+                        ? ui(
+                            `Pay TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} via AzamPay`,
+                            `Lipa TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} kwa AzamPay`,
+                            `Pagar TSh ${selectedPlan.price_tzs.toLocaleString('en-US')} vía AzamPay`,
+                          )
+                        : ui(
+                            `Authorize ${bankProvider} Transfer`,
+                            `Thibitisha Malipo ya ${bankProvider}`,
+                            `Autorizar Transferencia ${bankProvider}`,
+                          )}
                   </button>
 
                   <p className="flex items-center justify-center gap-1.5 text-center font-mono text-[10px] text-stone">
                     <ShieldCheck size={12} className="text-moss" />
                     {ui(
-                      'Activates immediately for 30 days · Logged securely in Supabase',
-                      'Inawashwa papo hapo kwa siku 30 · Inarekodiwa kwa usalama',
-                      'Activación inmediata por 30 días · Registro seguro en Supabase',
+                      'Secured by AzamPay · Auto-activates for 30 days upon webhook confirmation',
+                      'Inalindwa na AzamPay · Inawasha mpango papo hapo baada ya uthibitisho',
+                      'Protegido por AzamPay · Activación automática por 30 días al confirmar',
                     )}
                   </p>
                 </form>

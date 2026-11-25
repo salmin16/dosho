@@ -1018,6 +1018,269 @@ export async function activateSubscriptionDirect(params: {
   }
 }
 
+export type AzamPayProviderCode =
+  | 'Mpesa'
+  | 'Tigo'
+  | 'Airtel'
+  | 'Halopesa'
+  | 'Azampesa'
+  | 'CRDB'
+  | 'NMB'
+  | 'NBC';
+
+export type AzamPayTierSlug = 'operator_pro' | 'institutional_jv';
+
+export interface AzamPayCheckoutResult {
+  ok: boolean;
+  externalId?: string;
+  transactionId?: string;
+  azampayTransactionId?: string | null;
+  provider?: AzamPayProviderCode;
+  channel?: 'mno' | 'bank';
+  amountTzs?: number;
+  tier?: AzamPayTierSlug;
+  planId?: Exclude<SubscriptionPlanId, 'free'>;
+  planName?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  environment?: 'sandbox' | 'production';
+  message?: string;
+  error?: string;
+}
+
+export interface AzamPayTransactionStatus {
+  id: string;
+  external_id: string;
+  status: 'pending' | 'completed' | 'failed';
+  provider: string | null;
+  amount_tzs: number;
+  tier: string | null;
+  azampay_transaction_id: string | null;
+  updated_at: string;
+}
+
+/**
+ * Initiates an AzamPay Mobile Money (MNO STK Push) or Bank Checkout
+ * via the `azampay-checkout` Supabase Edge Function.
+ */
+export async function initiateAzamPayCheckout(params: {
+  planId: Exclude<SubscriptionPlanId, 'free'>;
+  provider: AzamPayProviderCode;
+  phoneOrAccount: string;
+  merchantMobileNumber?: string;
+  otp?: string;
+  turnstileToken?: string;
+}): Promise<AzamPayCheckoutResult> {
+  const session = await waitForAuthReady();
+  if (!session) {
+    return { ok: false, error: 'Please sign in before starting AzamPay checkout.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { ok: false, error: 'Billing service is temporarily unavailable.' };
+  }
+
+  const tier: AzamPayTierSlug =
+    params.planId === 'enterprise' ? 'institutional_jv' : 'operator_pro';
+  const isBank =
+    params.provider === 'CRDB' ||
+    params.provider === 'NMB' ||
+    params.provider === 'NBC';
+
+  const cleanInput = params.phoneOrAccount.trim();
+  if (!isBank) {
+    const digits = cleanInput.replace(/[^0-9]/g, '');
+    if (digits.length < 9 || digits.length > 12) {
+      return {
+        ok: false,
+        error: 'Enter a valid Tanzania Mobile Money number (e.g. 07XX XXX XXX).',
+      };
+    }
+  } else if (cleanInput.length < 4) {
+    return {
+      ok: false,
+      error: 'Enter a valid bank account number (at least 4 characters).',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke<AzamPayCheckoutResult>(
+      'azampay-checkout',
+      {
+        body: {
+          tier,
+          planId: params.planId,
+          provider: params.provider,
+          phoneNumber: !isBank ? cleanInput : undefined,
+          accountNumber: isBank ? cleanInput : undefined,
+          merchantMobileNumber: params.merchantMobileNumber?.trim() || undefined,
+          otp: params.otp?.trim() || undefined,
+          turnstileToken: params.turnstileToken || undefined,
+        },
+      },
+    );
+
+    if (error) {
+      let extractedError = data?.error || error.message;
+      const errWithCtx = error as unknown as { context?: Response };
+      if (errWithCtx?.context && typeof errWithCtx.context.json === 'function') {
+        try {
+          const parsedBody = (await errWithCtx.context.json()) as {
+            error?: string;
+            message?: string;
+          };
+          if (parsedBody?.error || parsedBody?.message) {
+            extractedError = parsedBody.error || parsedBody.message || extractedError;
+          }
+        } catch {
+          // keep default error text
+        }
+      }
+      return {
+        ok: false,
+        error: formatSafeUserError(
+          extractedError,
+          'Could not initiate AzamPay payment prompt right now. Please check your details and try again.',
+        ),
+      };
+    }
+
+    if (!data?.ok || !data?.externalId) {
+      return {
+        ok: false,
+        error: formatSafeUserError(
+          data?.error,
+          'AzamPay could not initiate the payment prompt. Please try again.',
+        ),
+      };
+    }
+
+    recordAuditActivity({
+      userId: session.user.id,
+      action: 'AZAMPAY_CHECKOUT_INITIATED',
+      metadata: {
+        externalId: data.externalId,
+        provider: params.provider,
+        tier,
+        amountTzs: data.amountTzs,
+      },
+    });
+
+    return data;
+  } catch (err) {
+    return {
+      ok: false,
+      error: formatSafeUserError(
+        err instanceof Error ? err.message : undefined,
+        'Unable to reach AzamPay checkout service. Please try again.',
+      ),
+    };
+  }
+}
+
+/**
+ * Polls `public.payment_transactions` for the user's transaction status (`pending` | `completed` | `failed`).
+ */
+export async function fetchAzamPayTransactionStatus(
+  externalId: string,
+): Promise<AzamPayTransactionStatus | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !externalId) return null;
+
+  const { data, error } = await supabase
+    .from('payment_transactions')
+    .select(
+      'id, external_id, status, provider, amount_tzs, tier, azampay_transaction_id, updated_at',
+    )
+    .eq('external_id', externalId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const normalizedStatus =
+    data.status === 'completed' || data.status === 'failed'
+      ? data.status
+      : 'pending';
+
+  return {
+    id: String(data.id),
+    external_id: String(data.external_id ?? externalId),
+    status: normalizedStatus,
+    provider: typeof data.provider === 'string' ? data.provider : null,
+    amount_tzs: Number(data.amount_tzs ?? 0),
+    tier: typeof data.tier === 'string' ? data.tier : null,
+    azampay_transaction_id:
+      typeof data.azampay_transaction_id === 'string'
+        ? data.azampay_transaction_id
+        : null,
+    updated_at: String(data.updated_at ?? new Date().toISOString()),
+  };
+}
+
+/**
+ * Subscribes via Supabase Realtime to `payment_transactions` updates for `externalId`
+ * so the checkout UI unlocks immediately when `azampay-callback` confirms settlement.
+ */
+export function subscribeToAzamPayTransaction(
+  externalId: string,
+  onStatusChange: (tx: AzamPayTransactionStatus) => void,
+): () => void {
+  const supabase = getSupabaseClient();
+  if (!supabase || !externalId) return () => {};
+
+  const channel = supabase
+    .channel(`azampay-tx-${externalId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'payment_transactions',
+        filter: `external_id=eq.${externalId}`,
+      },
+      (payload) => {
+        const row = (payload.new ?? {}) as Record<string, unknown>;
+        const normalizedStatus =
+          row.status === 'completed' || row.status === 'failed'
+            ? row.status
+            : 'pending';
+        onStatusChange({
+          id: String(row.id ?? ''),
+          external_id: String(row.external_id ?? externalId),
+          status: normalizedStatus,
+          provider: typeof row.provider === 'string' ? row.provider : null,
+          amount_tzs: Number(row.amount_tzs ?? 0),
+          tier: typeof row.tier === 'string' ? row.tier : null,
+          azampay_transaction_id:
+            typeof row.azampay_transaction_id === 'string'
+              ? row.azampay_transaction_id
+              : null,
+          updated_at: String(row.updated_at ?? new Date().toISOString()),
+        });
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
+/**
+ * Refreshes user subscription & entitlements immediately after webhook settlement
+ * and broadcasts `SUBSCRIPTION_UPDATED_EVENT` to all mounted views.
+ */
+export async function syncSubscriptionAfterPayment(): Promise<void> {
+  const session = await waitForAuthReady();
+  if (!session) return;
+  await fetchUserSubscriptionFromSupabase(
+    session.user.id,
+    session.user.email,
+    session.user.role === 'admin',
+  );
+  broadcastSubscriptionUpdate();
+}
+
 /**
  * Instant Payment Hook (AzamPay / Stripe / ClickPesa via `verify-subscription` Edge Function)
  */
