@@ -1,17 +1,21 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
+  AlertCircle,
   Briefcase,
+  CheckCircle2,
   Compass,
   FileText,
   Lock,
   LogOut,
   Pickaxe,
   PlusCircle,
+  RefreshCw,
   ShieldCheck,
   Trash2,
   UploadCloud,
   Wrench,
+  X,
 } from 'lucide-react'
 import {
   createGroundedDocument,
@@ -33,6 +37,7 @@ import VerificationBadge, {
 } from '../components/VerificationBadge'
 import { formatTanzaniaPhoneDisplay } from '../lib/phoneFormat'
 import {
+  getVerificationDocumentChecklist,
   normalizeVerificationLevel,
   VERIFICATION_LEVELS,
   VERIFICATION_LEVEL_LIST,
@@ -90,9 +95,14 @@ export function DashboardRouteComponent() {
   const [verifRequestedLevel, setVerifRequestedLevel] =
     useState<Exclude<VerificationLevelCode, 'L0'>>('L1')
   const [verifNotes, setVerifNotes] = useState('')
-  const [verifFile, setVerifFile] = useState<PreparedVerificationFile | null>(null)
-  const [verifFileError, setVerifFileError] = useState<string | null>(null)
-  const [verifCompressing, setVerifCompressing] = useState(false)
+  const [verifSlotFiles, setVerifSlotFiles] = useState<
+    Record<string, PreparedVerificationFile>
+  >({})
+  const [verifSlotErrors, setVerifSlotErrors] = useState<Record<string, string>>({})
+  const [verifSlotProcessing, setVerifSlotProcessing] = useState<
+    Record<string, boolean>
+  >({})
+  const [verifFormError, setVerifFormError] = useState<string | null>(null)
   const [verifMessage, setVerifMessage] = useState<string | null>(null)
   const [verifSubmitting, setVerifSubmitting] = useState(false)
   const [initialDataLoading, setInitialDataLoading] = useState(true)
@@ -167,32 +177,83 @@ export function DashboardRouteComponent() {
     navigate({ to: '/login' })
   }
 
-  const handleVerificationFileChange = async (
+  const activeChecklist = getVerificationDocumentChecklist(verifRequestedLevel)
+  const requiredChecklistSlots = activeChecklist.filter((s) => s.required)
+  const attachedRequiredCount = requiredChecklistSlots.filter((s) =>
+    Boolean(verifSlotFiles[s.slotKey]),
+  ).length
+  const anySlotProcessing = Object.values(verifSlotProcessing).some(Boolean)
+
+  const handleVerificationSlotFileChange = async (
+    slotKey: string,
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0]
-    setVerifFileError(null)
-    if (!file) {
-      setVerifFile(null)
-      return
-    }
-    setVerifCompressing(true)
+    // Reset input value so re-selecting the same file after error/replace always triggers onChange
+    e.target.value = ''
+    setVerifFormError(null)
+    setVerifSlotErrors((prev) => {
+      const next = { ...prev }
+      delete next[slotKey]
+      return next
+    })
+    if (!file) return
+
+    setVerifSlotProcessing((prev) => ({ ...prev, [slotKey]: true }))
     try {
       const result = await validateAndCompressVerificationFile(file)
       if (!result.ok) {
-        setVerifFile(null)
-        setVerifFileError(result.error)
+        setVerifSlotErrors((prev) => ({ ...prev, [slotKey]: result.error }))
       } else {
-        setVerifFile(result.prepared)
+        setVerifSlotFiles((prev) => ({ ...prev, [slotKey]: result.prepared }))
       }
     } finally {
-      setVerifCompressing(false)
+      setVerifSlotProcessing((prev) => ({ ...prev, [slotKey]: false }))
     }
+  }
+
+  const handleRemoveVerificationSlotFile = (slotKey: string) => {
+    setVerifSlotFiles((prev) => {
+      const next = { ...prev }
+      delete next[slotKey]
+      return next
+    })
+    setVerifSlotErrors((prev) => {
+      const next = { ...prev }
+      delete next[slotKey]
+      return next
+    })
   }
 
   const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault()
     setVerifMessage(null)
+    setVerifFormError(null)
+
+    const missingRequired = activeChecklist.filter(
+      (slot) => slot.required && !verifSlotFiles[slot.slotKey],
+    )
+    if (missingRequired.length > 0) {
+      const nextErrors: Record<string, string> = {}
+      for (const slot of missingRequired) {
+        nextErrors[slot.slotKey] = `Required for ${verifRequestedLevel}: please attach a PDF, JPG, PNG, or WebP file (< 10 MB).`
+      }
+      setVerifSlotErrors((prev) => ({ ...prev, ...nextErrors }))
+      setVerifFormError(
+        `Please attach all required ${verifRequestedLevel} documents (${missingRequired.length} missing) before submitting.`,
+      )
+      return
+    }
+
+    const preparedDocuments = activeChecklist
+      .filter((slot) => Boolean(verifSlotFiles[slot.slotKey]))
+      .map((slot) => ({
+        slotKey: slot.slotKey,
+        label: slot.label,
+        required: slot.required,
+        prepared: verifSlotFiles[slot.slotKey],
+      }))
+
     setVerifSubmitting(true)
     try {
       const res = await submitUserVerificationRequest({
@@ -201,17 +262,24 @@ export function DashboardRouteComponent() {
         licenceReference: verifLicenceRef,
         requestedLevel: verifRequestedLevel,
         notes: verifNotes,
-        preparedFile: verifFile,
+        preparedDocuments,
       })
       if (res.error) {
-        setVerifMessage(res.error)
+        setVerifFormError(res.error)
       } else {
         setVerifMessage(
           res.warning ||
-            `Verification request for ${verifRequestedLevel} (${VERIFICATION_LEVELS[verifRequestedLevel].title}) submitted! An administrator will review your profile shortly.`,
+            `Verification request for ${verifRequestedLevel} (${VERIFICATION_LEVELS[verifRequestedLevel].title}) submitted with ${preparedDocuments.length} labeled document(s)! An administrator will review your profile shortly.`,
         )
         setVerifNotes('')
-        setVerifFile(null)
+        setVerifSlotFiles((prev) => {
+          const next = { ...prev }
+          for (const slot of activeChecklist) {
+            delete next[slot.slotKey]
+          }
+          return next
+        })
+        setVerifSlotErrors({})
         await loadData()
       }
     } finally {
@@ -397,7 +465,155 @@ export function DashboardRouteComponent() {
                 </div>
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              {/* Level-Specific Multi-Document Checklist (L1–L4) */}
+              <div className="space-y-3 rounded-xl border border-ink/12 bg-paper/75 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-ink">
+                      {verifRequestedLevel} Document Checklist · {VERIFICATION_LEVELS[verifRequestedLevel].title}
+                    </h3>
+                    <p className="mt-0.5 text-[11.5px] text-stone">
+                      Upload each document separately (PDF, JPG, PNG, WebP · strictly &lt; 10 MB per file).
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold tabular-nums ${
+                      attachedRequiredCount === requiredChecklistSlots.length
+                        ? 'border-moss/40 bg-moss-light text-moss'
+                        : 'border-ochre/35 bg-ochre/10 text-ochre'
+                    }`}
+                  >
+                    {attachedRequiredCount === requiredChecklistSlots.length && (
+                      <CheckCircle2 size={12} />
+                    )}
+                    {attachedRequiredCount} / {requiredChecklistSlots.length} required attached
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  {activeChecklist.map((slot, idx) => {
+                    const attached = verifSlotFiles[slot.slotKey]
+                    const slotErr = verifSlotErrors[slot.slotKey]
+                    const processing = Boolean(verifSlotProcessing[slot.slotKey])
+                    const inputId = `verif-slot-${slot.slotKey}`
+
+                    return (
+                      <div
+                        key={slot.slotKey}
+                        className={`flex flex-col justify-between rounded-lg border p-3.5 transition-colors ${
+                          slotErr
+                            ? 'border-danger/50 bg-danger/5'
+                            : attached
+                              ? 'border-moss/40 bg-moss-light/30'
+                              : 'border-ink/12 bg-[#FCFBF8]'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-stone tabular-nums">
+                              Document {idx + 1}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-semibold uppercase ${
+                                slot.required
+                                  ? 'border-ochre/40 bg-ochre/12 text-ochre'
+                                  : 'border-ink/15 bg-paper text-stone'
+                              }`}
+                            >
+                              {slot.required ? 'Required' : 'Optional'}
+                            </span>
+                          </div>
+
+                          <label
+                            htmlFor={inputId}
+                            className="mt-1.5 block text-xs font-semibold leading-snug text-ink"
+                          >
+                            {slot.label}
+                          </label>
+                          <p className="mt-1 text-[11px] leading-relaxed text-stone">
+                            {slot.hint}
+                          </p>
+                        </div>
+
+                        <div className="mt-3">
+                          <input
+                            id={inputId}
+                            type="file"
+                            accept=".pdf,image/jpeg,image/png,image/webp"
+                            onChange={(e) =>
+                              void handleVerificationSlotFileChange(slot.slotKey, e)
+                            }
+                            className="sr-only"
+                          />
+
+                          {attached ? (
+                            <div className="space-y-2 rounded-md border border-moss/30 bg-[#FCFBF8] p-2.5">
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2
+                                  size={14}
+                                  className="mt-0.5 shrink-0 text-moss"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-mono text-[11px] font-semibold text-ink">
+                                    {attached.fileName}
+                                  </p>
+                                  <p className="font-mono text-[10px] text-stone tabular-nums">
+                                    {formatBytesCompact(attached.compressedBytes)}
+                                    {attached.wasCompressed ? ' · optimized' : ''}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <label
+                                  htmlFor={inputId}
+                                  className="inline-flex min-h-[36px] flex-1 cursor-pointer items-center justify-center gap-1 rounded border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[10.5px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+                                >
+                                  <RefreshCw size={11} />
+                                  Replace
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRemoveVerificationSlotFile(slot.slotKey)
+                                  }
+                                  className="inline-flex min-h-[36px] items-center justify-center gap-1 rounded border border-danger/30 bg-danger/5 px-2.5 py-1 font-mono text-[10.5px] font-semibold text-danger transition hover:bg-danger/15"
+                                >
+                                  <X size={12} />
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <label
+                              htmlFor={inputId}
+                              className="flex min-h-[44px] cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-sand bg-paper/80 px-3 py-2 text-xs font-medium text-ink/80 transition-colors hover:border-ochre hover:text-ochre"
+                            >
+                              <UploadCloud size={15} className="shrink-0 text-ochre" />
+                              <span className="truncate font-mono text-[11px]">
+                                {processing
+                                  ? 'Checking & preparing...'
+                                  : 'Upload PDF / Image (< 10 MB)'}
+                              </span>
+                            </label>
+                          )}
+
+                          {slotErr && (
+                            <p
+                              role="alert"
+                              className="mt-2 flex items-start gap-1.5 rounded border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[11px] font-medium text-danger"
+                            >
+                              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                              <span>{slotErr}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
                 <div className="field-group">
                   <label htmlFor="verif-notes" className="label">
                     Reviewer Notes (Optional)
@@ -407,48 +623,25 @@ export function DashboardRouteComponent() {
                     type="text"
                     value={verifNotes}
                     onChange={(e) => setVerifNotes(e.target.value)}
-                    placeholder="e.g. Attached BRELA & PML certificate"
+                    placeholder="Add licence context or notes for the compliance reviewer"
                     className="field"
                   />
                 </div>
-                <div className="field-group">
-                  <span className="label">Supporting Document (PDF / Image)</span>
-                  <label
-                    htmlFor="verif-file-upload"
-                    className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-sand bg-paper/75 px-3 py-2 text-xs text-stone transition-colors hover:border-ochre hover:text-ink"
-                  >
-                    <UploadCloud size={15} className="shrink-0 text-ochre" />
-                    <span className="truncate font-mono text-[11px]">
-                      {verifCompressing
-                        ? 'Compressing file...'
-                        : verifFile
-                          ? `${verifFile.fileName} (${formatBytesCompact(verifFile.compressedBytes)}${verifFile.wasCompressed ? ' compressed' : ''})`
-                          : 'Choose PDF, JPG, PNG, or WebP'}
-                    </span>
-                    <input
-                      id="verif-file-upload"
-                      type="file"
-                      accept=".pdf,image/jpeg,image/png,image/webp"
-                      onChange={(e) => void handleVerificationFileChange(e)}
-                      className="sr-only"
-                    />
-                  </label>
-                </div>
                 <button
                   type="submit"
-                  disabled={verifSubmitting || verifCompressing}
+                  disabled={verifSubmitting || anySlotProcessing}
                   className="btn-primary text-xs disabled:opacity-50"
                 >
                   {verifSubmitting
-                    ? 'Submitting...'
+                    ? 'Uploading & Submitting...'
                     : profile?.verification_status === 'pending'
                       ? `Update ${verifRequestedLevel} Request`
-                      : `Request ${verifRequestedLevel}`}
+                      : `Submit ${verifRequestedLevel} Verification`}
                 </button>
               </div>
-              {verifFileError && (
-                <p role="alert" className="rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-xs text-danger">
-                  {verifFileError}
+              {verifFormError && (
+                <p role="alert" className="rounded border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
+                  {verifFormError}
                 </p>
               )}
             </form>

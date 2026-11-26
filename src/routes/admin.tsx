@@ -1236,14 +1236,19 @@ export function MasterAdminDashboard({
                                   {latestSub.company_name}
                                   {latestSub.licence_reference ? ` · Ref: ${latestSub.licence_reference}` : ''}
                                 </span>
-                                {latestSub.document_name && (
+                                {Array.isArray(latestSub.documents) && latestSub.documents.length > 0 ? (
+                                  <span className="rounded border border-moss/30 bg-moss-light px-1.5 py-0.5 font-semibold text-moss">
+                                    {latestSub.documents.length}{' '}
+                                    {latestSub.documents.length === 1 ? 'document' : 'documents'}
+                                  </span>
+                                ) : latestSub.document_name ? (
                                   <span className="text-ink/75">
                                     · {latestSub.document_name}
                                     {latestSub.document_size_bytes
                                       ? ` (${formatBytesCompact(latestSub.document_size_bytes)})`
                                       : ''}
                                   </span>
-                                )}
+                                ) : null}
                               </div>
                               <button
                                 type="button"
@@ -1260,16 +1265,76 @@ export function MasterAdminDashboard({
                               <div className="mt-2.5 border-t border-ink/10 pt-2.5">
                                 {loadingPreviewId === latestSub.id ? (
                                   <p className="font-mono text-[11px] text-stone">
-                                    Loading submission details &amp; signed document preview...
+                                    Loading submission details &amp; signed document previews...
                                   </p>
                                 ) : loadedPreview ? (
-                                  <div className="space-y-2">
+                                  <div className="space-y-3">
                                     {loadedPreview.notes && (
                                       <p className="text-xs text-ink/85">
                                         <strong>Applicant Notes:</strong> {loadedPreview.notes}
                                       </p>
                                     )}
-                                    {loadedPreview.signedUrl ? (
+                                    {loadedPreview.documents && loadedPreview.documents.length > 0 ? (
+                                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                                        {loadedPreview.documents.map((doc) => (
+                                          <div
+                                            key={`${loadedPreview.id}-${doc.slotKey}-${doc.fileName}`}
+                                            className="rounded-lg border border-ink/12 bg-paper/75 p-2.5"
+                                          >
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0">
+                                                <p className="text-[11.5px] font-semibold text-ink">
+                                                  {doc.label}
+                                                </p>
+                                                <p className="mt-0.5 truncate font-mono text-[10px] text-stone tabular-nums">
+                                                  {doc.fileName}
+                                                  {doc.size > 0
+                                                    ? ` · ${formatBytesCompact(doc.size)}`
+                                                    : ''}
+                                                </p>
+                                              </div>
+                                              {doc.required !== undefined && (
+                                                <span className="shrink-0 rounded border border-ink/12 bg-white px-1.5 py-0.5 font-mono text-[9px] uppercase text-stone">
+                                                  {doc.required ? 'Required' : 'Optional'}
+                                                </span>
+                                              )}
+                                            </div>
+                                            {doc.signedUrl ? (
+                                              <div className="mt-2 space-y-2">
+                                                {doc.mimeType?.startsWith('image/') && (
+                                                  <a
+                                                    href={doc.signedUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="block max-w-xs overflow-hidden rounded-md border border-ink/15"
+                                                  >
+                                                    <img
+                                                      src={doc.signedUrl}
+                                                      alt={doc.label}
+                                                      loading="lazy"
+                                                      className="max-h-36 w-full bg-white object-contain"
+                                                    />
+                                                  </a>
+                                                )}
+                                                <a
+                                                  href={doc.signedUrl}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="inline-flex items-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/10 px-2.5 py-1 font-mono text-[10.5px] font-semibold text-ochre hover:bg-ochre/20"
+                                                >
+                                                  <ExternalLink size={11} />
+                                                  Open Document (Signed 5m Link)
+                                                </a>
+                                              </div>
+                                            ) : (
+                                              <p className="mt-1.5 font-mono text-[10.5px] text-stone">
+                                                {doc.warning || 'Signed preview unavailable.'}
+                                              </p>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : loadedPreview.signedUrl ? (
                                       loadedPreview.document_mime?.startsWith('image/') ? (
                                         <a
                                           href={loadedPreview.signedUrl}
@@ -1297,7 +1362,7 @@ export function MasterAdminDashboard({
                                       )
                                     ) : (
                                       <p className="font-mono text-[11px] text-stone">
-                                        {loadedPreview.warning || 'No attached document file for this submission.'}
+                                        {loadedPreview.warning || 'No attached document files for this submission.'}
                                       </p>
                                     )}
                                   </div>

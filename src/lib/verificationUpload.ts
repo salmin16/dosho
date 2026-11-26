@@ -6,8 +6,9 @@
  */
 
 export const VERIFICATION_STORAGE_BUCKET = 'verification-documents'
-export const MAX_RAW_FILE_BYTES = 10 * 1024 * 1024 // 10 MiB before compression
-export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 // 4 MiB after compression
+/** Strict upper bound: every uploaded document must be strictly smaller than 10 MB (< 10 * 1024 * 1024 bytes) */
+export const MAX_RAW_FILE_BYTES = 10 * 1024 * 1024
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -116,21 +117,15 @@ export async function validateAndCompressVerificationFile(
     return { ok: false, error: 'Selected file is empty. Please choose a valid document.' }
   }
 
-  if (file.size > MAX_RAW_FILE_BYTES) {
+  if (file.size >= MAX_RAW_FILE_BYTES) {
     return {
       ok: false,
-      error: `File exceeds the ${formatBytesCompact(MAX_RAW_FILE_BYTES)} maximum size limit.`,
+      error: `File must be strictly smaller than 10 MB (selected: ${formatBytesCompact(file.size)}).`,
     }
   }
 
   const isPdf = mime === 'application/pdf' || ext === 'pdf'
   if (isPdf) {
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return {
-        ok: false,
-        error: `PDF exceeds ${formatBytesCompact(MAX_UPLOAD_BYTES)}. Please compress the PDF before uploading.`,
-      }
-    }
     return {
       ok: true,
       prepared: {
@@ -146,13 +141,13 @@ export async function validateAndCompressVerificationFile(
 
   try {
     const compressed = await compressImageBlob(file)
-    if (compressed.blob.size > MAX_UPLOAD_BYTES) {
-      // Second pass at slightly tighter resolution/quality for large mobile camera captures
+    if (compressed.blob.size >= MAX_UPLOAD_BYTES) {
+      // Second pass at tighter resolution/quality for very large mobile camera captures
       const tighter = await compressImageBlob(file, 1200, 0.65)
-      if (tighter.blob.size > MAX_UPLOAD_BYTES) {
+      if (tighter.blob.size >= MAX_UPLOAD_BYTES) {
         return {
           ok: false,
-          error: `Image is still larger than ${formatBytesCompact(MAX_UPLOAD_BYTES)} after compression.`,
+          error: `Image must be strictly smaller than 10 MB after compression (current: ${formatBytesCompact(tighter.blob.size)}).`,
         }
       }
       return {

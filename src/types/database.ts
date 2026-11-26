@@ -28,6 +28,23 @@ export type UserVerificationStatus =
 
 export type VerificationLevelCode = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
 
+export interface VerificationDocumentMetadata {
+  slotKey: string;
+  label: string;
+  required?: boolean;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  path: string;
+  url?: string | null;
+}
+
+export interface VerificationSubmissionDocumentPreview
+  extends VerificationDocumentMetadata {
+  signedUrl: string | null;
+  warning?: string | null;
+}
+
 export interface VerificationSubmissionSummary {
   id: string;
   user_id: string;
@@ -40,6 +57,7 @@ export interface VerificationSubmissionSummary {
   document_mime: string | null;
   document_size_bytes: number | null;
   document_storage_path: string | null;
+  documents?: VerificationDocumentMetadata[] | null;
   reviewer_notes: string | null;
   reviewed_at: string | null;
   created_at: string;
@@ -53,6 +71,7 @@ export interface VerificationSubmissionPreview {
   document_mime: string | null;
   document_size_bytes: number | null;
   signedUrl: string | null;
+  documents: VerificationSubmissionDocumentPreview[];
   warning?: string | null;
 }
 
@@ -618,6 +637,7 @@ export type Database = {
           document_mime: string | null;
           document_size_bytes: number | null;
           document_storage_path: string | null;
+          documents?: Json;
           created_at: string;
           updated_at: string;
         };
@@ -637,6 +657,7 @@ export type Database = {
           document_mime?: string | null;
           document_size_bytes?: number | null;
           document_storage_path?: string | null;
+          documents?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -654,6 +675,7 @@ export type Database = {
           document_mime?: string | null;
           document_size_bytes?: number | null;
           document_storage_path?: string | null;
+          documents?: Json;
           updated_at?: string;
         };
         Relationships: [];

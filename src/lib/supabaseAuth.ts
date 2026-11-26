@@ -43,7 +43,9 @@ import type {
   UserServiceRecord,
   UserStatus,
   UserVerificationStatus,
+  VerificationDocumentMetadata,
   VerificationLevelCode,
+  VerificationSubmissionDocumentPreview,
   VerificationSubmissionPreview,
   VerificationSubmissionSummary,
 } from '../types/database'
@@ -1303,9 +1305,7 @@ export async function fetchAdminGovernanceData(): Promise<{
       .order('created_at', { ascending: false }),
     supabase
       .from('verification_submissions')
-      .select(
-        'id, user_id, requested_level, status, company_name, phone, licence_reference, document_name, document_mime, document_size_bytes, document_storage_path, reviewer_notes, reviewed_at, created_at',
-      )
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(200),
     supabase
@@ -2294,6 +2294,75 @@ export async function createGuidedServiceSubmission(input: {
  * tier (`L1`–`L4`), and an optional client-compressed supporting document into the fast
  * verification pipeline (`public.verification_submissions` + `public.profiles`).
  */
+const VERIF_DOCS_MANIFEST_PREFIX = '\n\n[MC_VERIF_DOCS]'
+const VERIF_DOCS_MANIFEST_SUFFIX = '[/MC_VERIF_DOCS]'
+
+function serializeNotesWithManifest(
+  plainNotes: string | null,
+  docs: VerificationDocumentMetadata[],
+): string | null {
+  const trimmed = plainNotes?.trim() || ''
+  if (docs.length === 0) return trimmed || null
+  const manifest = `${VERIF_DOCS_MANIFEST_PREFIX}${JSON.stringify(docs)}${VERIF_DOCS_MANIFEST_SUFFIX}`
+  return `${trimmed}${manifest}`
+}
+
+function parseNotesAndManifest(rawNotes: unknown): {
+  cleanNotes: string | null
+  manifestDocs: VerificationDocumentMetadata[]
+} {
+  if (typeof rawNotes !== 'string' || !rawNotes) {
+    return { cleanNotes: null, manifestDocs: [] }
+  }
+  const startIdx = rawNotes.indexOf(VERIF_DOCS_MANIFEST_PREFIX)
+  if (startIdx === -1) {
+    return { cleanNotes: rawNotes.trim() || null, manifestDocs: [] }
+  }
+  const endIdx = rawNotes.indexOf(VERIF_DOCS_MANIFEST_SUFFIX, startIdx)
+  const cleanNotes = rawNotes.slice(0, startIdx).trim() || null
+  if (endIdx === -1) {
+    return { cleanNotes, manifestDocs: [] }
+  }
+  const jsonSlice = rawNotes
+    .slice(startIdx + VERIF_DOCS_MANIFEST_PREFIX.length, endIdx)
+    .trim()
+  try {
+    const parsed = JSON.parse(jsonSlice)
+    if (Array.isArray(parsed)) {
+      return {
+        cleanNotes,
+        manifestDocs: normalizeVerificationDocArray(parsed),
+      }
+    }
+  } catch {
+    // ignore malformed manifest
+  }
+  return { cleanNotes, manifestDocs: [] }
+}
+
+function normalizeVerificationDocArray(raw: unknown): VerificationDocumentMetadata[] {
+  if (!Array.isArray(raw)) return []
+  const out: VerificationDocumentMetadata[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const rec = item as Record<string, unknown>
+    const path = typeof rec.path === 'string' ? rec.path.trim() : ''
+    const fileName = typeof rec.fileName === 'string' ? rec.fileName.trim() : ''
+    if (!path && !fileName) continue
+    out.push({
+      slotKey: typeof rec.slotKey === 'string' ? rec.slotKey : `doc_${out.length + 1}`,
+      label: typeof rec.label === 'string' && rec.label.trim() ? rec.label.trim() : fileName || 'Supporting Document',
+      required: typeof rec.required === 'boolean' ? rec.required : undefined,
+      fileName: fileName || path.split('/').pop() || 'document',
+      mimeType: typeof rec.mimeType === 'string' ? rec.mimeType : 'application/octet-stream',
+      size: typeof rec.size === 'number' && Number.isFinite(rec.size) ? rec.size : 0,
+      path,
+      url: typeof rec.url === 'string' ? rec.url : null,
+    })
+  }
+  return out
+}
+
 export async function submitUserVerificationRequest(input: {
   companyName: string
   phone: string
@@ -2301,6 +2370,12 @@ export async function submitUserVerificationRequest(input: {
   licenceReference?: string
   requestedLevel?: Exclude<VerificationLevelCode, 'L0'>
   preparedFile?: PreparedVerificationFile | null
+  preparedDocuments?: Array<{
+    slotKey: string
+    label: string
+    required: boolean
+    prepared: PreparedVerificationFile
+  }>
 }): Promise<{ profile?: UserProfile; submissionId?: string; warning?: string; error?: string }> {
   const session = await waitForAuthReady()
   if (!session) {
@@ -2321,47 +2396,133 @@ export async function submitUserVerificationRequest(input: {
   const supabase = requireSupabaseClient()
   const profileTable = await resolveProfileTable()
 
-  let documentStoragePath: string | null = null
-  let uploadWarning: string | undefined
+  const docsToUpload: Array<{
+    slotKey: string
+    label: string
+    required: boolean
+    prepared: PreparedVerificationFile
+  }> =
+    input.preparedDocuments && input.preparedDocuments.length > 0
+      ? input.preparedDocuments
+      : input.preparedFile
+        ? [
+            {
+              slotKey: 'supporting_document',
+              label: 'Supporting Document',
+              required: false,
+              prepared: input.preparedFile,
+            },
+          ]
+        : []
 
-  if (input.preparedFile) {
-    const objectPath = `${session.user.id}/${Date.now()}-${input.preparedFile.fileName}`
-    const { error: uploadErr } = await supabase.storage
-      .from(VERIFICATION_STORAGE_BUCKET)
-      .upload(objectPath, input.preparedFile.blob, {
-        contentType: input.preparedFile.mimeType,
-        cacheControl: '3600',
-        upsert: false,
-      })
+  const uploadedDocs: VerificationDocumentMetadata[] = []
+  const failedUploads: string[] = []
 
-    if (uploadErr) {
-      console.warn('[MineConnect Verification] Storage upload skipped:', uploadErr.message)
-      uploadWarning =
-        'Verification request recorded, but document upload could not be stored yet — an admin can follow up if needed.'
-    } else {
-      documentStoragePath = objectPath
+  if (docsToUpload.length > 0) {
+    const batchTs = Date.now()
+    const uploadResults = await Promise.all(
+      docsToUpload.map(async (item, idx) => {
+        const safeSlot = item.slotKey.replace(/[^a-zA-Z0-9_-]/g, '_')
+        const objectPath = `${session.user.id}/${requestedLevel}/${batchTs}-${idx}-${safeSlot}-${item.prepared.fileName}`
+        const { error: uploadErr } = await supabase.storage
+          .from(VERIFICATION_STORAGE_BUCKET)
+          .upload(objectPath, item.prepared.blob, {
+            contentType: item.prepared.mimeType,
+            cacheControl: '3600',
+            upsert: false,
+          })
+
+        if (uploadErr) {
+          console.warn(
+            `[MineConnect Verification] Storage upload failed for ${item.label}:`,
+            uploadErr.message,
+          )
+          return { ok: false as const, label: item.label, error: uploadErr.message }
+        }
+
+        return {
+          ok: true as const,
+          meta: {
+            slotKey: item.slotKey,
+            label: item.label,
+            required: item.required,
+            fileName: item.prepared.fileName,
+            mimeType: item.prepared.mimeType,
+            size: item.prepared.compressedBytes,
+            path: objectPath,
+            url: null,
+          } satisfies VerificationDocumentMetadata,
+        }
+      }),
+    )
+
+    for (const r of uploadResults) {
+      if (r.ok) {
+        uploadedDocs.push(r.meta)
+      } else {
+        failedUploads.push(r.label)
+      }
     }
   }
 
-  // Insert lightweight verification queue record (gracefully skip if migration not yet applied)
+  let uploadWarning: string | undefined
+  if (failedUploads.length > 0) {
+    uploadWarning = `Verification request recorded, but ${failedUploads.length} document(s) (${failedUploads.join(', ')}) could not be uploaded to storage. Please retry or contact support.`
+  }
+
+  const primaryDoc = uploadedDocs[0] ?? null
+  const plainNotes = input.notes?.trim() || null
+
+  // Insert verification queue record with structured `documents` JSONB array
+  // (gracefully falls back to manifest-in-notes if migration 20261126000002 is still deploying)
   let submissionId: string | undefined
-  const { data: subRow, error: subErr } = await supabase
+  const baseInsertPayload = {
+    user_id: session.user.id,
+    requested_level: requestedLevel,
+    status: 'pending' as const,
+    company_name: companyName,
+    phone: phone || null,
+    licence_reference: input.licenceReference?.trim() || null,
+    notes: plainNotes,
+    document_name: primaryDoc?.fileName ?? null,
+    document_mime: primaryDoc?.mimeType ?? null,
+    document_size_bytes: primaryDoc?.size ?? null,
+    document_storage_path: primaryDoc?.path ?? null,
+    documents: uploadedDocs as unknown as Json,
+  }
+
+  let { data: subRow, error: subErr } = await supabase
     .from('verification_submissions')
-    .insert({
+    .insert(baseInsertPayload as never)
+    .select('id')
+    .single()
+
+  if (
+    subErr &&
+    !isMissingRelationError(subErr) &&
+    /documents|column|schema cache/i.test(subErr.message ?? '')
+  ) {
+    const fallbackInsertPayload = {
       user_id: session.user.id,
       requested_level: requestedLevel,
-      status: 'pending',
+      status: 'pending' as const,
       company_name: companyName,
       phone: phone || null,
       licence_reference: input.licenceReference?.trim() || null,
-      notes: input.notes?.trim() || null,
-      document_name: input.preparedFile?.fileName ?? null,
-      document_mime: input.preparedFile?.mimeType ?? null,
-      document_size_bytes: input.preparedFile?.compressedBytes ?? null,
-      document_storage_path: documentStoragePath,
-    })
-    .select('id')
-    .single()
+      notes: serializeNotesWithManifest(plainNotes, uploadedDocs),
+      document_name: primaryDoc?.fileName ?? null,
+      document_mime: primaryDoc?.mimeType ?? null,
+      document_size_bytes: primaryDoc?.size ?? null,
+      document_storage_path: primaryDoc?.path ?? null,
+    }
+    const retryRes = await supabase
+      .from('verification_submissions')
+      .insert(fallbackInsertPayload)
+      .select('id')
+      .single()
+    subRow = retryRes.data
+    subErr = retryRes.error
+  }
 
   if (!subErr && subRow?.id) {
     submissionId = String(subRow.id)
@@ -2372,8 +2533,10 @@ export async function submitUserVerificationRequest(input: {
   const combinedNotes = [
     `Requested ${requestedLevel} (${VERIFICATION_LEVELS[requestedLevel].title})`,
     input.licenceReference?.trim() ? `Ref: ${input.licenceReference.trim()}` : '',
-    input.notes?.trim() || '',
-    input.preparedFile ? `Doc: ${input.preparedFile.fileName}` : '',
+    plainNotes || '',
+    uploadedDocs.length > 0
+      ? `Docs (${uploadedDocs.length}): ${uploadedDocs.map((d) => d.label).join(', ')}`
+      : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -2413,7 +2576,8 @@ export async function submitUserVerificationRequest(input: {
       phone,
       requestedLevel,
       submissionId: submissionId ?? null,
-      hasDocument: Boolean(documentStoragePath),
+      documentCount: uploadedDocs.length,
+      hasDocument: uploadedDocs.length > 0,
     },
   })
 
@@ -2421,8 +2585,8 @@ export async function submitUserVerificationRequest(input: {
 }
 
 /**
- * Lazy-loads full verification submission notes and a short-lived signed storage preview URL
- * ONLY when an administrator explicitly expands a verification submission row.
+ * Lazy-loads full verification submission notes and short-lived signed storage preview URLs
+ * for every attached labeled document ONLY when an administrator expands a submission row.
  */
 export async function fetchVerificationSubmissionPreview(
   submissionId: string,
@@ -2435,9 +2599,7 @@ export async function fetchVerificationSubmissionPreview(
   const supabase = requireSupabaseClient()
   const { data, error } = await supabase
     .from('verification_submissions')
-    .select(
-      'id, notes, reviewer_notes, document_name, document_mime, document_size_bytes, document_storage_path',
-    )
+    .select('*')
     .eq('id', submissionId)
     .maybeSingle()
 
@@ -2445,40 +2607,92 @@ export async function fetchVerificationSubmissionPreview(
     return { error: error?.message || 'Verification submission not found.' }
   }
 
-  let signedUrl: string | null = null
-  let warning: string | null = null
-  const storagePath =
-    typeof data.document_storage_path === 'string'
-      ? data.document_storage_path
+  const row = data as unknown as Record<string, unknown>
+  const { cleanNotes, manifestDocs } = parseNotesAndManifest(row.notes)
+  const columnDocs = normalizeVerificationDocArray(row.documents)
+
+  const legacyPath =
+    typeof row.document_storage_path === 'string' && row.document_storage_path.trim()
+      ? row.document_storage_path.trim()
       : null
 
-  if (storagePath) {
-    const { data: signedData, error: signErr } = await supabase.storage
-      .from(VERIFICATION_STORAGE_BUCKET)
-      .createSignedUrl(storagePath, 300)
-    if (signErr) {
-      warning = `Document preview unavailable: ${signErr.message}`
-    } else {
-      signedUrl = signedData?.signedUrl ?? null
-    }
-  }
+  const structuredDocs: VerificationDocumentMetadata[] =
+    columnDocs.length > 0
+      ? columnDocs
+      : manifestDocs.length > 0
+        ? manifestDocs
+        : legacyPath
+          ? [
+              {
+                slotKey: 'supporting_document',
+                label: 'Supporting Document',
+                fileName:
+                  typeof row.document_name === 'string' && row.document_name
+                    ? row.document_name
+                    : legacyPath.split('/').pop() || 'Document',
+                mimeType:
+                  typeof row.document_mime === 'string' && row.document_mime
+                    ? row.document_mime
+                    : 'application/octet-stream',
+                size:
+                  typeof row.document_size_bytes === 'number'
+                    ? row.document_size_bytes
+                    : 0,
+                path: legacyPath,
+                url: null,
+              },
+            ]
+          : []
+
+  const documentPreviews: VerificationSubmissionDocumentPreview[] = await Promise.all(
+    structuredDocs.map(async (doc) => {
+      if (!doc.path) {
+        return {
+          ...doc,
+          signedUrl: doc.url ?? null,
+          warning: doc.url ? null : 'Storage path missing for this document.',
+        }
+      }
+      const { data: signedData, error: signErr } = await supabase.storage
+        .from(VERIFICATION_STORAGE_BUCKET)
+        .createSignedUrl(doc.path, 300)
+      if (signErr) {
+        return {
+          ...doc,
+          signedUrl: null,
+          warning: `Preview unavailable: ${signErr.message}`,
+        }
+      }
+      return {
+        ...doc,
+        signedUrl: signedData?.signedUrl ?? null,
+        warning: null,
+      }
+    }),
+  )
+
+  const primaryPreview = documentPreviews[0] ?? null
 
   return {
     preview: {
-      id: String(data.id),
-      notes: typeof data.notes === 'string' ? data.notes : null,
+      id: String(row.id),
+      notes: cleanNotes,
       reviewer_notes:
-        typeof data.reviewer_notes === 'string' ? data.reviewer_notes : null,
+        typeof row.reviewer_notes === 'string' ? row.reviewer_notes : null,
       document_name:
-        typeof data.document_name === 'string' ? data.document_name : null,
+        primaryPreview?.fileName ??
+        (typeof row.document_name === 'string' ? row.document_name : null),
       document_mime:
-        typeof data.document_mime === 'string' ? data.document_mime : null,
+        primaryPreview?.mimeType ??
+        (typeof row.document_mime === 'string' ? row.document_mime : null),
       document_size_bytes:
-        typeof data.document_size_bytes === 'number'
-          ? data.document_size_bytes
-          : null,
-      signedUrl,
-      warning,
+        primaryPreview?.size ??
+        (typeof row.document_size_bytes === 'number'
+          ? row.document_size_bytes
+          : null),
+      signedUrl: primaryPreview?.signedUrl ?? null,
+      documents: documentPreviews,
+      warning: primaryPreview?.warning ?? null,
     },
   }
 }

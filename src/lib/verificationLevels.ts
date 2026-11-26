@@ -124,6 +124,105 @@ export const VERIFICATION_LEVEL_CODES: readonly VerificationLevelCode[] = [
 export const VERIFICATION_LEVEL_LIST: readonly VerificationLevelSpec[] =
   VERIFICATION_LEVEL_CODES.map((code) => VERIFICATION_LEVELS[code])
 
+export interface VerificationDocumentSlotSpec {
+  slotKey: string
+  label: string
+  required: boolean
+  hint: string
+}
+
+export const VERIFICATION_DOCUMENT_CHECKLIST: Record<
+  Exclude<VerificationLevelCode, 'L0'>,
+  readonly VerificationDocumentSlotSpec[]
+> = {
+  L1: [
+    {
+      slotKey: 'l1_government_id',
+      label: 'Owner / Representative Government ID (NIDA / Passport)',
+      required: true,
+      hint: 'Clear scan or photo of valid NIDA card or passport.',
+    },
+    {
+      slotKey: 'l1_brela_registration',
+      label: 'BRELA Certificate of Registration / Incorporation',
+      required: true,
+      hint: 'Certificate of Incorporation, Business Name Registration, or Cooperative Registration.',
+    },
+    {
+      slotKey: 'l1_authorisation_letter',
+      label: 'Authorisation Letter / Company Profile',
+      required: false,
+      hint: 'Optional mandate letter or corporate profile for authorised representatives.',
+    },
+  ],
+  L2: [
+    {
+      slotKey: 'l2_mineral_licence',
+      label: 'Active Mining / Mineral Licence Certificate (PML/PL/ML)',
+      required: true,
+      hint: 'Official Mining Commission licence certificate showing licence code, holder, and validity.',
+    },
+    {
+      slotKey: 'l2_brela_tin',
+      label: 'BRELA Search Extract / TIN Certificate',
+      required: true,
+      hint: 'Recent BRELA company search extract or TRA TIN certificate matching the licence holder.',
+    },
+    {
+      slotKey: 'l2_tenement_coordinates',
+      label: 'Tenement Coordinates / Map Sheet',
+      required: false,
+      hint: 'Optional boundary coordinates sheet or official cadastral map excerpt.',
+    },
+  ],
+  L3: [
+    {
+      slotKey: 'l3_lab_assays',
+      label: 'Laboratory Assay Certificates',
+      required: true,
+      hint: 'Certified assay sheets from an accredited analytical laboratory (e.g. SGS, ALS, GST).',
+    },
+    {
+      slotKey: 'l3_sampling_coc',
+      label: 'Sampling & Chain-of-Custody Log',
+      required: true,
+      hint: 'Field sampling ledger and sample dispatch / chain-of-custody records.',
+    },
+    {
+      slotKey: 'l3_geological_report',
+      label: 'Geological / Technical Report',
+      required: true,
+      hint: 'Qualified geologist or mining engineer technical evaluation report.',
+    },
+  ],
+  L4: [
+    {
+      slotKey: 'l4_site_visit_report',
+      label: 'Independent Site Visit Report',
+      required: true,
+      hint: 'Signed field verification report from an independent site visit.',
+    },
+    {
+      slotKey: 'l4_community_access',
+      label: 'Community & Access Observations',
+      required: true,
+      hint: 'Summary of surface rights, road access, local leadership, and community standing.',
+    },
+    {
+      slotKey: 'l4_due_diligence_dossier',
+      label: 'Specialist Due-Diligence Dossier',
+      required: true,
+      hint: 'Comprehensive legal, environmental, or technical specialist due-diligence package.',
+    },
+  ],
+}
+
+export function getVerificationDocumentChecklist(
+  level: Exclude<VerificationLevelCode, 'L0'>,
+): readonly VerificationDocumentSlotSpec[] {
+  return VERIFICATION_DOCUMENT_CHECKLIST[level]
+}
+
 export function normalizeVerificationLevel(
   input?: string | number | null,
   fallbackStatus?: string | null,
