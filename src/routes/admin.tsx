@@ -950,10 +950,10 @@ export function MasterAdminDashboard({
             </div>
           </div>
 
-          {/* Governance Tabs — Fixed Height, Accessible Tab Semantics & Multi-Cue Active State */}
+          {/* Governance Tabs — Natural Edge-Peeking Horizontal Scroll on Mobile + Unified Active Style */}
           <nav
             role="tablist"
-            className="mt-6 flex flex-wrap gap-2 border-t border-paper/10 pt-5"
+            className="mt-6 flex flex-nowrap gap-2 overflow-x-auto border-t border-paper/10 pb-1 pt-5 sm:flex-wrap sm:overflow-visible sm:pb-0"
             aria-label="Admin sections"
           >
             {tabs.map((tab) => {
@@ -1342,7 +1342,7 @@ export function MasterAdminDashboard({
                               latestSub?.id,
                             )
                           }
-                          className="inline-flex min-h-[44px] sm:min-h-[34px] shrink-0 items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-gold transition-colors hover:bg-ochre hover:text-paper disabled:opacity-50"
+                          className="inline-flex min-h-[44px] sm:min-h-[34px] shrink-0 items-center gap-1 rounded-md border border-ink/25 bg-[#FCFBF8] px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink hover:bg-paper-2 disabled:opacity-50"
                         >
                           Apply {selectedDraftLevel}
                         </button>
@@ -1359,7 +1359,7 @@ export function MasterAdminDashboard({
                                 latestSub?.id,
                               )
                             }
-                            className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md bg-moss px-2.5 py-1.5 text-xs font-semibold text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+                            className="inline-flex min-h-[44px] sm:min-h-[34px] shrink-0 items-center gap-1 rounded-md bg-ochre px-3.5 py-1.5 text-xs font-semibold text-paper shadow-xs transition-colors hover:bg-ochre-dark disabled:opacity-50"
                           >
                             <UserCheck size={13} /> Verify
                           </button>

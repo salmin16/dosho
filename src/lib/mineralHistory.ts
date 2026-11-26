@@ -468,10 +468,9 @@ export function createContinuousMineralModel(
 
   const maxSpanMs = Math.max(DAY_MS, historyEndMs - historyStartMs)
   const minSpanMs = 2 * MINUTE_MS
-  // Default to the last 24 hours (1D) so every user's first look is a crisp,
-  // focused intraday trend, while dragging left pans through full history and
-  // pinching/scrolling zooms smoothly out to 2000–2026.
-  const defaultSpanMs = Math.min(maxSpanMs, DAY_MS)
+  // Hick's Law: Default to a crisp, focused 15-minute live view (with 5-minute intervals),
+  // while dragging left pans through full history and pinching/scrolling zooms smoothly out to 2000–2026.
+  const defaultSpanMs = Math.min(maxSpanMs, 15 * MINUTE_MS)
 
   const sampleWindow = (
     rawViewStartMs: number,
@@ -941,10 +940,15 @@ export function computeNiceTimeTicks(params: {
   } else {
     const rawStep = spanMs / targetTicks
     let chosenStep = FIXED_TIME_STEPS_MS[FIXED_TIME_STEPS_MS.length - 1]
-    for (const s of FIXED_TIME_STEPS_MS) {
-      if (s >= rawStep) {
-        chosenStep = s
-        break
+    if (spanMs >= 10 * MINUTE_MS && spanMs <= 20 * MINUTE_MS) {
+      // Lock the default 15-minute view to clean 5-minute clock intervals (e.g. 10:00, 10:05, 10:10)
+      chosenStep = 5 * MINUTE_MS
+    } else {
+      for (const s of FIXED_TIME_STEPS_MS) {
+        if (s >= rawStep) {
+          chosenStep = s
+          break
+        }
       }
     }
 

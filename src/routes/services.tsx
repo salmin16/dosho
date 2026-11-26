@@ -563,8 +563,8 @@ function QuoteModal({
             <p className="mt-1 text-sm text-stone">
               {t('services.modal.fromProvider', { name: provider.name })}
             </p>
-            <div className="mt-6 space-y-4">
-              <div>
+            <div className="mt-6 space-y-5">
+              <div className="field-group">
                 <label htmlFor="quote-email" className="label">
                   {t('services.modal.email')}
                 </label>
@@ -579,7 +579,7 @@ function QuoteModal({
                   className="field"
                 />
               </div>
-              <div>
+              <div className="field-group">
                 <label htmlFor="quote-service" className="label">
                   {t('services.modal.serviceNeeded')}
                 </label>
@@ -589,7 +589,7 @@ function QuoteModal({
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="field-group">
                 <label htmlFor="quote-budget" className="label">
                   Estimated Budget ({currencyMeta.flag} {currency})
                 </label>
@@ -606,12 +606,12 @@ function QuoteModal({
                   className="field tabular-nums"
                 />
                 {currency !== 'USD' && (
-                  <span className="mt-1 block font-mono text-[11px] text-stone tabular-nums">
+                  <span className="block font-mono text-[11px] text-stone tabular-nums">
                     Normalized USD Equivalent: US${normalizedUsd.toLocaleString('en-US')}
                   </span>
                 )}
               </div>
-              <div>
+              <div className="field-group">
                 <label htmlFor="quote-scope" className="label">
                   {t('services.modal.scopeLocation')}
                 </label>

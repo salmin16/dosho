@@ -183,9 +183,8 @@ export default function MineralTrendChart({
     })
   }, [model])
 
-  // Default to the last 24 hours (1D) so every user's first look is a crisp,
-  // focused 1-day trend, while dragging left explores full history and
-  // pinching/scrolling zooms continuously out to 2000–2026.
+  // Hick's Law: Default to the focused 15-minute live window (5-minute intervals),
+  // while dragging left pans through full history and pinching/scrolling zooms out to 2000–2026.
   const defaultViewport = useMemo<ViewportRange | null>(() => {
     if (!model) return null
     return {
@@ -1074,12 +1073,12 @@ export default function MineralTrendChart({
             <button
               type="button"
               onClick={handleResetView}
-              title={ui('Reset to 24h (1D) view', 'Rejesha mwonekano wa saa 24 (1D)', 'Restablecer vista 24h (1D)')}
-              aria-label={ui('Reset to 24h (1D) view', 'Rejesha mwonekano wa saa 24 (1D)', 'Restablecer vista 24h (1D)')}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-ink/20 bg-ink px-2.5 font-mono text-[10px] font-semibold text-gold transition hover:bg-sky-600 hover:text-white"
+              title={ui('Reset to 15-minute live view', 'Rejesha mwonekano wa dakika 15', 'Restablecer vista de 15 min')}
+              aria-label={ui('Reset to 15-minute live view', 'Rejesha mwonekano wa dakika 15', 'Restablecer vista de 15 min')}
+              className="inline-flex min-h-[36px] items-center gap-1 rounded-md border border-ink bg-ink px-3 font-mono text-[10.5px] font-semibold text-gold transition-colors hover:bg-ochre hover:border-ochre hover:text-paper"
             >
               <RotateCcw size={11} />
-              <span>{ui('Reset 1D', 'Rejesha 1D', 'Reset 1D')}</span>
+              <span>{ui('Reset 15m', 'Rejesha 15m', 'Reset 15m')}</span>
             </button>
           )}
         </div>
@@ -1187,7 +1186,7 @@ export default function MineralTrendChart({
               y1={chartGeometry.padTop}
               x2={chartGeometry.plotRightX}
               y2={chartGeometry.baselineY}
-              stroke="rgba(21, 18, 15, 0.1)"
+              stroke="rgba(24, 24, 27, 0.18)"
               strokeWidth={1}
             />
 
@@ -1197,7 +1196,7 @@ export default function MineralTrendChart({
               y1={chartGeometry.baselineY}
               x2={chartGeometry.plotRightX}
               y2={chartGeometry.baselineY}
-              stroke="rgba(21, 18, 15, 0.12)"
+              stroke="rgba(24, 24, 27, 0.2)"
               strokeWidth={1}
             />
 
@@ -1209,14 +1208,14 @@ export default function MineralTrendChart({
                   y1={tick.y}
                   x2={chartGeometry.plotRightX}
                   y2={tick.y}
-                  stroke="rgba(21, 18, 15, 0.07)"
+                  stroke="rgba(24, 24, 27, 0.1)"
                   strokeWidth={1}
                 />
                 <text
                   x={chartGeometry.plotRightX + (chartGeometry.isCompact ? 5 : 8)}
                   y={tick.y + 3.5}
                   textAnchor="start"
-                  fill="#776c60"
+                  fill="#524b43"
                   fontSize={chartGeometry.isCompact ? '9.5' : '11'}
                   fontFamily="var(--font-mono)"
                   style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -1234,14 +1233,14 @@ export default function MineralTrendChart({
                   y1={chartGeometry.padTop}
                   x2={tick.x}
                   y2={chartGeometry.baselineY}
-                  stroke="rgba(21, 18, 15, 0.05)"
+                  stroke="rgba(24, 24, 27, 0.08)"
                   strokeWidth={1}
                 />
                 <text
                   x={tick.x}
                   y={chartGeometry.baselineY + (chartGeometry.isCompact ? 17 : 20)}
                   textAnchor="middle"
-                  fill="#776c60"
+                  fill="#524b43"
                   fontSize={chartGeometry.isCompact ? '10' : '11'}
                   fontFamily="var(--font-mono)"
                   style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -1463,12 +1462,12 @@ export default function MineralTrendChart({
           )}
         </div>
 
-        {/* Minimal Direct-Manipulation Hint */}
-        <p className="mt-2 text-center font-mono text-[10.5px] text-stone/90">
+        {/* Explicit Interactive Chart Gesture Hint */}
+        <p className="mt-2 text-center font-mono text-[10.5px] text-stone">
           {ui(
-            `Drag left/right to see full history. Pinch or scroll to zoom (1D → ${model.endYear})`,
-            `Buruta kushoto/kulia kuona historia kamili. Bana au zungusha kukuza (1D → ${model.endYear})`,
-            `Arrastra izquierda/derecha para ver el historial completo. Pellizca o haz scroll para zoom (1D → ${model.endYear})`,
+            'Drag left/right to pan history. Pinch or scroll to zoom',
+            'Buruta kushoto/kulia kuona historia. Bana au zungusha kukuza',
+            'Arrastra izquierda/derecha para ver el historial. Pellizca o haz scroll para zoom',
           )}
         </p>
       </div>

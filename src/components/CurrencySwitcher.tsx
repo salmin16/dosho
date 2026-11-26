@@ -222,7 +222,7 @@ export default function CurrencySwitcher({
                   onClick={() => handleSelect(item.code)}
                   className={`flex min-h-[44px] sm:min-h-[36px] w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-colors ${
                     active
-                      ? 'border-ochre bg-ochre text-paper font-semibold shadow-xs'
+                      ? 'border-ink bg-ink text-paper font-semibold shadow-xs'
                       : 'border-transparent text-ink hover:bg-ink/5'
                   }`}
                 >
@@ -231,10 +231,10 @@ export default function CurrencySwitcher({
                     <span>{item.name}</span>
                   </span>
                   <span className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
-                    <span className={active ? 'text-paper' : 'text-stone'}>
+                    <span className={active ? 'text-paper/85' : 'text-stone'}>
                       {item.code} ({item.symbol.trim()})
                     </span>
-                    {active && <Check size={13} className="shrink-0 text-paper" aria-hidden />}
+                    {active && <Check size={13} className="shrink-0 text-gold" aria-hidden />}
                   </span>
                 </button>
               );

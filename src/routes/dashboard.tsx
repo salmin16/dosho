@@ -328,9 +328,9 @@ export function DashboardRouteComponent() {
           <VerificationLimitsNotice level={currentVerifLevel} compact />
 
           {currentVerifLevel !== 'L4' && (
-            <form onSubmit={handleSubmitVerification} className="space-y-4 border-t border-ink/10 pt-4">
-              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
+            <form onSubmit={handleSubmitVerification} className="space-y-5 border-t border-ink/10 pt-4">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="field-group">
                   <label htmlFor="verif-company" className="label">
                     Company / Organization
                   </label>
@@ -345,7 +345,7 @@ export function DashboardRouteComponent() {
                     className="field"
                   />
                 </div>
-                <div>
+                <div className="field-group">
                   <label htmlFor="verif-phone" className="label">
                     Phone Number
                   </label>
@@ -361,7 +361,7 @@ export function DashboardRouteComponent() {
                     className="field font-mono tabular-nums"
                   />
                 </div>
-                <div>
+                <div className="field-group">
                   <label htmlFor="verif-level" className="label">
                     Target Verification Level
                   </label>
@@ -382,7 +382,7 @@ export function DashboardRouteComponent() {
                     ))}
                   </select>
                 </div>
-                <div>
+                <div className="field-group">
                   <label htmlFor="verif-licence-ref" className="label">
                     BRELA / Licence Ref
                   </label>
@@ -397,8 +397,8 @@ export function DashboardRouteComponent() {
                 </div>
               </div>
 
-              <div className="grid gap-3.5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                <div>
+              <div className="grid gap-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <div className="field-group">
                   <label htmlFor="verif-notes" className="label">
                     Reviewer Notes (Optional)
                   </label>
@@ -411,11 +411,11 @@ export function DashboardRouteComponent() {
                     className="field"
                   />
                 </div>
-                <div>
+                <div className="field-group">
                   <span className="label">Supporting Document (PDF / Image)</span>
                   <label
                     htmlFor="verif-file-upload"
-                    className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-ink/25 bg-paper/75 px-3 py-2 text-xs text-stone transition-colors hover:border-ochre hover:text-ink"
+                    className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-sand bg-paper/75 px-3 py-2 text-xs text-stone transition-colors hover:border-ochre hover:text-ink"
                   >
                     <UploadCloud size={15} className="shrink-0 text-ochre" />
                     <span className="truncate font-mono text-[11px]">
@@ -437,7 +437,7 @@ export function DashboardRouteComponent() {
                 <button
                   type="submit"
                   disabled={verifSubmitting || verifCompressing}
-                  className="btn-primary !min-h-[44px] text-xs disabled:opacity-50"
+                  className="btn-primary text-xs disabled:opacity-50"
                 >
                   {verifSubmitting
                     ? 'Submitting...'

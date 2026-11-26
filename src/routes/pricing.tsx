@@ -1015,10 +1015,10 @@ function Pricing() {
                   )}
                 </div>
               ) : (
-                /* Clean AzamPay Mobile Money & Bank Transfer Checkout Form */
-                <form onSubmit={handleStartAzamPayCheckout} className="space-y-4">
+                /* Clean AzamPay Mobile Money & Bank Transfer Checkout Form (Law of Proximity + Unified Active Style) */
+                <form onSubmit={handleStartAzamPayCheckout} className="space-y-5">
                   {/* Switch between Option A (Mobile Money STK) and Option B (Bank Transfer) */}
-                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink/12 bg-paper-2 p-1" role="tablist" aria-label="AzamPay payment channel">
+                  <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-ink/15 bg-paper-2 p-1" role="tablist" aria-label="AzamPay payment channel">
                     <button
                       type="button"
                       role="tab"
@@ -1028,13 +1028,13 @@ function Pricing() {
                         setAccountInput('')
                         setErrorMsg(null)
                       }}
-                      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
+                      className={`inline-flex min-h-[48px] sm:min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
                         channel === 'mobile_money'
-                          ? 'border-ink bg-ink text-gold shadow-xs'
+                          ? 'border-ink bg-ink text-paper shadow-xs'
                           : 'border-transparent text-stone hover:text-ink'
                       }`}
                     >
-                      <Smartphone size={13} />
+                      <Smartphone size={14} className={channel === 'mobile_money' ? 'text-gold' : ''} />
                       {ui('Mobile Money', 'Pesa za Simu', 'Dinero Móvil')}
                     </button>
                     <button
@@ -1048,24 +1048,24 @@ function Pricing() {
                         setBankOtpInput('')
                         setErrorMsg(null)
                       }}
-                      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
+                      className={`inline-flex min-h-[48px] sm:min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
                         channel === 'bank_transfer'
-                          ? 'border-ink bg-ink text-gold shadow-xs'
+                          ? 'border-ink bg-ink text-paper shadow-xs'
                           : 'border-transparent text-stone hover:text-ink'
                       }`}
                     >
-                      <CreditCard size={13} />
+                      <CreditCard size={14} className={channel === 'bank_transfer' ? 'text-gold' : ''} />
                       {ui('Bank Transfer', 'Benki (CRDB/NMB)', 'Transferencia Bancaria')}
                     </button>
                   </div>
 
                   {channel === 'mobile_money' ? (
                     <>
-                      <div>
+                      <div className="field-group">
                         <span className="label">
                           {ui('Select Network (Tanzania · AzamPay)', 'Chagua Mtandao (AzamPay)', 'Seleccionar Red (AzamPay)')}
                         </span>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-2.5">
                           {MOBILE_MONEY_NETWORKS.map((net, idx) => {
                             const active = mobileProvider === net.code
                             const isSpanFull =
@@ -1077,24 +1077,32 @@ function Pricing() {
                                 type="button"
                                 aria-pressed={active}
                                 onClick={() => setMobileProvider(net.code)}
-                                className={`flex min-h-[56px] min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                                className={`flex min-h-[56px] min-w-0 items-center justify-between gap-2 rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
                                   isSpanFull ? 'col-span-2' : ''
                                 } ${
                                   active
-                                    ? 'border-ochre bg-ochre/12 text-ink ring-2 ring-ochre/30'
-                                    : 'border-ink/15 bg-[#FCFBF8] text-stone hover:border-ink/35 hover:text-ink'
+                                    ? 'border-ink bg-ink text-paper shadow-xs'
+                                    : 'border-sand bg-[#FCFBF8] text-ink hover:border-ink/45'
                                 }`}
                               >
                                 <span className="min-w-0">
-                                  <span className="block truncate font-mono text-xs font-bold text-ink">
+                                  <span
+                                    className={`block truncate font-mono text-xs font-bold ${
+                                      active ? 'text-paper' : 'text-ink'
+                                    }`}
+                                  >
                                     {net.label}
                                   </span>
-                                  <span className="block truncate font-mono text-[10px] text-stone">
+                                  <span
+                                    className={`block truncate font-mono text-[10px] ${
+                                      active ? 'text-paper/75' : 'text-stone'
+                                    }`}
+                                  >
                                     {net.sublabel}
                                   </span>
                                 </span>
                                 {active && (
-                                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ochre text-paper" aria-hidden="true">
+                                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-ink" aria-hidden="true">
                                     <Check size={12} />
                                   </span>
                                 )}
@@ -1104,7 +1112,7 @@ function Pricing() {
                         </div>
                       </div>
 
-                      <div>
+                      <div className="field-group">
                         <label className="label" htmlFor="mm-phone">
                           {ui('Mobile Money Phone Number', 'Namba ya Simu ya Malipo', 'Número de Teléfono')}
                         </label>
@@ -1122,7 +1130,7 @@ function Pricing() {
                           placeholder="0712 345 678 or 255712345678"
                           className="field font-mono text-base tabular-nums"
                         />
-                        <p className="mt-1 font-mono text-[10px] text-stone">
+                        <p className="font-mono text-[10.5px] text-stone">
                           {ui(
                             'An STK PIN prompt will be sent directly to this number via AzamPay.',
                             'Ombi la kuweka PIN litatumwa moja kwa moja kwenye namba hii kupitia AzamPay.',
@@ -1133,11 +1141,11 @@ function Pricing() {
                     </>
                   ) : (
                     <>
-                      <div>
+                      <div className="field-group">
                         <span className="label">
                           {ui('Select Tanzania Bank (AzamPay)', 'Chagua Benki (AzamPay)', 'Seleccionar Banco (AzamPay)')}
                         </span>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-3 gap-2.5">
                           {BANK_PROVIDERS.map((prov) => {
                             const active = bankProvider === prov.code
                             return (
@@ -1148,18 +1156,18 @@ function Pricing() {
                                 onClick={() => setBankProvider(prov.code)}
                                 className={`flex min-h-[56px] min-w-0 flex-col justify-between rounded-lg border px-2.5 py-2.5 text-left transition-colors ${
                                   active
-                                    ? 'border-ochre bg-ochre/12 text-ink ring-2 ring-ochre/30'
-                                    : 'border-ink/15 bg-[#FCFBF8] text-stone hover:border-ink/35 hover:text-ink'
+                                    ? 'border-ink bg-ink text-paper shadow-xs'
+                                    : 'border-sand bg-[#FCFBF8] text-ink hover:border-ink/45'
                                 }`}
                               >
-                                <span className="flex w-full items-center justify-between gap-1 font-mono text-xs font-bold text-ink">
+                                <span className={`flex w-full items-center justify-between gap-1 font-mono text-xs font-bold ${active ? 'text-paper' : 'text-ink'}`}>
                                   <span className="inline-flex min-w-0 items-center gap-1">
-                                    <Building2 size={12} className="shrink-0 text-ochre" />
+                                    <Building2 size={12} className={`shrink-0 ${active ? 'text-gold' : 'text-ochre'}`} />
                                     <span className="truncate">{prov.code}</span>
                                   </span>
-                                  {active && <Check size={12} className="shrink-0 text-ochre" />}
+                                  {active && <Check size={12} className="shrink-0 text-gold" />}
                                 </span>
-                                <span className="mt-0.5 truncate font-mono text-[9.5px] text-stone">
+                                <span className={`mt-0.5 truncate font-mono text-[9.5px] ${active ? 'text-paper/75' : 'text-stone'}`}>
                                   {prov.label}
                                 </span>
                               </button>
@@ -1168,7 +1176,7 @@ function Pricing() {
                         </div>
                       </div>
 
-                      <div>
+                      <div className="field-group">
                         <label className="label" htmlFor="bank-acct">
                           {ui('Bank Account Number', 'Namba ya Akaunti ya Benki', 'Número de Cuenta Bancaria')}
                         </label>
@@ -1185,8 +1193,8 @@ function Pricing() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="field-group">
                           <label className="label" htmlFor="bank-mobile">
                             {ui('Registered Phone', 'Namba ya Simu', 'Teléfono')}
                           </label>
@@ -1204,7 +1212,7 @@ function Pricing() {
                             className="field font-mono text-base tabular-nums"
                           />
                         </div>
-                        <div>
+                        <div className="field-group">
                           <label className="label" htmlFor="bank-otp">
                             {ui('Bank OTP (if prompted)', 'OTP ya Benki (hiari)', 'OTP Bancario (opcional)')}
                           </label>

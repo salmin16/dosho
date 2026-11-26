@@ -5,18 +5,18 @@
   --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --color-ink: #141413;
-  --color-ink-2: #221f1c;
-  --color-ink-3: #38332e;
+  --color-ink: #18181b;
+  --color-ink-2: #242428;
+  --color-ink-3: #38383d;
   --color-paper: #faf8f5;
   --color-paper-2: #f3efe7;
   --color-surface: #fcfbf8;
-  --color-sand: #d8cebe;
-  --color-stone: #5c554c;
+  --color-sand: #bfb5a4;
+  --color-stone: #524b43;
   --color-ochre: #b85824;
   --color-ochre-dark: #944419;
   --color-gold: #cfa03d;
-  --color-moss: #365944;
+  --color-moss: #2f5c43;
   --color-moss-light: #e2ece4;
   --color-danger: #9e3526;
 
@@ -141,20 +141,28 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
+.field-group {
+  @apply flex flex-col gap-1.5;
+}
+
+.field-group > .label {
+  @apply mb-0;
+}
+
 .field {
-  @apply min-h-[44px] w-full rounded-md border border-sand bg-[#fcfbf8] px-3.5 py-2.5 text-base text-ink outline-none transition-colors placeholder:text-stone/65 focus:border-ochre focus:ring-2 focus:ring-ochre/20 sm:text-sm;
+  @apply min-h-[44px] w-full rounded-md border border-sand bg-[#fcfbf8] px-3.5 py-2.5 text-base text-ink outline-none transition-colors placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20 sm:text-sm;
 }
 
 .label {
-  @apply mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.13em] text-stone;
+  @apply mb-1.5 block font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-stone;
 }
 
 .btn-primary {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-sm transition-colors duration-150 hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+  @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-sm transition-colors duration-150 hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
 }
 
 .btn-ghost {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition-colors duration-150 hover:border-current/55 hover:bg-current/5 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/30 px-5 py-2.5 text-sm font-semibold transition-colors duration-150 hover:border-current/60 hover:bg-current/5 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
 }
 
 .eyebrow {

@@ -535,16 +535,16 @@ export default function MineralPricesBoard({
             <div
               role="group"
               aria-label={ui('Unit basis', 'Msingi wa kipimo', 'Base de unidad')}
-              className="inline-flex rounded-md border border-paper/15 bg-ink-2 p-0.5 text-[10px]"
+              className="inline-flex rounded-md border border-paper/20 bg-ink-2 p-0.5 text-[10px]"
             >
               <button
                 type="button"
                 aria-pressed={unitBasis === 'metric_local'}
                 onClick={() => setUnitBasis('metric_local')}
-                className={`rounded px-2 py-1 font-mono font-semibold transition sm:px-2.5 ${
+                className={`min-h-[32px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
                   unitBasis === 'metric_local'
-                    ? 'bg-ochre text-paper shadow-xs'
-                    : 'text-paper/70 hover:text-paper'
+                    ? 'bg-gold text-ink shadow-xs'
+                    : 'text-paper/75 hover:text-paper'
                 }`}
               >
                 {ui('Local (/g, /kg, /ct)', 'Ndani (/g, /kg, /ct)', 'Local (/g, /kg, /ct)')}
@@ -553,10 +553,10 @@ export default function MineralPricesBoard({
                 type="button"
                 aria-pressed={unitBasis === 'standard'}
                 onClick={() => setUnitBasis('standard')}
-                className={`rounded px-2 py-1 font-mono font-semibold transition sm:px-2.5 ${
+                className={`min-h-[32px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
                   unitBasis === 'standard'
-                    ? 'bg-ochre text-paper shadow-xs'
-                    : 'text-paper/70 hover:text-paper'
+                    ? 'bg-gold text-ink shadow-xs'
+                    : 'text-paper/75 hover:text-paper'
                 }`}
               >
                 {ui('Global (/toz, /lb, /t)', 'Dunia (/toz, /lb, /t)', 'Global (/toz, /lb, /t)')}
@@ -635,7 +635,7 @@ export default function MineralPricesBoard({
                   'Mionekano ya soko',
                   'Vistas del terminal de mercados',
                 )}
-                className="grid w-full grid-cols-3 gap-1 rounded-xl border border-paper/15 bg-ink-2 p-1 sm:inline-flex sm:w-auto"
+                className="flex w-full gap-1 overflow-x-auto rounded-xl border border-paper/20 bg-ink-2 p-1 sm:inline-flex sm:w-auto sm:overflow-visible"
               >
                 {terminalTabs.map((tab) => {
                   const Icon = tab.icon
@@ -647,15 +647,15 @@ export default function MineralPricesBoard({
                       role="tab"
                       aria-selected={isActive}
                       onClick={() => selectView(tab.id)}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition sm:px-3.5 ${
+                      className={`inline-flex min-h-[44px] sm:min-h-[38px] flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors sm:flex-initial sm:px-3.5 ${
                         isActive
-                          ? 'bg-paper text-ink shadow-sm'
-                          : 'text-paper/70 hover:bg-paper/[0.06] hover:text-paper'
+                          ? 'border-gold bg-gold text-ink shadow-sm'
+                          : 'border-transparent text-paper/75 hover:bg-paper/[0.08] hover:text-paper'
                       }`}
                     >
                       <Icon
                         size={13}
-                        className={isActive ? 'shrink-0 text-ochre' : 'shrink-0 text-gold/80'}
+                        className={isActive ? 'shrink-0 text-ink' : 'shrink-0 text-gold/85'}
                       />
                       <span className="hidden md:inline">{tab.label}</span>
                       <span className="truncate md:hidden">{tab.shortLabel}</span>

@@ -99,14 +99,14 @@ export default function LanguageSwitcher({
                 <button
                   type="button"
                   onClick={() => selectLanguage(l.code)}
-                  className={`flex min-h-[44px] sm:min-h-[38px] w-full items-center justify-between gap-3 border-l-2 px-3.5 py-2 text-left text-sm transition-colors ${
+                  className={`flex min-h-[44px] sm:min-h-[38px] w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
                     active
-                      ? 'border-ochre bg-ochre/12 font-semibold text-ochre'
-                      : 'border-transparent text-ink hover:bg-ink/5'
+                      ? 'bg-ink font-semibold text-paper shadow-xs'
+                      : 'text-ink hover:bg-ink/5'
                   }`}
                 >
                   <span>{l.label}</span>
-                  {active && <Check size={14} className="shrink-0 text-ochre" aria-hidden />}
+                  {active && <Check size={14} className="shrink-0 text-gold" aria-hidden />}
                 </button>
               </li>
             )

@@ -802,7 +802,7 @@ function In({
 }) {
   const fieldId = `list-field-${k}`
   return (
-    <div className={`block ${className}`}>
+    <div className={`field-group ${className}`}>
       <label htmlFor={fieldId} className="label">
         {label}
       </label>
@@ -843,7 +843,7 @@ function Sel({
 }: FieldProps & { options: readonly string[]; selectPlaceholder: string; renderOption?: (o: string) => string }) {
   const fieldId = `list-select-${k}`
   return (
-    <div className={`block ${className}`}>
+    <div className={`field-group ${className}`}>
       <label htmlFor={fieldId} className="label">
         {label}
       </label>

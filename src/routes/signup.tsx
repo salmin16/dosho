@@ -181,8 +181,8 @@ function SignUpRouteComponent() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
-            <div>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
+            <div className="field-group">
               <label htmlFor="signup-name" className="label">
                 Full Name / Organization
               </label>
