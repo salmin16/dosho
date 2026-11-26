@@ -435,8 +435,8 @@ function Pricing() {
       </section>
 
       {/* 3-Tier Editorial Pricing Cards */}
-      <section className="px-5 pb-16 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-3">
+      <section className="px-4 pb-16 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto grid w-full max-w-[1920px] grid-cols-1 gap-6 lg:grid-cols-3">
           {plans.map((p) => {
             const planSlug = normalizePlanId(p.id)
             const isHighlighted = planSlug === 'pro'
@@ -664,8 +664,8 @@ function Pricing() {
       </section>
 
       {/* Platform Fees & Statutory Distinction Table */}
-      <section className="border-t border-ink/10 bg-paper-2 px-5 py-16 lg:px-8">
-        <div className="mx-auto max-w-5xl">
+      <section className="border-t border-ink/10 bg-paper-2 px-4 py-16 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto w-full max-w-[1920px]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="font-display text-3xl font-light sm:text-4xl">

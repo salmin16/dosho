@@ -444,7 +444,7 @@ export default function MineralPricesBoard({
     >
       {/* 1. Clean Unit Basis & Refresh Control Bar */}
       <div className="sticky top-[72px] z-30 border-b border-paper/12 bg-ink/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-6 lg:px-8 xl:px-10">
           <div className="flex flex-wrap items-center gap-2">
             {/* Master Unit Mode Toggle (Controls All 3 Views) */}
             <div
@@ -515,7 +515,7 @@ export default function MineralPricesBoard({
         {/* Signature MineConnect Topographic Contour Texture */}
         <div className="contours absolute inset-0 -z-10 opacity-75" aria-hidden="true" />
 
-        <div className="relative mx-auto max-w-7xl space-y-5 px-4 sm:px-5 lg:px-8">
+        <div className="relative mx-auto w-full max-w-[1920px] space-y-5 px-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Compact Masthead & Segmented Terminal View Switcher */}
           <div className="flex flex-col justify-between gap-4 border-b border-paper/12 pb-5 lg:flex-row lg:items-end">
             <div className="min-w-0">

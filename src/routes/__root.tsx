@@ -119,9 +119,16 @@ function Chrome({ children }: { children: React.ReactNode }) {
   }, [authLoading, isHome, isMarketsPage, isMapPage, isLegalPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
 
   return (
-    <div data-currency={currency} data-fx-rate={rateForSelected} data-lang={lang}>
+    <div
+      data-currency={currency}
+      data-fx-rate={rateForSelected}
+      data-lang={lang}
+      className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden"
+    >
       <Header overlay={isHome} key={isHome ? `home-${currency}-${lang}` : `page-${currency}-${lang}`} />
-      <main key={`${currency}-${rateForSelected}-${lang}`}>{children}</main>
+      <main key={`${currency}-${rateForSelected}-${lang}`} className="w-full min-w-0 flex-1">
+        {children}
+      </main>
       <Footer key={`footer-${currency}-${lang}`} />
       <CookieConsentBanner />
     </div>

@@ -281,7 +281,7 @@ function ListProject() {
   return (
     <div className="pt-[72px]">
       <section className="border-b border-ink/10 bg-paper-2">
-        <div className="mx-auto max-w-5xl px-5 pb-10 pt-14 lg:px-8">
+        <div className="mx-auto w-full max-w-[1920px] px-4 pb-10 pt-14 sm:px-6 lg:px-8 xl:px-10">
           <p className="eyebrow mb-3 text-ochre">{t('list.eyebrow')}</p>
           <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('list.title')}</h1>
           <p className="mt-4 max-w-2xl text-stone">{t('list.subtitle')}</p>
@@ -307,7 +307,7 @@ function ListProject() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-5xl px-5 py-12 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] px-4 py-12 sm:px-6 lg:px-8 xl:px-10">
         {/* Decoupled Subscription Entitlement & L0–L4 Verification Pilot Quota Gate */}
         {listingEntitlementOk ? (
           <div className="mb-8 space-y-3 rounded-2xl border border-ink/15 bg-ink p-5 text-paper">

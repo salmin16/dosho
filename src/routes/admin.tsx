@@ -953,9 +953,9 @@ export function MasterAdminDashboard({
     <div
       data-currency={currency}
       data-language={language}
-      className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
+      className="min-h-[100dvh] overflow-x-hidden bg-paper pb-24 pt-28 text-ink"
     >
-      <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] space-y-6 px-4 sm:px-6 lg:px-8 xl:px-10">
         {/* Executive Command Header (Fixed Min-Heights & Tabular-Nums for Zero CLS) */}
         <header className="rounded-xl border border-ink/15 bg-ink p-6 text-paper shadow-sm lg:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
@@ -2441,7 +2441,7 @@ export function MasterAdminDashboard({
               </form>
             )}
 
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {mineralBenchmarks.map((m) => (
                 <div key={m.id} className="rounded-xl border border-ink/12 bg-paper/60 p-4">
                   <div className="flex items-center justify-between">

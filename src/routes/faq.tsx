@@ -15,7 +15,7 @@ function FAQ() {
 
   return (
     <div className="pt-[72px]">
-      <div className="mx-auto grid max-w-7xl gap-14 px-5 py-16 lg:grid-cols-[320px_1fr] lg:px-8 lg:py-24">
+      <div className="mx-auto grid w-full max-w-[1920px] gap-14 px-4 py-16 sm:px-6 lg:grid-cols-[320px_1fr] lg:px-8 lg:py-24 xl:px-10">
         <div className="lg:sticky lg:top-28 lg:self-start">
           <p className="eyebrow mb-4 text-ochre">{t('faq.eyebrow')}</p>
           <h1 className="font-display text-5xl font-light leading-none">{t('faq.title')}</h1>

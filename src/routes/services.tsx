@@ -94,7 +94,7 @@ function Services() {
   return (
     <div className="pt-[72px]">
       <section className="border-b border-ink/10 bg-paper-2">
-        <div className="mx-auto max-w-7xl px-5 pb-10 pt-14 lg:px-8">
+        <div className="mx-auto w-full max-w-[1920px] px-4 pb-10 pt-14 sm:px-6 lg:px-8 xl:px-10">
           <p className="eyebrow mb-3 text-ochre">{t('services.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display max-w-3xl text-5xl font-light leading-none md:text-6xl">
@@ -127,7 +127,7 @@ function Services() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] px-4 py-12 sm:px-6 lg:px-8 xl:px-10">
         {loadingLiveServices ? (
           <section className="mb-10">
             <div className="mb-4 h-6 w-64 animate-pulse rounded bg-ink/10" />
@@ -145,7 +145,7 @@ function Services() {
                 </h2>
               </div>
             </div>
-            <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {liveApprovedServices.map((srv) => (
                 <article
                   key={srv.id}
@@ -238,7 +238,7 @@ function Services() {
             <p className="mt-2 text-stone">{t('services.emptyBody')}</p>
           </div>
         ) : (
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {list.map((s) => (
               <article
                 key={s.id}

@@ -65,7 +65,7 @@ function LegalDocumentPage() {
     <div className="min-h-screen bg-paper pb-24 pt-[72px] text-ink">
       {/* Classic Editorial Legal Masthead */}
       <section className="border-b border-ink/12 bg-ink text-paper">
-        <div className="mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-16">
+        <div className="mx-auto w-full max-w-[1920px] px-4 py-14 sm:px-6 lg:px-8 lg:py-16 xl:px-10">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-gold">
               <Scale size={12} />
@@ -97,7 +97,7 @@ function LegalDocumentPage() {
       </section>
 
       {/* Main Editorial Two-Column Layout with Sticky Policy Switcher */}
-      <div className="mx-auto max-w-7xl px-5 pt-10 lg:px-8 lg:pt-12">
+      <div className="mx-auto w-full max-w-[1920px] px-4 pt-10 sm:px-6 lg:px-8 lg:pt-12 xl:px-10">
         <div className="grid gap-8 lg:grid-cols-[270px_1fr] lg:items-start">
           {/* Sticky Sidebar Switcher */}
           <aside className="lg:sticky lg:top-24">

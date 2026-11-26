@@ -88,7 +88,7 @@ function DashboardServicesRouteComponent() {
       data-language={language}
       className="min-h-screen bg-paper pb-24 pt-28 text-ink"
     >
-      <div className="mx-auto max-w-7xl px-5 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-8 xl:px-10">
         {/* Top Engineering Header & Guided Publishing Switcher */}
         <div className="rounded-2xl border border-ink/15 bg-ink p-6 text-paper shadow-xl contours lg:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
@@ -261,7 +261,7 @@ function DashboardServicesRouteComponent() {
               </p>
             </div>
           ) : (
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {services.map((srv) => (
                 <article
                   key={srv.id}

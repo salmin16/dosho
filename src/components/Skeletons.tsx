@@ -80,7 +80,7 @@ export function DashboardWorkspaceSkeleton() {
       aria-label="Loading member workspace"
       className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
     >
-      <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] space-y-6 px-4 sm:px-6 lg:px-8 xl:px-10">
         <div className="min-h-[118px] animate-pulse rounded-xl bg-ink/12" />
         <div className="min-h-[96px] animate-pulse rounded-xl bg-ink/10" />
         <div className="min-h-[220px] animate-pulse rounded-xl bg-ink/10" />
@@ -104,7 +104,7 @@ export function AdminGovernanceSkeleton() {
       aria-label="Loading admin governance console"
       className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
     >
-      <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] space-y-6 px-4 sm:px-6 lg:px-8 xl:px-10">
         {/* Header + nav pill bar geometry */}
         <div className="min-h-[208px] rounded-xl border border-ink/12 bg-ink/90 p-6 lg:p-8">
           <div className="flex flex-wrap gap-2">

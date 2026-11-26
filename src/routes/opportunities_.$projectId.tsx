@@ -156,7 +156,7 @@ function ProjectDetail() {
       <section className="grain relative isolate overflow-hidden bg-ink text-paper">
         <img src={img(p.image, 1600)} alt="" className="absolute inset-0 -z-10 h-full w-full object-cover opacity-40" />
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ink via-ink/85 to-ink/30" />
-        <div className="mx-auto max-w-7xl px-5 pb-14 pt-10 lg:px-8">
+        <div className="mx-auto w-full max-w-[1920px] px-4 pb-14 pt-10 sm:px-6 lg:px-8 xl:px-10">
           <Link to="/opportunities" className="inline-flex items-center gap-1.5 text-sm text-paper/60 hover:text-paper">
             <ArrowLeft size={15} /> {t('detail.allOpportunities')}
           </Link>
@@ -188,7 +188,7 @@ function ProjectDetail() {
         </div>
       </section>
 
-      <div className="mx-auto grid max-w-7xl gap-12 px-5 py-14 lg:grid-cols-[1fr_360px] lg:px-8">
+      <div className="mx-auto grid w-full max-w-[1920px] gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8 xl:grid-cols-[minmax(0,1fr)_420px] xl:px-10">
         <div className="min-w-0 space-y-14">
           <Section title={t('detail.projectSummary')}>
             <p className="text-lg leading-relaxed text-ink/85">{p.summary}</p>
@@ -507,7 +507,7 @@ function ProjectDetail() {
 
       {related.length > 0 && (
         <section className="border-t border-ink/10 bg-paper-2 px-5 py-20 lg:px-8">
-          <div className="mx-auto max-w-7xl">
+          <div className="mx-auto w-full max-w-[1920px]">
             <h2 className="font-display mb-8 text-3xl font-light md:text-4xl">{t('detail.similarOpportunities')}</h2>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {related.map((r) => (

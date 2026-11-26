@@ -94,7 +94,7 @@ function Hero() {
       />
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(21,18,15,0.7)_0%,rgba(21,18,15,0.25)_35%,rgba(21,18,15,0.55)_65%,rgba(21,18,15,0.97)_100%)]" />
 
-      <div className="mx-auto flex min-h-[100svh] max-w-7xl flex-col justify-end px-5 pb-14 pt-32 lg:px-8 lg:pb-20">
+      <div className="mx-auto flex min-h-[100svh] w-full max-w-[1920px] flex-col justify-end px-4 pb-14 pt-32 sm:px-6 lg:px-8 lg:pb-20 xl:px-10">
         <p className="eyebrow mb-6 text-gold animate-rise">{t('home.hero.eyebrow')}</p>
         <h1 className="font-display max-w-6xl break-words text-[clamp(2.6rem,7.8vw,7rem)] font-light leading-[0.95] animate-rise [animation-delay:120ms]">
           {t('home.hero.titleDiscover')} <em className="font-normal italic text-gold">{t('home.hero.titleVerify')}</em>{' '}
@@ -266,7 +266,7 @@ function Stats() {
   const { fixtures } = useI18n()
   return (
     <section className="border-b border-ink/10 bg-ink text-paper">
-      <div className="mx-auto grid max-w-7xl grid-cols-2 divide-paper/10 px-5 lg:grid-cols-4 lg:divide-x lg:px-8">
+      <div className="mx-auto grid w-full max-w-[1920px] grid-cols-2 divide-paper/10 px-4 sm:px-6 lg:grid-cols-4 lg:divide-x lg:px-8 xl:px-10">
         {fixtures.platformStats.map((s) => (
           <div key={s.label} className="py-10 lg:px-8 first:lg:pl-0">
             <div className="font-display text-4xl font-light text-gold md:text-5xl">{s.value}</div>
@@ -314,7 +314,7 @@ function OpportunityStreamsShowcase() {
 
   return (
     <section className="border-b border-ink/10 bg-paper-2 px-5 py-24 lg:px-8 lg:py-28">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead
           eyebrow={t('opp.streams.eyebrow')}
           title={
@@ -462,7 +462,7 @@ function Featured() {
   const featured = PROJECTS.filter((p) => p.featured)
   return (
     <section className="px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead
           eyebrow={t('home.featured.eyebrow')}
           title={
@@ -513,7 +513,7 @@ function HowItWorks() {
 
   return (
     <section id="how-it-works" className="scroll-mt-20 border-y border-ink/10 bg-paper-2 px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead
           eyebrow={t('home.how.eyebrow')}
           title={t('home.how.title')}
@@ -558,7 +558,7 @@ function VerificationLadder() {
   const { t, fixtures } = useI18n()
   return (
     <section className="px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="mx-auto grid w-full max-w-[1920px] gap-14 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="lg:sticky lg:top-28 lg:self-start">
           <p className="eyebrow mb-4 text-ochre">{t('home.ladder.eyebrow')}</p>
           <h2 className="font-display text-4xl font-light leading-[1.05] md:text-5xl">
@@ -605,7 +605,7 @@ function MapTeaser() {
   return (
     <section className="relative overflow-hidden bg-ink px-5 py-24 text-paper lg:px-8 lg:py-32">
       <div className="contours absolute inset-0" aria-hidden />
-      <div className="relative mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-2">
+      <div className="relative mx-auto grid w-full max-w-[1920px] items-center gap-12 lg:grid-cols-2">
         <div>
           <p className="eyebrow mb-4 text-gold">{t('home.mapTeaser.eyebrow')}</p>
           <h2 className="font-display text-4xl font-light leading-[1.05] md:text-5xl">
@@ -639,7 +639,7 @@ function Audiences() {
   const { t } = useI18n()
   return (
     <section className="px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-2">
+      <div className="mx-auto grid w-full max-w-[1920px] gap-6 lg:grid-cols-2">
         <article className="relative isolate overflow-hidden rounded-2xl bg-ink p-10 text-paper md:p-14">
           <img
             src={img('field', 1200)}
@@ -675,7 +675,7 @@ function Services() {
   const { t, tv } = useI18n()
   return (
     <section className="border-t border-ink/10 px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead
           eyebrow={t('home.services.eyebrow')}
           title={t('home.services.title')}
@@ -722,7 +722,7 @@ function Trust() {
   ]
   return (
     <section className="bg-paper-2 px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead
           eyebrow={t('home.trust.eyebrow')}
           title={
@@ -759,7 +759,7 @@ function Insights() {
 
   return (
     <section className="px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1920px]">
         <SectionHead eyebrow={t('home.insights.eyebrow')} title={t('home.insights.title')} />
         <div className="grid gap-6 md:grid-cols-3">
           {fixtures.insights.map((a, i) => (

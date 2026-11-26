@@ -49,9 +49,9 @@ function MapPage() {
   )
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-ink pt-[72px] pb-12 text-paper">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-ink pt-[72px] pb-12 text-paper">
       <div className="contours absolute inset-0" aria-hidden />
-      <div className="relative mx-auto w-full max-w-[1440px] px-3.5 py-7 sm:px-5 sm:py-10 lg:px-8">
+      <div className="relative mx-auto w-full max-w-[1920px] px-4 py-7 sm:px-6 sm:py-10 lg:px-8 xl:px-10">
         <div className="flex min-w-0 flex-col justify-between gap-5 lg:flex-row lg:items-end lg:gap-6">
           <div className="min-w-0">
             <p className="eyebrow mb-2 text-gold sm:mb-3">{t('mapPage.eyebrow')} · 31 MIKOA ADM1 GIS</p>
@@ -78,9 +78,9 @@ function MapPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid min-w-0 gap-5 sm:mt-8 sm:gap-6 lg:grid-cols-[270px_minmax(0,1fr)_360px]">
+        <div className="mt-6 grid min-w-0 grid-cols-1 gap-5 sm:mt-8 sm:gap-6 lg:grid-cols-12">
           {/* Region ("Mikoa") interactive directory */}
-          <aside className="order-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.03] p-4 sm:p-5 lg:order-1">
+          <aside className="order-3 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.03] p-4 sm:p-5 lg:order-1 lg:col-span-3 xl:col-span-2">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="eyebrow min-w-0 text-paper/50">{t('mapPage.resultsByRegion')}</div>
               {selectedRegion && (
@@ -162,7 +162,7 @@ function MapPage() {
           </aside>
 
           {/* Center GIS Map Canvas Container */}
-          <div className="order-1 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.02] p-2.5 sm:p-4 lg:order-2">
+          <div className="order-1 min-w-0 max-w-full overflow-hidden rounded-xl border border-paper/10 bg-paper/[0.02] p-2.5 sm:p-4 lg:order-2 lg:col-span-5 xl:col-span-7">
             <TanzaniaMap
               projects={results}
               selectedId={current?.id}
@@ -171,7 +171,7 @@ function MapPage() {
               onSelectRegion={setSelectedRegion}
               variant="dark"
               className="w-full"
-              heightClass="h-[360px] sm:h-[490px] lg:h-[620px]"
+              heightClass="h-[360px] sm:h-[490px] lg:h-[64vh] lg:min-h-[560px] lg:max-h-[780px]"
             />
             <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 pt-3 sm:px-2">
               <MapLegend dark />
@@ -182,7 +182,7 @@ function MapPage() {
           </div>
 
           {/* Right Selected-Option & Project Inspection Dashboard */}
-          <aside className="order-2 min-w-0 max-w-full space-y-4 lg:order-3">
+          <aside className="order-2 min-w-0 max-w-full space-y-4 lg:order-3 lg:col-span-4 xl:col-span-3">
             {activeRegionMeta && (
               <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-gold/35 bg-ink-2 p-3.5 sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">

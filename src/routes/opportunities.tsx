@@ -193,7 +193,7 @@ function Opportunities() {
   return (
     <div className="pt-[72px]">
       <section className="border-b border-ink/10 bg-paper-2">
-        <div className="mx-auto max-w-7xl px-5 pb-10 pt-14 lg:px-8">
+        <div className="mx-auto w-full max-w-[1920px] px-4 pb-10 pt-14 sm:px-6 lg:px-8 xl:px-10">
           <p className="eyebrow mb-3 text-ochre">{t('opp.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('opp.title')}</h1>
@@ -221,14 +221,14 @@ function Opportunities() {
       <OpportunityStreamsHub activeType={search.type} onSelectType={(type) => set({ type: search.type === type ? undefined : type })} />
 
       {loadingLiveFeed ? (
-        <section className="mx-auto max-w-7xl px-5 pt-10 lg:px-8">
+        <section className="mx-auto w-full max-w-[1920px] px-4 pt-10 sm:px-6 lg:px-8 xl:px-10">
           <div className="rounded-2xl border border-ink/10 bg-[#FCFBF8] p-6 shadow-xs">
             <div className="mb-4 h-6 w-64 animate-pulse rounded bg-ink/10" />
             <ProjectListingSkeletonGrid count={3} />
           </div>
         </section>
       ) : (liveOpportunities.length > 0 || liveProjects.length > 0) && (
-        <section className="mx-auto max-w-7xl px-5 pt-10 lg:px-8">
+        <section className="mx-auto w-full max-w-[1920px] px-4 pt-10 sm:px-6 lg:px-8 xl:px-10">
           <div className="rounded-2xl border border-moss/30 bg-[#FCFBF8] p-6 shadow-xs">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -240,7 +240,7 @@ function Opportunities() {
                 </h2>
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {liveOpportunities.map((opp) => (
                 <article key={`opp-${opp.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -300,7 +300,7 @@ function Opportunities() {
         </section>
       )}
 
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-10 lg:grid-cols-[260px_1fr] lg:px-8">
+      <div className="mx-auto grid w-full max-w-[1920px] gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-8 xl:px-10">
         <aside className="hidden lg:block">
           <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pb-6 pr-2">{filters}</div>
         </aside>
@@ -409,7 +409,7 @@ function Opportunities() {
               </div>
             </div>
           ) : (
-            <div className={view === 'grid' ? 'grid gap-6 sm:grid-cols-2 xl:grid-cols-3' : 'grid gap-4'}>
+            <div className={view === 'grid' ? 'grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'grid gap-4'}>
               {results.map((p) => (
                 <ProjectCard key={p.id} project={p} layout={view === 'list' ? 'row' : 'grid'} saved={isSaved(p.id)} onToggleSave={toggle} />
               ))}
@@ -470,8 +470,8 @@ function OpportunityStreamsHub({
   } as const
 
   return (
-    <section className="border-b border-ink/10 bg-gradient-to-b from-paper-2/70 to-paper px-5 py-12 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <section className="border-b border-ink/10 bg-gradient-to-b from-paper-2/70 to-paper px-4 py-12 sm:px-6 lg:px-8 xl:px-10">
+      <div className="mx-auto w-full max-w-[1920px]">
         <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
           <div className="max-w-3xl">
             <p className="eyebrow mb-2.5 text-ochre">{t('opp.streams.eyebrow')}</p>

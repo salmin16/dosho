@@ -1005,17 +1005,17 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     ? 'fixed inset-0 z-50 flex flex-col bg-[#FAF8F5] text-[#18181B] p-2.5 sm:p-5'
     : embedded
       ? 'w-full text-[#18181B]'
-      : 'w-full bg-[#FAF8F5] text-[#18181B] px-2.5 py-3 sm:px-5 sm:py-4'
+      : 'w-full bg-[#FAF8F5] text-[#18181B] px-4 py-3 sm:px-6 sm:py-4 lg:px-8 xl:px-10'
 
   return (
     <section className={sectionClassName}>
       <div
         className={`flex w-full flex-col rounded-2xl border border-[#18181B]/12 bg-[#F5F1EA] shadow-sm ${
           isFullChart
-            ? 'mx-auto max-w-6xl flex-1'
+            ? 'mx-auto max-w-[1920px] flex-1'
             : embedded
               ? ''
-              : 'mx-auto max-w-6xl'
+              : 'mx-auto max-w-[1920px]'
         }`}
       >
         {/* Top Controls */}
@@ -1120,7 +1120,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
           className={`relative w-full px-1 sm:px-2 ${
             isFullChart
               ? 'flex-1 min-h-[300px]'
-              : 'h-[340px] sm:h-[420px] lg:h-[460px]'
+              : 'h-[340px] sm:h-[420px] lg:h-[58vh] lg:min-h-[480px] lg:max-h-[720px]'
           }`}
         >
           <canvas

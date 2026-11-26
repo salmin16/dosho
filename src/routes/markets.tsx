@@ -53,8 +53,8 @@ function MarketsPageComponent() {
       />
 
       {/* Market Structure & Tier Methodology Explainer */}
-      <section className="border-b border-ink/10 bg-paper-2 px-5 py-14 lg:px-8 lg:py-16">
-        <div className="mx-auto max-w-7xl">
+      <section className="border-b border-ink/10 bg-paper-2 px-4 py-14 sm:px-6 lg:px-8 lg:py-16 xl:px-10">
+        <div className="mx-auto w-full max-w-[1920px]">
           <div className="mb-10 max-w-2xl">
             <p className="eyebrow mb-3 text-ochre">
               {ui('Pricing Architecture', 'Mfumo wa Bei Elekezi', 'Arquitectura de Precios')}

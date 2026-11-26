@@ -295,7 +295,7 @@ export function DashboardRouteComponent() {
       data-language={language}
       className="min-h-[100dvh] overflow-x-hidden bg-paper pb-24 pt-24 text-ink sm:pt-28"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-5 lg:px-8">
+      <div className="mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-8 xl:px-10">
         {/* Clean Workspace Welcome Header */}
         <div className="flex flex-col justify-between gap-5 rounded-xl border border-ink/10 bg-ink p-5 text-paper sm:flex-row sm:items-center sm:p-6 lg:p-8">
           <div className="min-w-0">
@@ -332,26 +332,28 @@ export function DashboardRouteComponent() {
           </div>
         </div>
 
-        {/* Live Subscription & Quota Telemetry Strip */}
-        <div className="mt-5">
-          <SubscriptionQuotaBar
-            contextLabel={ui('Workspace Entitlements', 'Haki za Dashibodi', 'Permisos del Panel')}
-            projectsUsed={listedProjects.length}
-            quotesUsedThisMonth={
-              quoteRequests.filter((q) => {
-                const d = new Date(q.created_at)
-                const now = new Date()
-                return (
-                  d.getUTCFullYear() === now.getUTCFullYear() &&
-                  d.getUTCMonth() === now.getUTCMonth()
-                )
-              }).length
-            }
-          />
-        </div>
+        {/* 12-Column Desktop Workspace Grid: Entitlements + Verification Status */}
+        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
+          {/* Live Subscription & Quota Telemetry Strip */}
+          <div className="min-w-0 lg:col-span-5 xl:col-span-4">
+            <SubscriptionQuotaBar
+              contextLabel={ui('Workspace Entitlements', 'Haki za Dashibodi', 'Permisos del Panel')}
+              projectsUsed={listedProjects.length}
+              quotesUsedThisMonth={
+                quoteRequests.filter((q) => {
+                  const d = new Date(q.created_at)
+                  const now = new Date()
+                  return (
+                    d.getUTCFullYear() === now.getUTCFullYear() &&
+                    d.getUTCMonth() === now.getUTCMonth()
+                  )
+                }).length
+              }
+            />
+          </div>
 
-        {/* Concise Verification Status Card (Full framework details live on /verification) */}
-        <section className="mt-5 space-y-4 rounded-xl border border-ink/12 bg-[#FCFBF8] p-4 sm:p-5">
+          {/* Concise Verification Status Card (Full framework details live on /verification) */}
+          <section className="min-w-0 space-y-4 rounded-xl border border-ink/12 bg-[#FCFBF8] p-4 sm:p-5 lg:col-span-7 xl:col-span-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -646,6 +648,7 @@ export function DashboardRouteComponent() {
             </p>
           )}
         </section>
+        </div>
 
         {/* Guided Publishing Module Quick-Access Banner */}
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -718,10 +721,10 @@ export function DashboardRouteComponent() {
           </Link>
         </div>
 
-        {/* Main Vault Grid */}
-        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
+        {/* Main Vault Grid (12-Column Desktop Split) */}
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Create Grounded Record */}
-          <section className="rounded-xl border border-ink/10 bg-paper-2/70 p-6">
+          <section className="min-w-0 rounded-xl border border-ink/10 bg-paper-2/70 p-6 lg:col-span-4">
             <div className="flex items-center gap-2 text-ochre">
               <PlusCircle size={18} />
               <h2 className="font-display text-xl font-semibold text-ink">
@@ -820,7 +823,7 @@ export function DashboardRouteComponent() {
           </section>
 
           {/* Grounded Documents, Listed Projects & Quote Requests */}
-          <section className="space-y-6 lg:col-span-2">
+          <section className="min-w-0 space-y-6 lg:col-span-8">
             {/* Grounded Documents List */}
             <div className="rounded-xl border border-ink/10 bg-paper-2/50 p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">

@@ -62,7 +62,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           : 'border-b border-ink/10 bg-paper/90 text-ink backdrop-blur-md'
       }`}
     >
-      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-5 lg:px-8">
+      <div className="mx-auto flex h-[72px] w-full max-w-[1920px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 xl:px-10">
         <Link
           to="/"
           aria-label={t('nav.homeAria')}

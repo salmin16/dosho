@@ -29,7 +29,7 @@ function Verification() {
     <div className="pt-[72px]">
       <section className="relative overflow-hidden bg-ink text-paper">
         <div className="contours absolute inset-0" aria-hidden />
-        <div className="relative mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
+        <div className="relative mx-auto w-full max-w-[1920px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28 xl:px-10">
           <p className="eyebrow mb-4 text-gold">{t('verif.eyebrow')}</p>
           <h1 className="font-display max-w-4xl text-5xl font-light leading-[1] md:text-7xl">
             {t('verif.titlePre')}
@@ -70,7 +70,7 @@ function Verification() {
       </section>
 
       <section className="px-5 py-20 lg:px-8">
-        <div className="mx-auto max-w-7xl space-y-5">
+        <div className="mx-auto w-full max-w-[1920px] space-y-5">
           {levels.map((v, i) => {
             const isCurrentTier = Boolean(session) && currentUserLevel === `L${v.level}`
             return (
@@ -129,7 +129,7 @@ function Verification() {
       </section>
 
       <section className="border-t border-ink/10 bg-paper-2 px-5 py-20 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2">
+        <div className="mx-auto grid w-full max-w-[1920px] gap-12 lg:grid-cols-2">
           <div>
             <h2 className="font-display text-4xl font-light">{t('verif.whatIsNotTitle')}</h2>
             <ul className="mt-6 space-y-4 text-stone">
