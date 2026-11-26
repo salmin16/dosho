@@ -465,6 +465,7 @@ export type Database = {
           terms_accepted_at: string | null
           terms_version: string | null
           updated_at: string | null
+          verification_level: string
           verification_notes: string | null
           verification_status: string
           verified_at: string | null
@@ -483,6 +484,7 @@ export type Database = {
           terms_accepted_at?: string | null
           terms_version?: string | null
           updated_at?: string | null
+          verification_level?: string
           verification_notes?: string | null
           verification_status?: string
           verified_at?: string | null
@@ -501,6 +503,7 @@ export type Database = {
           terms_accepted_at?: string | null
           terms_version?: string | null
           updated_at?: string | null
+          verification_level?: string
           verification_notes?: string | null
           verification_status?: string
           verified_at?: string | null
@@ -529,6 +532,7 @@ export type Database = {
           title: string
           updated_at: string
           user_id: string
+          verification_level: string
         }
         Insert: {
           approved?: boolean
@@ -550,6 +554,7 @@ export type Database = {
           title: string
           updated_at?: string
           user_id?: string
+          verification_level?: string
         }
         Update: {
           approved?: boolean
@@ -571,6 +576,7 @@ export type Database = {
           title?: string
           updated_at?: string
           user_id?: string
+          verification_level?: string
         }
         Relationships: []
       }
@@ -1139,6 +1145,66 @@ export type Database = {
           role?: string
           status?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      verification_submissions: {
+        Row: {
+          company_name: string
+          created_at: string
+          document_mime: string | null
+          document_name: string | null
+          document_size_bytes: number | null
+          document_storage_path: string | null
+          id: string
+          licence_reference: string | null
+          notes: string | null
+          phone: string | null
+          requested_level: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_notes: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_name: string
+          created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_storage_path?: string | null
+          id?: string
+          licence_reference?: string | null
+          notes?: string | null
+          phone?: string | null
+          requested_level?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_storage_path?: string | null
+          id?: string
+          licence_reference?: string | null
+          notes?: string | null
+          phone?: string | null
+          requested_level?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
