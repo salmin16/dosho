@@ -30,11 +30,8 @@ import { PROJECTS } from '../data/fixtures'
 import { useLocalization } from '../context/LocalizationContext'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
-import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
 import { DashboardWorkspaceSkeleton } from '../components/Skeletons'
-import VerificationBadge, {
-  VerificationLimitsNotice,
-} from '../components/VerificationBadge'
+import VerificationBadge from '../components/VerificationBadge'
 import { formatTanzaniaPhoneDisplay } from '../lib/phoneFormat'
 import {
   getVerificationDocumentChecklist,
@@ -291,44 +288,43 @@ export function DashboardRouteComponent() {
     profile?.verification_level,
     profile?.verification_status,
   )
-  const currentVerifSpec = VERIFICATION_LEVELS[currentVerifLevel]
 
   return (
     <div
       data-currency={currency}
       data-language={language}
-      className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
+      className="min-h-[100dvh] overflow-x-hidden bg-paper pb-24 pt-24 text-ink sm:pt-28"
     >
-      <div className="mx-auto max-w-7xl px-5 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-5 lg:px-8">
         {/* Clean Workspace Welcome Header */}
-        <div className="flex flex-col justify-between gap-6 rounded-xl border border-ink/10 bg-ink p-6 text-paper sm:flex-row sm:items-center lg:p-8">
-          <div>
-            <h1 className="font-display text-3xl font-semibold">
+        <div className="flex flex-col justify-between gap-5 rounded-xl border border-ink/10 bg-ink p-5 text-paper sm:flex-row sm:items-center sm:p-6 lg:p-8">
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-semibold sm:text-3xl">
               {ui('Welcome,', 'Karibu,', 'Bienvenido,')}{' '}
               {profile?.full_name || session.user.fullName}
             </h1>
-            <p className="mt-1 text-sm text-paper/75">
+            <p className="mt-1 truncate text-sm text-paper/75">
               {session.user.email}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
             {isAdmin && (
               <Link
                 to="/admin"
-                className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"
+                className="inline-flex min-h-[42px] items-center gap-1.5 rounded-md border border-gold/50 bg-moss/30 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-moss/40"
               >
                 <ShieldCheck size={15} />
                 {ui('Admin Dashboard', 'Dashibodi ya Utawala', 'Panel Admin')}
               </Link>
             )}
-            <Link to="/list-a-project" className="btn-primary !py-2.5 !px-4 text-xs">
+            <Link to="/list-a-project" className="btn-primary !min-h-[42px] !py-2 !px-4 text-xs">
               {ui('+ List a Project', '+ Sajili Mradi', '+ Publicar Proyecto')}
             </Link>
             <button
               type="button"
               onClick={handleSignOut}
-              className="inline-flex items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
+              className="inline-flex min-h-[42px] items-center gap-2 rounded-md border border-paper/20 bg-paper/10 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-paper transition hover:bg-paper/20"
             >
               <LogOut size={15} />
               {ui('Sign Out', 'Ondoka', 'Cerrar Sesión')}
@@ -354,13 +350,13 @@ export function DashboardRouteComponent() {
           />
         </div>
 
-        {/* Member Identity Verification Status & 5-Tier (L0–L4) Fast Pipeline Panel */}
-        <section className="mt-6 space-y-4 rounded-xl border border-ink/12 bg-[#FCFBF8] p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
+        {/* Concise Verification Status Card (Full framework details live on /verification) */}
+        <section className="mt-5 space-y-4 rounded-xl border border-ink/12 bg-[#FCFBF8] p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-display text-lg font-semibold text-ink">
-                  5-Tier Account &amp; Tenement Verification (L0–L4)
+                <h2 className="font-display text-base font-semibold text-ink sm:text-lg">
+                  {ui('Verification Status', 'Hali ya Uthibitisho', 'Estado de Verificación')}
                 </h2>
                 <VerificationBadge level={currentVerifLevel} size="sm" showQuota />
                 <span
@@ -378,22 +374,19 @@ export function DashboardRouteComponent() {
                   {profile?.verification_status || 'unverified'}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-stone">
-                Current tier: <strong className="text-ink">{currentVerifSpec.code} · {currentVerifSpec.title}</strong>{' '}
-                (Pilot listing quota: <strong className="font-mono tabular-nums">{currentVerifSpec.pilotListingQuota}</strong> — decoupled from your subscription plan).
-              </p>
               {profile?.verification_notes && (
-                <p className="mt-1 text-xs italic text-ink/75">
+                <p className="text-xs italic text-ink/75">
                   Reviewer Note: {profile.verification_notes}
                 </p>
               )}
             </div>
-            <Link to="/verification" className="inline-flex min-h-[44px] sm:min-h-[32px] items-center font-mono text-[11px] font-semibold text-ochre hover:underline shrink-0">
-              View L0–L4 Framework →
+            <Link
+              to="/verification"
+              className="inline-flex min-h-[40px] shrink-0 items-center self-start font-mono text-[11px] font-semibold text-ochre hover:underline sm:min-h-[32px] sm:self-center"
+            >
+              {ui('Verification Details →', 'Maelezo ya Uthibitisho →', 'Ver Verificación →')}
             </Link>
           </div>
-
-          <VerificationLimitsNotice level={currentVerifLevel} compact />
 
           {currentVerifLevel !== 'L4' && (
             <form onSubmit={handleSubmitVerification} className="space-y-5 border-t border-ink/10 pt-4">
@@ -653,26 +646,6 @@ export function DashboardRouteComponent() {
             </p>
           )}
         </section>
-
-        {/* Active Subscription Tier & Real-Time Quota Governance Widget */}
-        <div className="mt-6">
-          <SubscriptionStatusWidget
-            projectsUsed={listedProjects.length}
-            quotesUsedThisMonth={
-              quoteRequests.filter((q) => {
-                const d = new Date(q.created_at)
-                const now = new Date()
-                return (
-                  d.getUTCFullYear() === now.getUTCFullYear() &&
-                  d.getUTCMonth() === now.getUTCMonth()
-                )
-              }).length
-            }
-            documentsUsed={documents.length}
-            opportunitiesUsed={userOpportunities.length}
-            servicesUsed={userServices.length}
-          />
-        </div>
 
         {/* Guided Publishing Module Quick-Access Banner */}
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">

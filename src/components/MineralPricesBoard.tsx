@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
-  Activity,
   ArrowDownRight,
   ArrowUpRight,
   Calculator,
   Check,
-  Clock,
   Coins,
   Download,
   Globe,
@@ -125,8 +123,6 @@ export default function MineralPricesBoard({
     currencyMeta,
     rateForSelected,
     ratesSource,
-    ratesProvider,
-    fetchedAt: fxFetchedAt,
     refreshRates,
     formatPrice,
     formatStatutoryPrice,
@@ -361,18 +357,6 @@ export default function MineralPricesBoard({
     }
   }
 
-  const formattedSyncTime = useMemo(() => {
-    try {
-      return new Date(telemetry.lastSyncedAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    } catch {
-      return new Date().toLocaleTimeString()
-    }
-  }, [telemetry.lastSyncedAt])
-
   const selectedCalcMineral = useMemo(
     () => minerals.find((m) => m.symbol === calcSymbol) ?? minerals[0],
     [minerals, calcSymbol],
@@ -418,8 +402,6 @@ export default function MineralPricesBoard({
     }
   }, [selectedCalcMineral, calcQuantity, unitBasis, formatStatutoryPrice, formatPrice])
 
-  const fxDecimals = currency === 'USD' || rateForSelected >= 100 ? 2 : 4
-
   const terminalTabs: Array<{
     id: MarketTerminalView
     label: string
@@ -460,76 +442,9 @@ export default function MineralPricesBoard({
       data-language={language}
       className="bg-ink text-paper"
     >
-      {/* 1. Compact Sticky Market Context Bar */}
+      {/* 1. Clean Unit Basis & Refresh Control Bar */}
       <div className="sticky top-[72px] z-30 border-b border-paper/12 bg-ink/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-5 py-2.5 lg:px-8">
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/50 bg-moss/25 px-2.5 py-0.5 font-semibold text-[#9de4b4]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#9de4b4]" />
-              {currencyMeta.flag} {currency}
-            </span>
-
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-paper/12 bg-paper/[0.05] px-2.5 py-0.5 text-paper/80 tabular-nums"
-              title={
-                fxFetchedAt
-                  ? `${ratesSource === 'live' ? 'Live FX' : 'Cached FX'} (${ratesProvider}) · ${fxFetchedAt.toLocaleTimeString()}`
-                  : 'Offline Fallback FX'
-              }
-            >
-              <Globe size={11} className="text-gold" />
-              <span>
-                1 USD ={' '}
-                <strong className="text-gold">
-                  {rateForSelected.toLocaleString('en-US', {
-                    minimumFractionDigits: fxDecimals,
-                    maximumFractionDigits: fxDecimals,
-                  })}{' '}
-                  {currency}
-                </strong>
-              </span>
-              <span
-                className={`rounded px-1 py-0.2 text-[9px] font-semibold uppercase tracking-wider ${
-                  ratesSource === 'live'
-                    ? 'bg-moss/35 text-[#9de4b4]'
-                    : ratesSource === 'cached'
-                      ? 'bg-ochre/30 text-gold'
-                      : 'bg-danger/30 text-[#f59c8a]'
-                }`}
-              >
-                {ratesSource === 'live'
-                  ? ui('LIVE FX', 'FX HAI', 'FX VIVO')
-                  : ratesSource === 'cached'
-                    ? ui('CACHED', 'HIFADHI', 'CACHÉ')
-                    : ui('FALLBACK', 'AKIBA', 'RESPALDO')}
-              </span>
-            </span>
-
-            {justUpdatedTime ? (
-              <span
-                role="status"
-                aria-live="polite"
-                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2 py-0.5 text-[10px] font-semibold text-[#9de4b4] tabular-nums"
-              >
-                <Check size={11} />
-                <span>
-                  {ui('Updated', 'Imesasishwa', 'Actualizado')} · {justUpdatedTime}
-                </span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-[10px] text-paper/75 tabular-nums sm:text-[11px]">
-                <span className="relative flex h-2 w-2" aria-hidden="true">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#9de4b4] opacity-65" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9de4b4]" />
-                </span>
-                <span className="font-semibold text-[#9de4b4]">LIVE · 2s</span>
-                <span className="text-paper/35">·</span>
-                <Clock size={11} className="text-gold" />
-                <strong className="text-paper/90">{formattedSyncTime}</strong>
-              </span>
-            )}
-          </div>
-
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5 lg:px-8">
           <div className="flex flex-wrap items-center gap-2">
             {/* Master Unit Mode Toggle (Controls All 3 Views) */}
             <div
@@ -541,7 +456,7 @@ export default function MineralPricesBoard({
                 type="button"
                 aria-pressed={unitBasis === 'metric_local'}
                 onClick={() => setUnitBasis('metric_local')}
-                className={`min-h-[32px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
+                className={`min-h-[34px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
                   unitBasis === 'metric_local'
                     ? 'bg-gold text-ink shadow-xs'
                     : 'text-paper/75 hover:text-paper'
@@ -553,7 +468,7 @@ export default function MineralPricesBoard({
                 type="button"
                 aria-pressed={unitBasis === 'standard'}
                 onClick={() => setUnitBasis('standard')}
-                className={`min-h-[32px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
+                className={`min-h-[34px] rounded px-2.5 py-1 font-mono font-semibold transition-colors ${
                   unitBasis === 'standard'
                     ? 'bg-gold text-ink shadow-xs'
                     : 'text-paper/75 hover:text-paper'
@@ -562,12 +477,24 @@ export default function MineralPricesBoard({
                 {ui('Global (/toz, /lb, /t)', 'Dunia (/toz, /lb, /t)', 'Global (/toz, /lb, /t)')}
               </button>
             </div>
+          </div>
 
+          <div className="flex items-center gap-2">
+            {justUpdatedTime && (
+              <span
+                role="status"
+                aria-live="polite"
+                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#9de4b4]"
+              >
+                <Check size={11} />
+                <span>{ui('Refreshed', 'Imesasishwa', 'Actualizado')}</span>
+              </span>
+            )}
             <button
               type="button"
               onClick={() => void handleManualSync(true)}
               disabled={syncing}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-gold/15 px-2.5 py-1 font-mono text-[10px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-60"
+              className="inline-flex min-h-[34px] items-center gap-1.5 rounded-md border border-gold/40 bg-gold/15 px-3 py-1 font-mono text-[10.5px] font-semibold text-gold transition hover:bg-gold/25 disabled:opacity-60"
             >
               <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} />
               <span>
@@ -588,27 +515,11 @@ export default function MineralPricesBoard({
         {/* Signature MineConnect Topographic Contour Texture */}
         <div className="contours absolute inset-0 -z-10 opacity-75" aria-hidden="true" />
 
-        <div className="relative mx-auto max-w-7xl space-y-5 px-5 lg:px-8">
+        <div className="relative mx-auto max-w-7xl space-y-5 px-4 sm:px-5 lg:px-8">
           {/* Compact Masthead & Segmented Terminal View Switcher */}
           <div className="flex flex-col justify-between gap-4 border-b border-paper/12 pb-5 lg:flex-row lg:items-end">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/35 bg-ochre/20 px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-gold">
-                  <Scale size={11} />
-                  {ui(
-                    'Tume ya Madini Aligned',
-                    'Tume ya Madini Tanzania',
-                    'Alineado Tume ya Madini',
-                  )}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-moss/45 bg-moss/20 px-2.5 py-0.5 font-mono text-[10px] text-paper/85">
-                  <Activity size={11} className="text-gold" />
-                  LBMA · LME · {minerals.length}{' '}
-                  {ui('Benchmarks', 'Viwango', 'Referencias')}
-                </span>
-              </div>
-
-              <h1 className="font-display mt-2.5 text-3xl font-light leading-[1.08] text-paper sm:text-4xl">
+              <h1 className="font-display text-3xl font-light leading-[1.08] text-paper sm:text-4xl">
                 {language === 'sw' ? (
                   <>
                     Kituo cha <em className="italic text-gold">Bei Elekezi za Madini</em>

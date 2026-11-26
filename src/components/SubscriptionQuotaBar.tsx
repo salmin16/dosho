@@ -3,7 +3,6 @@
 import { Link } from '@tanstack/react-router'
 import {
   ArrowUpRight,
-  CalendarClock,
   Crown,
   FileSpreadsheet,
   MessageSquareText,
@@ -125,28 +124,24 @@ export default function SubscriptionQuotaBar({
             </span>
           </div>
 
-          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone">
-            <Crown size={12} className="shrink-0 text-ochre" />
-            <span>
-              {isDormant
-                ? ui(
-                    'View-only mode: 0 listings, 0 quote or information requests, no dossier/contact unlock until renewed.',
-                    'Hali ya kutazama pekee: miradi 0, maombi 0 ya bei/taarifa hadi uhuishe mpango wako.',
-                    'Modo solo vista: 0 listados, 0 cotizaciones ni solicitudes hasta renovar tu plan.',
-                  )
-                : isPaidActive
+          {(isDormant || !isPaidActive) && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone">
+              <Crown size={12} className="shrink-0 text-ochre" />
+              <span>
+                {isDormant
                   ? ui(
-                      'Live quotas synced with Supabase get_user_entitlements().',
-                      'Viwango hai vinaendana moja kwa moja na Supabase.',
-                      'Cuotas sincronizadas en tiempo real con Supabase.',
+                      'View-only mode: 0 listings, 0 quote or information requests, no dossier/contact unlock until renewed.',
+                      'Hali ya kutazama pekee: miradi 0, maombi 0 ya bei/taarifa hadi uhuishe mpango wako.',
+                      'Modo solo vista: 0 listados, 0 cotizaciones ni solicitudes hasta renovar tu plan.',
                     )
                   : ui(
                       'View-only market, GIS & public listing access (0 listings · 0 quote/info requests · no dossier or contact unlock).',
                       'Mtazamaji pekee wa soko, GIS na matangazo ya wazi (miradi 0 · maombi 0 ya bei/taarifa · hakuna faili la leseni).',
                       'Acceso solo de vista al mercado y GIS (0 listados · 0 cotizaciones · sin acceso a expedientes).',
                     )}
-            </span>
-          </p>
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Center: Live Quota Meters */}
@@ -214,9 +209,9 @@ export default function SubscriptionQuotaBar({
           </div>
         </div>
 
-        {/* Right: Upgrade / Renew / Manage CTA */}
-        <div className="flex shrink-0 items-center gap-2">
-          {needsActionCta ? (
+        {/* Right: Contextual Upgrade / Renew CTA (when required) */}
+        {needsActionCta && (
+          <div className="flex shrink-0 items-center gap-2">
             <Link
               to="/pricing"
               search={{ plan: nextPlan, checkout: '1' } as unknown as undefined}
@@ -230,16 +225,8 @@ export default function SubscriptionQuotaBar({
                   : ui('Upgrade Plan', 'Pandisha Mpango', 'Mejorar Plan')}
               <ArrowUpRight size={13} />
             </Link>
-          ) : (
-            <Link
-              to="/pricing"
-              className="inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-ink/15 bg-paper px-3.5 py-2 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre lg:w-auto"
-            >
-              <CalendarClock size={12} className="text-ochre" />
-              {ui('Manage Plan', 'Simamia Mpango', 'Gestionar Plan')}
-            </Link>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   )

@@ -3,14 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
-  Activity,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   Check,
-  Clock,
   Download,
-  Globe,
   Lock,
   Radio,
   RefreshCw,
@@ -20,9 +17,7 @@ import {
 } from 'lucide-react'
 import {
   acquireLiveMarketStream,
-  getMarketSyncTelemetry,
   getStoredMineralPrices,
-  getTradingDeskSessions,
   subscribeMineralPrices,
 } from '../data/mineralPrices'
 import { executeLiveMarketSync } from '../app/api/market-sync/route'
@@ -105,7 +100,6 @@ export default function LiveMarketTicker({
   hideTelemetryHeader = false,
   showSpotControls = false,
   mineralsOverride,
-  telemetryOverride,
   onInspectTrend,
   onExportValuationCsv,
   canExportMarkets = false,
@@ -113,11 +107,7 @@ export default function LiveMarketTicker({
 }: LiveMarketTickerProps) {
   const {
     currency,
-    currencyMeta,
     rateForSelected,
-    ratesSource,
-    ratesProvider,
-    fetchedAt: fxFetchedAt,
     refreshRates,
     formatPrice,
     formatStatutoryPrice,
@@ -133,8 +123,6 @@ export default function LiveMarketTicker({
   const [internalMinerals, setInternalMinerals] = useState<MineralPriceRecord[]>(
     () => getStoredMineralPrices(),
   )
-  const [internalTelemetry, setInternalTelemetry] =
-    useState<MarketSyncTelemetry>(() => getMarketSyncTelemetry())
   const [syncing, setSyncing] = useState(false)
   const [justUpdatedTime, setJustUpdatedTime] = useState<string | null>(null)
 
@@ -148,7 +136,6 @@ export default function LiveMarketTicker({
   const [sortBy, setSortBy] = useState<SpotFeedSortKey>('default')
 
   const minerals = mineralsOverride ?? internalMinerals
-  const telemetry = telemetryOverride ?? internalTelemetry
 
   const showUpdatedConfirmation = useCallback((isoTimestamp: string) => {
     setJustUpdatedTime(formatClockTime(isoTimestamp))
@@ -186,7 +173,6 @@ export default function LiveMarketTicker({
 
         if (!controller.signal.aborted && result.records.length > 0) {
           setInternalMinerals(result.records)
-          setInternalTelemetry(result.telemetry)
           if (force) {
             showUpdatedConfirmation(result.telemetry.lastSyncedAt)
           }
@@ -213,11 +199,9 @@ export default function LiveMarketTicker({
     if (mineralsOverride) return
 
     setInternalMinerals(getStoredMineralPrices())
-    setInternalTelemetry(getMarketSyncTelemetry())
 
     const unsubscribe = subscribeMineralPrices(() => {
       setInternalMinerals(getStoredMineralPrices())
-      setInternalTelemetry(getMarketSyncTelemetry())
     })
     const releaseStream = acquireLiveMarketStream()
 
@@ -226,8 +210,6 @@ export default function LiveMarketTicker({
       releaseStream()
     }
   }, [mineralsOverride])
-
-  const deskSessions = useMemo(() => getTradingDeskSessions(), [])
 
   // Zero-lag memoized selector tied directly to active currency, FX rate, unit mode, and filters
   const computedCards = useMemo(() => {
@@ -335,11 +317,6 @@ export default function LiveMarketTicker({
     formatPrice,
   ])
 
-  const formattedSyncTime = useMemo(
-    () => formatClockTime(telemetry.lastSyncedAt),
-    [telemetry.lastSyncedAt],
-  )
-
   const filterLabels: Record<SpotFeedFilterGroup, string> = {
     ALL: ui(
       `All (${minerals.length})`,
@@ -366,76 +343,24 @@ export default function LiveMarketTicker({
       data-language={language}
       className="rounded-xl border border-paper/15 bg-ink-2 p-4 text-paper shadow-sm lg:p-5"
     >
-      {/* Optional Standalone Telemetry Header (hidden when sticky Market Context Bar handles it) */}
+      {/* Optional Standalone Controls Header (hidden when sticky Market Context Bar handles it) */}
       {!hideTelemetryHeader && (
-        <div className="flex flex-col justify-between gap-3 border-b border-paper/10 pb-3.5 lg:flex-row lg:items-center">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center gap-2 rounded-full border border-moss/50 bg-moss/25 px-3 py-1 font-mono text-[11px] font-semibold tracking-wider text-[#9de4b4]">
-              <span className="inline-flex h-2 w-2 rounded-full bg-[#9de4b4]" />
-              {telemetry.syncMode === 'LIVE_API'
-                ? ui(
-                    'LIVE SPOT FEED · LBMA / LME / TUME YA MADINI',
-                    'SOKO MOJA KWA MOJA · LBMA / LME / TUME YA MADINI',
-                    'FEED SPOT EN VIVO · LBMA / LME / TUME YA MADINI',
-                  )
-                : ui(
-                    'ACTIVE BENCHMARK FEED · LBMA / TUME YA MADINI',
-                    'BEI ELEKEZI HAI · LBMA / TUME YA MADINI',
-                    'FEED DE REFERENCIA ACTIVO · LBMA / TUME YA MADINI',
-                  )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-paper/10 pb-3.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-gold">
+              {ui('Mineral Spot Feed', 'Bei za Madini', 'Precios Spot')}
             </span>
-
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-paper/12 bg-paper/[0.05] px-2.5 py-1 font-mono text-[11px] text-paper/75 tabular-nums"
-              title={
-                fxFetchedAt
-                  ? `${ratesSource === 'live' ? 'Live FX' : 'Cached FX'} (${ratesProvider}) · ${fxFetchedAt.toLocaleTimeString()}`
-                  : 'Offline Fallback FX'
-              }
-            >
-              <Globe size={11} className="text-gold" />
-              1 USD ={' '}
-              <strong className="text-gold">
-                {rateForSelected.toLocaleString('en-US', {
-                  minimumFractionDigits:
-                    currency === 'USD' || rateForSelected >= 100 ? 2 : 4,
-                  maximumFractionDigits:
-                    currency === 'USD' || rateForSelected >= 100 ? 2 : 4,
-                })}{' '}
-                {currency}
-              </strong>{' '}
-              ({currencyMeta.flag})
-            </span>
-
-            <div className="hidden items-center gap-1.5 xl:flex">
-              {deskSessions.map((session) => (
-                <span
-                  key={session.desk}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-paper/10 bg-paper/[0.03] px-2 py-0.5 font-mono text-[10px] text-paper/65"
-                  title={session.sessionNote}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-gold" />
-                  {session.city}
-                </span>
-              ))}
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-            {justUpdatedTime ? (
+            {justUpdatedTime && (
               <span
                 role="status"
                 aria-live="polite"
-                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2.5 py-0.5 text-[10.5px] font-semibold text-[#9de4b4] tabular-nums"
+                className="inline-flex items-center gap-1 rounded-full border border-moss/50 bg-moss/25 px-2.5 py-0.5 text-[10.5px] font-semibold text-[#9de4b4]"
               >
                 <Check size={11} />
-                {ui('Updated', 'Imesasishwa', 'Actualizado')} · {justUpdatedTime}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-paper/75 tabular-nums">
-                <Clock size={12} className="text-gold" />
-                <strong className="text-paper/95">{formattedSyncTime}</strong>
-                <span className="text-[#9de4b4]">(LIVE · 2s)</span>
+                {ui('Refreshed', 'Imesasishwa', 'Actualizado')}
               </span>
             )}
 
@@ -678,13 +603,10 @@ export default function LiveMarketTicker({
                     </span>
                   </div>
 
-                  {/* Row 2: Commodity Name & Exchange Desk */}
+                  {/* Row 2: Commodity Name */}
                   <div className="mt-2 min-w-0">
                     <p className="truncate text-sm font-semibold text-paper/95">
                       {m.mineral_name}
-                    </p>
-                    <p className="truncate font-mono text-[10px] text-paper/50">
-                      {m.exchange_desk ?? 'LBMA / Tume ya Madini'}
                     </p>
                   </div>
 
@@ -785,20 +707,14 @@ export default function LiveMarketTicker({
         </div>
       )}
 
-      {/* Bottom Regulatory & Provider Telemetry Footer */}
+      {/* Bottom Statutory Royalty Footnote */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-paper/10 pt-3 font-mono text-[10px] text-paper/55">
         <span className="inline-flex items-center gap-1.5">
-          <ShieldCheck size={12} className="text-gold" />
-          {ui('Source Pipeline:', 'Chanzo cha Takwimu:', 'Pipeline de Datos:')}{' '}
-          <strong className="text-paper/80">{telemetry.provider}</strong> ·{' '}
-          {ui('Latency', 'Muda', 'Latencia')}: {telemetry.latencyMs}ms
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Activity size={11} className="text-gold" />
+          <ShieldCheck size={12} className="shrink-0 text-gold" />
           {ui(
-            'Statutory Tier 2 (Soko la Madini) & Tier 3 (Buying Centre) auto-adjusted for Mining Act Cap. 123 royalties',
-            'Bei za Soko la Madini na Vituo vya Ununuzi zimekokotolewa kulingana na Sheria ya Madini Sura 123',
-            'Niveles 2 y 3 ajustados automáticamente según regalías de la Ley de Minería Cap. 123',
+            'Indicative Soko la Madini & Buying Centre rates adjusted for Mining Act Cap. 123 royalties.',
+            'Bei elekezi za Soko la Madini na Vituo vya Ununuzi zimekokotolewa kulingana na Sheria ya Madini Sura 123.',
+            'Tarifas indicativas de Soko la Madini y Centros de Compra ajustadas según la Ley de Minería Cap. 123.',
           )}
         </span>
       </div>
