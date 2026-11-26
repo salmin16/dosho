@@ -265,6 +265,81 @@ export const INITIAL_MINERAL_PRICES: MineralPriceRecord[] = [
 let inMemoryMineralCache: MineralPriceRecord[] | null = null;
 let inMemoryTelemetry: MarketSyncTelemetry | null = null;
 let localHydrated = false;
+let supabaseHydrated = false;
+let supabaseSyncedAtMs: number | null = null;
+
+export interface IntradayTickObservation {
+  /** Strictly UTC epoch milliseconds */
+  ts: number;
+  /** World market price in record's base USD unit */
+  priceUsd: number;
+  source: MarketFeedSource;
+}
+
+const INTRADAY_TICKS_RETENTION_MS = 26 * 60 * 60 * 1000;
+const MAX_INTRADAY_TICKS_PER_SYMBOL = 2400;
+const intradayTicksBySymbol = new Map<string, IntradayTickObservation[]>();
+
+function recordIntradayObservations(records: MineralPriceRecord[]): void {
+  const nowMs = Date.now();
+  const cutoffMs = nowMs - INTRADAY_TICKS_RETENTION_MS;
+
+  for (const r of records) {
+    if (!r?.symbol || !Number.isFinite(r.world_market_price_usd) || r.world_market_price_usd <= 0) {
+      continue;
+    }
+    const parsedTs = Date.parse(r.updated_at);
+    // Use authoritative record timestamp when valid and within 24h, otherwise exact UTC now
+    const ts =
+      Number.isFinite(parsedTs) && parsedTs <= nowMs + 60_000 && parsedTs >= cutoffMs
+        ? parsedTs
+        : nowMs;
+    const source: MarketFeedSource = r.feed_source ?? 'CACHED_BENCHMARK';
+
+    let list = intradayTicksBySymbol.get(r.symbol);
+    if (!list) {
+      list = [];
+      intradayTicksBySymbol.set(r.symbol, list);
+    }
+
+    const last = list[list.length - 1];
+    if (last && ts <= last.ts) {
+      // Update latest tick in place if same or older timestamp arrived with fresh value
+      if (ts === last.ts) {
+        last.priceUsd = r.world_market_price_usd;
+        last.source = source;
+      }
+      continue;
+    }
+
+    list.push({ ts, priceUsd: r.world_market_price_usd, source });
+
+    // Prune ticks older than retention window or above buffer cap
+    if (list.length > MAX_INTRADAY_TICKS_PER_SYMBOL) {
+      list.splice(0, list.length - MAX_INTRADAY_TICKS_PER_SYMBOL);
+    }
+    while (list.length > 2 && list[0].ts < cutoffMs) {
+      list.shift();
+    }
+  }
+}
+
+export function getMineralIntradayTicks(symbol: string): IntradayTickObservation[] {
+  const ticks = intradayTicksBySymbol.get(symbol.toUpperCase());
+  return ticks ? [...ticks] : [];
+}
+
+export function getMarketFeedFreshness(): {
+  supabaseHydrated: boolean;
+  supabaseSyncedAtMs: number | null;
+  telemetry: MarketSyncTelemetry;
+} {
+  return {
+    supabaseHydrated,
+    supabaseSyncedAtMs,
+    telemetry: getMarketSyncTelemetry(),
+  };
+}
 
 function hydrateLocalMineralCache(): void {
   if (localHydrated || typeof window === 'undefined') return;
@@ -286,6 +361,7 @@ function hydrateLocalMineralCache(): void {
         )
       ) {
         inMemoryMineralCache = parsed as MineralPriceRecord[];
+        recordIntradayObservations(inMemoryMineralCache);
       }
     }
 
@@ -353,7 +429,29 @@ export async function fetchMineralPricesFromSupabase(): Promise<MineralPriceReco
     .order('mineral_name', { ascending: true });
 
   if (!error && Array.isArray(data) && data.length > 0) {
-    saveStoredMineralPrices(data);
+    supabaseHydrated = true;
+    supabaseSyncedAtMs = Date.now();
+    // Anchor live desk ticks to the authoritative Supabase benchmark rows
+    data.forEach((row) => {
+      if (
+        row?.symbol &&
+        Number.isFinite(row.world_market_price_usd) &&
+        row.world_market_price_usd > 0
+      ) {
+        liveAnchorUsdBySymbol.set(row.symbol, row.world_market_price_usd);
+      }
+    });
+    const prevTel = getMarketSyncTelemetry();
+    const nextTel: MarketSyncTelemetry =
+      prevTel.syncMode === 'LIVE_API'
+        ? prevTel
+        : {
+            ...prevTel,
+            provider: 'Supabase (mineral_prices) + LBMA / LME / Tume ya Madini',
+            commoditiesSynced: data.length,
+            lastSyncedAt: new Date(supabaseSyncedAtMs).toISOString(),
+          };
+    saveStoredMineralPrices(data, nextTel);
     return data;
   }
   return inMemoryMineralCache ?? INITIAL_MINERAL_PRICES;
@@ -375,6 +473,7 @@ export function saveStoredMineralPrices(
 ): void {
   if (!Array.isArray(records) || records.length === 0) return;
   inMemoryMineralCache = records;
+  recordIntradayObservations(records);
   if (telemetry) {
     inMemoryTelemetry = telemetry;
   }

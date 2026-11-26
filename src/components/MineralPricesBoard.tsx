@@ -614,6 +614,7 @@ export default function MineralPricesBoard({
                   onViewChange?.('trend', sym)
                 }}
                 unitBasis={unitBasis}
+                telemetry={telemetry}
               />
             )}
 
