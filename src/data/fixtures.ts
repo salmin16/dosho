@@ -149,48 +149,60 @@ export const INVESTMENT_BANDS = [
 
 export const VERIFICATION_LEVELS: {
   level: VerificationLevel
+  code: 'L0' | 'L1' | 'L2' | 'L3' | 'L4'
   name: string
   short: string
+  pilotListingQuota: number
   description: string
   checks: string[]
   notCovered: string
 }[] = [
   {
     level: 0,
+    code: 'L0',
     name: 'Unverified',
     short: 'Self-declared',
+    pilotListingQuota: 1,
     description: 'Information supplied by the project owner and not yet independently checked.',
     checks: ['Mandatory moderation for prohibited claims', 'Duplicate-listing screening'],
     notCovered: 'Identity, licence status and technical claims are unchecked.',
   },
   {
     level: 1,
+    code: 'L1',
     name: 'Identity & Documents',
     short: 'KYC checked',
+    pilotListingQuota: 3,
     description: 'The submitting individual or company and basic supporting documents have been checked.',
     checks: ['Owner identity / company registration', 'Authorised representative', 'Basic document completeness'],
     notCovered: 'Licence standing and geological evidence are not reviewed.',
   },
   {
     level: 2,
+    code: 'L2',
     name: 'Licence Record Check',
     short: 'Licence checked',
+    pilotListingQuota: 6,
     description: 'Available licence or right information is checked against appropriate authoritative records or documents.',
     checks: ['Licence reference & holder match', 'Status, issue and expiry dates', 'Area / coordinates consistency'],
     notCovered: 'Does not confirm transferability or licensing-authority consent.',
   },
   {
     level: 3,
+    code: 'L3',
     name: 'Technical Review',
     short: 'Technically reviewed',
+    pilotListingQuota: 8,
     description: 'A qualified professional has reviewed the supplied technical evidence — sampling, assays and reports.',
     checks: ['Sampling & assay chain of custody', 'Laboratory certificates', 'Consistency of technical reports'],
     notCovered: 'This is not a mineral-resource estimate or a guarantee of grade.',
   },
   {
     level: 4,
+    code: 'L4',
     name: 'Site & Due Diligence',
     short: 'Site visited',
+    pilotListingQuota: 1,
     description: 'Site visit and/or specialist due diligence has been commissioned and completed for a client.',
     checks: ['Independent site visit', 'Community & access observations', 'Specialist due-diligence report'],
     notCovered: 'Findings are point-in-time and do not replace your own legal and technical advice.',

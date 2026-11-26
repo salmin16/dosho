@@ -1,14 +1,18 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BadgeCheck,
   Briefcase,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Coins,
   Compass,
   CreditCard,
+  ExternalLink,
+  Eye,
   EyeOff,
   FileText,
   LayoutDashboard,
@@ -28,17 +32,26 @@ import {
   adminDeleteUserProfile,
   adminModerateEntity,
   adminPurgeContentItem,
+  adminSetUserVerificationLevel,
   adminUpdateComplaintStatus,
   adminUpdateUserProfile,
   adminVerifyUserProfile,
   fetchAdminComplianceComplaints,
   fetchAdminGovernanceData,
+  fetchVerificationSubmissionPreview,
   useAuthState,
 } from '../lib/supabaseAuth'
 import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
+import VerificationBadge from '../components/VerificationBadge'
+import {
+  normalizeVerificationLevel,
+  VERIFICATION_LEVELS,
+  VERIFICATION_LEVEL_LIST,
+} from '../lib/verificationLevels'
+import { formatBytesCompact } from '../lib/verificationUpload'
 import AdminSubscriptionsTab, {
   type AdminBillingPaymentRow,
   type AdminBillingSubRow,
@@ -64,6 +77,9 @@ import type {
   UserRole,
   UserServiceRecord,
   UserStatus,
+  VerificationLevelCode,
+  VerificationSubmissionPreview,
+  VerificationSubmissionSummary,
 } from '../types/database'
 
 export type MasterAdminSection =
@@ -176,12 +192,26 @@ export function MasterAdminDashboard({
   const { currency, language, currencyMeta, rateForSelected, ui } = useLocalization()
 
   const [authorized, setAuthorized] = useState(false)
-  const [loadingGovernance, setLoadingGovernance] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const refreshInFlightRef = useRef(false)
+  const hasLoadedOnceRef = useRef(false)
   const [activeTab, setActiveTab] = useState<
     'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'billing' | 'minerals'
   >(() => mapInitialTab(initialSection))
 
   const [users, setUsers] = useState<UserProfile[]>([])
+  const [verificationSubmissions, setVerificationSubmissions] = useState<
+    VerificationSubmissionSummary[]
+  >([])
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null)
+  const [previewCache, setPreviewCache] = useState<
+    Record<string, VerificationSubmissionPreview>
+  >({})
+  const [loadingPreviewId, setLoadingPreviewId] = useState<string | null>(null)
+  const [levelDraftMap, setLevelDraftMap] = useState<
+    Record<string, VerificationLevelCode>
+  >({})
   const [services, setServices] = useState<UserServiceRecord[]>([])
   const [opportunities, setOpportunities] = useState<UserOpportunityRecord[]>([])
   const [projects, setProjects] = useState<UserListedProject[]>([])
@@ -236,8 +266,15 @@ export function MasterAdminDashboard({
     setActiveTab(mapInitialTab(initialSection))
   }, [initialSection])
 
+  // Memoized zero-CLS governance refresh: preserves existing UI state during background refreshes
   const loadGovernanceTelemetry = useCallback(async () => {
-    setLoadingGovernance(true)
+    if (refreshInFlightRef.current) return
+    refreshInFlightRef.current = true
+    if (!hasLoadedOnceRef.current) {
+      setInitialLoading(true)
+    } else {
+      setIsRefreshing(true)
+    }
     try {
       const [data, complaintsRes, billingRes] = await Promise.all([
         fetchAdminGovernanceData(),
@@ -246,6 +283,7 @@ export function MasterAdminDashboard({
       ])
       setAuthorized(Boolean(data?.authorized))
       setUsers(data?.users ?? [])
+      setVerificationSubmissions(data?.verificationSubmissions ?? [])
       setServices(data?.servicesList ?? [])
       setOpportunities(data?.opportunitiesList ?? [])
       setProjects(data?.projectsList ?? [])
@@ -259,6 +297,7 @@ export function MasterAdminDashboard({
       setBillingSubs(billingRes?.subscriptions ?? [])
       setBillingLedger(billingRes?.accountsLedger ?? [])
       setBillingWarning(billingRes?.error ?? null)
+      hasLoadedOnceRef.current = true
       if (data.dbError) {
         setFeedback({
           type: 'error',
@@ -274,7 +313,9 @@ export function MasterAdminDashboard({
             : 'Failed to load Supabase governance data.',
       })
     } finally {
-      setLoadingGovernance(false)
+      refreshInFlightRef.current = false
+      setInitialLoading(false)
+      setIsRefreshing(false)
     }
   }, [])
 
@@ -282,12 +323,12 @@ export function MasterAdminDashboard({
     if (authLoading || profileLoading) return
     if (!session) {
       setAuthorized(false)
-      setLoadingGovernance(false)
+      setInitialLoading(false)
       return
     }
     if (!isAdmin) {
       setAuthorized(false)
-      setLoadingGovernance(false)
+      setInitialLoading(false)
       navigate({ to: '/dashboard' })
       return
     }
@@ -453,27 +494,186 @@ export function MasterAdminDashboard({
     return list.filter((c) => c?.status === complaintStatusFilter)
   }, [complaints, complaintStatusFilter])
 
-  // Action handlers
+  const latestSubmissionByUser = useMemo(() => {
+    const map = new Map<string, VerificationSubmissionSummary>()
+    for (const sub of verificationSubmissions) {
+      if (!map.has(sub.user_id)) {
+        map.set(sub.user_id, sub)
+      }
+    }
+    return map
+  }, [verificationSubmissions])
+
+  const handleToggleSubmissionPreview = useCallback(
+    async (submissionId: string) => {
+      if (expandedSubmissionId === submissionId) {
+        setExpandedSubmissionId(null)
+        return
+      }
+      setExpandedSubmissionId(submissionId)
+      if (previewCache[submissionId]) return
+
+      setLoadingPreviewId(submissionId)
+      try {
+        const res = await fetchVerificationSubmissionPreview(submissionId)
+        if (res.preview) {
+          setPreviewCache((prev) => ({ ...prev, [submissionId]: res.preview! }))
+        } else if (res.error) {
+          setFeedback({ type: 'error', message: res.error })
+        }
+      } finally {
+        setLoadingPreviewId(null)
+      }
+    },
+    [expandedSubmissionId, previewCache],
+  )
+
+  // Action handlers with optimistic updates (zero UI lag / zero flash-empty)
   const handleVerifyUser = async (
     u: UserProfile,
-    decision: 'VERIFY' | 'REJECT' | 'REVOKE'
+    decision: 'VERIFY' | 'REJECT' | 'REVOKE',
+    explicitLevel?: VerificationLevelCode,
+    submissionId?: string,
   ) => {
+    const previousUsers = users
+    const previousSubs = verificationSubmissions
+    const chosenLevel: VerificationLevelCode =
+      decision === 'VERIFY'
+        ? explicitLevel && explicitLevel !== 'L0'
+          ? explicitLevel
+          : levelDraftMap[u.id] && levelDraftMap[u.id] !== 'L0'
+            ? levelDraftMap[u.id]
+            : normalizeVerificationLevel(u.verification_level, 'verified') === 'L0'
+              ? 'L1'
+              : normalizeVerificationLevel(u.verification_level, 'verified')
+        : 'L0'
+    const nextStatus =
+      decision === 'VERIFY'
+        ? 'verified'
+        : decision === 'REJECT'
+          ? 'rejected'
+          : 'unverified'
+    const nextNote = verifNotesMap[u.id]?.trim() || u.verification_notes || null
+
+    // Optimistic row update
+    setUsers((prev) =>
+      prev.map((row) =>
+        row.id === u.id
+          ? {
+              ...row,
+              verification_status: nextStatus,
+              verification_level: chosenLevel,
+              verification_notes: nextNote,
+              verified_at: decision === 'VERIFY' ? new Date().toISOString() : null,
+            }
+          : row,
+      ),
+    )
+    if (submissionId) {
+      setVerificationSubmissions((prev) =>
+        prev.map((sub) =>
+          sub.id === submissionId
+            ? {
+                ...sub,
+                status: decision === 'VERIFY' ? 'approved' : 'rejected',
+                reviewer_notes: nextNote,
+                reviewed_at: new Date().toISOString(),
+              }
+            : sub,
+        ),
+      )
+    }
+
     setBusyId(u.id)
     try {
       const res = await adminVerifyUserProfile({
         targetUserId: u.id,
         decision,
+        verificationLevel: chosenLevel,
         notes: verifNotesMap[u.id],
+        submissionId,
       })
       if (res.error) {
+        setUsers(previousUsers)
+        setVerificationSubmissions(previousSubs)
         setFeedback({ type: 'error', message: res.error })
         return
       }
+      if (res.user) {
+        setUsers((prev) => prev.map((row) => (row.id === u.id ? res.user! : row)))
+      }
       setFeedback({
         type: 'success',
-        message: `${u.email} verification updated (${decision}). Immutable audit event recorded.`,
+        message: `${u.email} updated → ${chosenLevel} (${VERIFICATION_LEVELS[chosenLevel].title}). Audit event recorded.`,
       })
-      await loadGovernanceTelemetry()
+      void loadGovernanceTelemetry()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleSetVerificationLevel = async (
+    u: UserProfile,
+    nextLevel: VerificationLevelCode,
+    submissionId?: string,
+  ) => {
+    const previousUsers = users
+    const previousSubs = verificationSubmissions
+    const nextStatus = nextLevel === 'L0' ? 'unverified' : 'verified'
+    const nextNote = verifNotesMap[u.id]?.trim() || u.verification_notes || null
+
+    // Optimistic row update
+    setUsers((prev) =>
+      prev.map((row) =>
+        row.id === u.id
+          ? {
+              ...row,
+              verification_level: nextLevel,
+              verification_status: nextStatus,
+              verification_notes: nextNote,
+              verified_at: nextLevel === 'L0' ? null : new Date().toISOString(),
+            }
+          : row,
+      ),
+    )
+    if (submissionId) {
+      setVerificationSubmissions((prev) =>
+        prev.map((sub) =>
+          sub.id === submissionId
+            ? {
+                ...sub,
+                status: nextLevel === 'L0' ? 'rejected' : 'approved',
+                reviewer_notes: nextNote,
+                reviewed_at: new Date().toISOString(),
+              }
+            : sub,
+        ),
+      )
+    }
+
+    setBusyId(u.id)
+    try {
+      const res = await adminSetUserVerificationLevel({
+        targetUserId: u.id,
+        verificationLevel: nextLevel,
+        decision: nextLevel === 'L0' ? 'REVOKE' : 'SET_LEVEL',
+        notes: verifNotesMap[u.id],
+        submissionId,
+      })
+      if (res.error) {
+        setUsers(previousUsers)
+        setVerificationSubmissions(previousSubs)
+        setFeedback({ type: 'error', message: res.error })
+        return
+      }
+      if (res.user) {
+        setUsers((prev) => prev.map((row) => (row.id === u.id ? res.user! : row)))
+      }
+      setFeedback({
+        type: 'success',
+        message: `${u.email} verification level set to ${nextLevel} (${VERIFICATION_LEVELS[nextLevel].title} · Pilot cap ${VERIFICATION_LEVELS[nextLevel].pilotListingQuota}).`,
+      })
+      void loadGovernanceTelemetry()
     } finally {
       setBusyId(null)
     }
@@ -624,17 +824,17 @@ export function MasterAdminDashboard({
     }
   }
 
-  if (authLoading || profileLoading || loadingGovernance) {
+  if (authLoading || profileLoading || initialLoading) {
     return (
-      <div className="min-h-screen bg-paper pb-24 pt-28 text-ink">
+      <div className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink">
         <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
-          <div className="h-36 animate-pulse rounded-2xl bg-ink/10" />
+          <div className="h-40 rounded-2xl bg-ink/10" />
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-24 animate-pulse rounded-xl bg-ink/10" />
+              <div key={i} className="min-h-[104px] rounded-xl bg-ink/10" />
             ))}
           </div>
-          <div className="h-72 animate-pulse rounded-2xl bg-ink/10" />
+          <div className="h-72 rounded-2xl bg-ink/10" />
         </div>
       </div>
     )
@@ -642,7 +842,7 @@ export function MasterAdminDashboard({
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
+      <div className="min-h-[100dvh] bg-paper pb-24 pt-32 text-ink">
         <div className="mx-auto max-w-xl rounded-xl border border-danger/30 bg-paper-2 p-8 text-center">
           <ShieldAlert size={40} className="mx-auto text-danger" />
           <h1 className="mt-4 font-display text-2xl font-semibold">
@@ -665,7 +865,7 @@ export function MasterAdminDashboard({
 
   if (!authorized || !isAdmin) {
     return (
-      <div className="min-h-screen bg-paper pb-24 pt-32 text-ink">
+      <div className="min-h-[100dvh] bg-paper pb-24 pt-32 text-ink">
         <div className="mx-auto max-w-xl rounded-xl border border-danger/30 bg-paper-2 p-8 text-center">
           <ShieldAlert size={40} className="mx-auto text-danger" />
           <h1 className="mt-4 font-display text-2xl font-semibold">
@@ -712,19 +912,19 @@ export function MasterAdminDashboard({
     <div
       data-currency={currency}
       data-language={language}
-      className="min-h-screen bg-paper pb-24 pt-28 text-ink"
+      className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
     >
       <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
-        {/* Executive Command Header */}
+        {/* Executive Command Header (Fixed Min-Heights & Tabular-Nums for Zero CLS) */}
         <header className="rounded-xl border border-ink/15 bg-ink p-6 text-paper shadow-sm lg:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
-                  <ShieldCheck size={14} />
+                <span className="inline-flex min-h-[26px] shrink-0 items-center gap-1.5 rounded-full bg-moss/30 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-gold">
+                  <ShieldCheck size={14} className="shrink-0" />
                   Zero-Trust Admin Command Center
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80">
+                <span className="inline-flex min-h-[26px] shrink-0 items-center gap-1.5 rounded-full bg-paper/10 px-3 py-1 font-mono text-[11px] text-paper/80 tabular-nums">
                   DB Latency: {dbLatencyMs}ms · {currencyMeta.flag} {currency} ({rateForSelected.toFixed(2)})
                 </span>
               </div>
@@ -736,26 +936,36 @@ export function MasterAdminDashboard({
                 )}
               </h1>
               <p className="mt-1 text-sm text-paper/75">
-                Signed in as <span className="font-mono text-gold">{session.user.email}</span> · Full real-time oversight over user verification, marketplace approvals, quotes, and immutable audit logs.
+                Signed in as <span className="font-mono text-gold">{session.user.email}</span> · Full real-time oversight over L0–L4 verification, marketplace approvals, quotes, and immutable audit logs.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <CurrencySwitcher dark />
-              <LanguageSwitcher dark />
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+              <div className="min-h-[36px] shrink-0">
+                <CurrencySwitcher dark />
+              </div>
+              <div className="min-h-[36px] shrink-0">
+                <LanguageSwitcher dark />
+              </div>
               <button
                 type="button"
+                disabled={isRefreshing}
                 onClick={() => void loadGovernanceTelemetry()}
-                className="inline-flex items-center gap-2 rounded-md border border-gold/40 bg-ochre/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gold transition hover:bg-ochre/30"
+                className="inline-flex min-h-[36px] min-w-[152px] shrink-0 items-center justify-center gap-2 rounded-md border border-gold/40 bg-ochre/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gold transition-colors hover:bg-ochre/30 disabled:opacity-70"
               >
-                <RefreshCw size={14} />
-                Refresh Live DB
+                <RefreshCw size={14} className={`shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="whitespace-nowrap">
+                  {isRefreshing ? 'Syncing DB...' : 'Refresh Live DB'}
+                </span>
               </button>
             </div>
           </div>
 
-          {/* 5 Primary Governance Tabs + Mineral Utility */}
-          <nav className="mt-6 flex flex-wrap gap-2 border-t border-paper/10 pt-5" aria-label="Admin sections">
+          {/* Governance Tabs — Fixed Height & Shrink-0 Pills (Zero Reflow) */}
+          <nav
+            className="mt-6 flex flex-wrap gap-2 border-t border-paper/10 pt-5"
+            aria-label="Admin sections"
+          >
             {tabs.map((tab) => {
               const Icon = tab.icon
               const active = activeTab === tab.id
@@ -764,17 +974,17 @@ export function MasterAdminDashboard({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                  className={`inline-flex min-h-[38px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
                     active
                       ? 'border-gold bg-gold text-ink shadow-sm'
                       : 'border-paper/15 bg-paper/5 text-paper/80 hover:bg-paper/15 hover:text-paper'
                   }`}
                 >
-                  <Icon size={14} />
-                  {tab.label}
+                  <Icon size={14} className="shrink-0" />
+                  <span>{tab.label}</span>
                   {tab.badge > 0 && (
                     <span
-                      className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                      className={`inline-flex min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums ${
                         active ? 'bg-ink text-gold' : 'bg-ochre text-paper'
                       }`}
                     >
@@ -829,7 +1039,7 @@ export function MasterAdminDashboard({
                   key={card.label}
                   type="button"
                   onClick={() => setActiveTab(card.tab)}
-                  className="rounded-xl border border-ink/15 bg-white p-4 text-left shadow-xs transition duration-150 hover:border-ochre/50 hover:shadow-sm"
+                  className="flex min-h-[104px] flex-col justify-between rounded-xl border border-ink/15 bg-white p-4 text-left shadow-xs transition-colors duration-150 hover:border-ochre/50"
                 >
                   <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
                     {card.label}
@@ -889,20 +1099,20 @@ export function MasterAdminDashboard({
           </div>
         )}
 
-        {/* TAB 2: USER MANAGEMENT & IDENTITY VERIFICATION */}
+        {/* TAB 2: USER MANAGEMENT & 5-TIER (L0–L4) VERIFICATION PIPELINE */}
         {activeTab === 'users' && (
-          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
+          <section className="space-y-5 rounded-2xl border border-ink/12 bg-white/85 p-6">
             <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
               <div>
-                <h2 className="font-display text-2xl font-semibold">
-                  User Directory &amp; Identity Verification ({filteredUsers.length} / {users.length})
+                <h2 className="font-display text-2xl font-semibold tabular-nums">
+                  User Directory &amp; L0–L4 Verification ({filteredUsers.length} / {users.length})
                 </h2>
                 <p className="text-xs text-stone">
-                  Verify member identities (`public.profiles.verification_status`), manage roles, or suspend accounts.
+                  Assign 5-tier verification levels (L0–L4, decoupled from subscription plans), inspect lazy-loaded documents, manage roles, or suspend accounts.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
                   <input
@@ -910,18 +1120,18 @@ export function MasterAdminDashboard({
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
                     placeholder="Search email, name, company..."
-                    className="field !py-1.5 !pl-8 !text-xs"
+                    className="field !min-h-[34px] !py-1.5 !pl-8 !text-xs"
                   />
                 </div>
                 <select
                   value={userVerifFilter}
                   onChange={(e) => setUserVerifFilter(e.target.value as typeof userVerifFilter)}
-                  className="field !w-auto !py-1.5 !text-xs"
+                  className="field !min-h-[34px] !w-auto shrink-0 !py-1.5 !text-xs"
                 >
                   <option value="ALL">All Users</option>
                   <option value="pending">Pending Verification</option>
-                  <option value="verified">Verified</option>
-                  <option value="unverified">Unverified</option>
+                  <option value="verified">Verified (L1–L4)</option>
+                  <option value="unverified">Unverified (L0)</option>
                   <option value="rejected">Rejected</option>
                   <option value="suspended">Suspended</option>
                 </select>
@@ -932,37 +1142,47 @@ export function MasterAdminDashboard({
               {filteredUsers.map((u) => {
                 const isSelf = u.id === session.user.id
                 const verifStatus = u.verification_status || 'unverified'
+                const currentLevel = normalizeVerificationLevel(
+                  u.verification_level,
+                  verifStatus,
+                )
+                const selectedDraftLevel = levelDraftMap[u.id] ?? currentLevel
+                const latestSub = latestSubmissionByUser.get(u.id)
+                const isExpanded =
+                  Boolean(latestSub) && expandedSubmissionId === latestSub?.id
+                const loadedPreview = latestSub ? previewCache[latestSub.id] : undefined
+
                 return (
                   <div
                     key={u.id}
-                    className="rounded-xl border border-ink/12 bg-paper/60 p-4 transition hover:border-ochre/40"
+                    className="rounded-xl border border-ink/12 bg-paper/60 p-4 transition-colors hover:border-ochre/40"
                   >
-                    <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                      <div className="space-y-1">
+                    <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+                      <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-display text-base font-semibold text-ink">
                             {u.full_name || 'Unnamed Member'}
                           </span>
-                          {verifStatus === 'verified' && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-moss/40 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">
+                          <VerificationBadge level={currentLevel} size="sm" showQuota />
+                          {verifStatus === 'verified' ? (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-moss/40 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">
                               <BadgeCheck size={11} /> Verified
                             </span>
-                          )}
-                          {verifStatus !== 'verified' && (
-                            <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${verificationBadgeClasses(verifStatus)}`}>
+                          ) : (
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${verificationBadgeClasses(verifStatus)}`}>
                               {verifStatus}
                             </span>
                           )}
-                          <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${u.role === 'admin' ? 'border-gold/60 bg-ink text-gold' : 'border-ink/15 bg-white text-stone'}`}>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${u.role === 'admin' ? 'border-gold/60 bg-ink text-gold' : 'border-ink/15 bg-white text-stone'}`}>
                             {u.role}
                           </span>
                           {u.status === 'suspended' && (
-                            <span className="rounded-full border border-danger/40 bg-danger/15 px-2 py-0.5 font-mono text-[10px] uppercase text-danger">
+                            <span className="shrink-0 rounded-full border border-danger/40 bg-danger/15 px-2 py-0.5 font-mono text-[10px] uppercase text-danger">
                               Suspended
                             </span>
                           )}
                         </div>
-                        <p className="font-mono text-xs text-stone">
+                        <p className="font-mono text-xs text-stone tabular-nums">
                           {u.email}
                           {u.company_name ? ` · ${u.company_name}` : ''}
                           {u.phone ? ` · ${u.phone}` : ''}
@@ -970,27 +1190,153 @@ export function MasterAdminDashboard({
                         </p>
                         {u.verification_notes && (
                           <p className="text-xs text-ink/75">
-                            Verification Note: <span className="italic">{u.verification_notes}</span>
+                            Reviewer Note: <span className="italic">{u.verification_notes}</span>
                           </p>
+                        )}
+
+                        {/* Lightweight Verification Submission Summary + Lazy Preview Expander */}
+                        {latestSub && (
+                          <div className="mt-2 rounded-lg border border-ink/10 bg-white/80 px-3 py-2 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] tabular-nums">
+                                <span className="rounded bg-ochre/15 px-1.5 py-0.5 font-semibold text-ochre">
+                                  Requested {latestSub.requested_level}
+                                </span>
+                                <span className="text-stone">
+                                  {latestSub.company_name}
+                                  {latestSub.licence_reference ? ` · Ref: ${latestSub.licence_reference}` : ''}
+                                </span>
+                                {latestSub.document_name && (
+                                  <span className="text-ink/75">
+                                    · {latestSub.document_name}
+                                    {latestSub.document_size_bytes
+                                      ? ` (${formatBytesCompact(latestSub.document_size_bytes)})`
+                                      : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleToggleSubmissionPreview(latestSub.id)}
+                                className="inline-flex min-h-[28px] shrink-0 items-center gap-1 rounded border border-ink/15 bg-paper px-2 py-1 font-mono text-[10px] font-semibold text-ink transition-colors hover:border-ochre hover:text-ochre"
+                              >
+                                <Eye size={12} />
+                                {isExpanded ? 'Hide Details' : 'Inspect Submission'}
+                                {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="mt-2.5 border-t border-ink/10 pt-2.5">
+                                {loadingPreviewId === latestSub.id ? (
+                                  <p className="font-mono text-[11px] text-stone">
+                                    Loading submission details &amp; signed document preview...
+                                  </p>
+                                ) : loadedPreview ? (
+                                  <div className="space-y-2">
+                                    {loadedPreview.notes && (
+                                      <p className="text-xs text-ink/85">
+                                        <strong>Applicant Notes:</strong> {loadedPreview.notes}
+                                      </p>
+                                    )}
+                                    {loadedPreview.signedUrl ? (
+                                      loadedPreview.document_mime?.startsWith('image/') ? (
+                                        <a
+                                          href={loadedPreview.signedUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="block max-w-xs overflow-hidden rounded-lg border border-ink/15"
+                                        >
+                                          <img
+                                            src={loadedPreview.signedUrl}
+                                            alt={loadedPreview.document_name || 'Verification document'}
+                                            loading="lazy"
+                                            className="max-h-48 w-full object-contain bg-paper"
+                                          />
+                                        </a>
+                                      ) : (
+                                        <a
+                                          href={loadedPreview.signedUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/10 px-3 py-1.5 font-mono text-[11px] font-semibold text-ochre hover:bg-ochre/20"
+                                        >
+                                          <ExternalLink size={12} />
+                                          Open {loadedPreview.document_name || 'Document'} (Signed 5m Link)
+                                        </a>
+                                      )
+                                    ) : (
+                                      <p className="font-mono text-[11px] text-stone">
+                                        {loadedPreview.warning || 'No attached document file for this submission.'}
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="font-mono text-[11px] text-stone">
+                                    Could not load submission preview.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <select
+                          aria-label={`Verification level for ${u.email}`}
+                          value={selectedDraftLevel}
+                          onChange={(e) =>
+                            setLevelDraftMap((prev) => ({
+                              ...prev,
+                              [u.id]: e.target.value as VerificationLevelCode,
+                            }))
+                          }
+                          className="field !min-h-[32px] !w-auto shrink-0 !py-1 !text-xs font-mono"
+                        >
+                          {VERIFICATION_LEVEL_LIST.map((spec) => (
+                            <option key={spec.code} value={spec.code}>
+                              {spec.code} · {spec.title} (Cap {spec.pilotListingQuota})
+                            </option>
+                          ))}
+                        </select>
                         <input
                           type="text"
                           value={verifNotesMap[u.id] ?? ''}
                           onChange={(e) =>
                             setVerifNotesMap((prev) => ({ ...prev, [u.id]: e.target.value }))
                           }
-                          placeholder="Verification note..."
-                          className="field !w-44 !py-1 !text-xs"
+                          placeholder="Reviewer note (optional)..."
+                          className="field !min-h-[32px] !w-44 !py-1 !text-xs"
                         />
+                        <button
+                          type="button"
+                          disabled={busyId === u.id}
+                          onClick={() =>
+                            void handleSetVerificationLevel(
+                              u,
+                              selectedDraftLevel,
+                              latestSub?.id,
+                            )
+                          }
+                          className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-xs font-semibold text-gold transition-colors hover:bg-ochre hover:text-paper disabled:opacity-50"
+                        >
+                          Apply {selectedDraftLevel}
+                        </button>
                         {verifStatus !== 'verified' ? (
                           <button
                             type="button"
                             disabled={busyId === u.id}
-                            onClick={() => void handleVerifyUser(u, 'VERIFY')}
-                            className="inline-flex items-center gap-1 rounded-md bg-moss px-2.5 py-1.5 text-xs font-semibold text-paper hover:opacity-90 disabled:opacity-50"
+                            onClick={() =>
+                              void handleVerifyUser(
+                                u,
+                                'VERIFY',
+                                latestSub?.requested_level ??
+                                  (selectedDraftLevel !== 'L0' ? selectedDraftLevel : 'L1'),
+                                latestSub?.id,
+                              )
+                            }
+                            className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md bg-moss px-2.5 py-1.5 text-xs font-semibold text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
                           >
                             <UserCheck size={13} /> Verify
                           </button>
@@ -998,8 +1344,8 @@ export function MasterAdminDashboard({
                           <button
                             type="button"
                             disabled={busyId === u.id}
-                            onClick={() => void handleVerifyUser(u, 'REVOKE')}
-                            className="inline-flex items-center gap-1 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone hover:text-ink disabled:opacity-50"
+                            onClick={() => void handleVerifyUser(u, 'REVOKE', 'L0', latestSub?.id)}
+                            className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone transition-colors hover:text-ink disabled:opacity-50"
                           >
                             <ShieldOff size={13} /> Revoke
                           </button>
@@ -1008,8 +1354,8 @@ export function MasterAdminDashboard({
                           <button
                             type="button"
                             disabled={busyId === u.id}
-                            onClick={() => void handleVerifyUser(u, 'REJECT')}
-                            className="inline-flex items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/20 disabled:opacity-50"
+                            onClick={() => void handleVerifyUser(u, 'REJECT', 'L0', latestSub?.id)}
+                            className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-xs font-semibold text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
                           >
                             <XCircle size={13} /> Reject
                           </button>
@@ -1024,7 +1370,7 @@ export function MasterAdminDashboard({
                                   role: u.role === 'admin' ? 'user' : 'admin',
                                 })
                               }
-                              className="rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-ochre"
+                              className="min-h-[32px] shrink-0 rounded-md border border-ink/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ochre"
                             >
                               {u.role === 'admin' ? 'Demote' : 'Make Admin'}
                             </button>
@@ -1036,7 +1382,7 @@ export function MasterAdminDashboard({
                                   status: u.status === 'suspended' ? 'active' : 'suspended',
                                 })
                               }
-                              className="rounded-md border border-ochre/40 bg-ochre/10 px-2.5 py-1.5 text-xs font-semibold text-ochre hover:bg-ochre/20"
+                              className="min-h-[32px] shrink-0 rounded-md border border-ochre/40 bg-ochre/10 px-2.5 py-1.5 text-xs font-semibold text-ochre transition-colors hover:bg-ochre/20"
                             >
                               {u.status === 'suspended' ? 'Activate' : 'Suspend'}
                             </button>
@@ -1044,7 +1390,7 @@ export function MasterAdminDashboard({
                               type="button"
                               disabled={busyId === u.id}
                               onClick={() => void handleDeleteUser(u)}
-                              className="rounded-md border border-danger/30 p-1.5 text-danger hover:bg-danger/10"
+                              className="min-h-[32px] shrink-0 rounded-md border border-danger/30 p-1.5 text-danger transition-colors hover:bg-danger/10"
                               title="Delete profile"
                             >
                               <Trash2 size={14} />

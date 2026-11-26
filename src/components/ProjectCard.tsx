@@ -3,7 +3,7 @@ import { Bookmark, BookmarkCheck, MapPin, ArrowUpRight } from 'lucide-react'
 import { formatUsd, type Project } from '../data/fixtures'
 import { img } from '../lib/img'
 import { useI18n } from '../i18n'
-import VerificationBadge from './VerificationBadge'
+import VerificationBadge, { VerificationLimitsNotice } from './VerificationBadge'
 
 export default function ProjectCard({
   project,
@@ -78,7 +78,11 @@ export default function ProjectCard({
         </h3>
         <p className="mt-1.5 text-sm text-stone">{tv(p.type)}</p>
 
-        <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-ink/10 pt-4 text-sm mt-5">
+        <div className="mt-3">
+          <VerificationLimitsNotice level={p.verification.level} compact />
+        </div>
+
+        <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-ink/10 pt-4 text-sm mt-4">
           <div className="min-w-0">
             <dt className="truncate font-mono text-[10px] uppercase tracking-wider text-stone">{t('card.seeking')}</dt>
             <dd className="mt-0.5 font-semibold tabular-nums">{formatUsd(p.investmentUsd)}</dd>

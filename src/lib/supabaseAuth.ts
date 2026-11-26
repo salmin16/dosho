@@ -11,6 +11,14 @@ import {
   sanitizeString,
 } from './securityValidators'
 import { validateStrongPassword } from './validations/auth'
+import {
+  normalizeVerificationLevel,
+  VERIFICATION_LEVELS,
+} from './verificationLevels'
+import {
+  VERIFICATION_STORAGE_BUCKET,
+  type PreparedVerificationFile,
+} from './verificationUpload'
 import type {
   AdminAuditLogRecord,
   AuditAction,
@@ -35,6 +43,9 @@ import type {
   UserServiceRecord,
   UserStatus,
   UserVerificationStatus,
+  VerificationLevelCode,
+  VerificationSubmissionPreview,
+  VerificationSubmissionSummary,
 } from '../types/database'
 
 export interface AuthUser {
@@ -240,6 +251,10 @@ function normalizeProfileRow(raw: Record<string, unknown>, fallbackId: string): 
     rawVerif === 'verified' || rawVerif === 'pending' || rawVerif === 'rejected'
       ? rawVerif
       : 'unverified'
+  const verificationLevel = normalizeVerificationLevel(
+    raw.verification_level as string | number | null | undefined,
+    verificationStatus,
+  )
   const nowIso = new Date().toISOString()
 
   return {
@@ -251,6 +266,7 @@ function normalizeProfileRow(raw: Record<string, unknown>, fallbackId: string): 
     role: rawRole === 'admin' ? 'admin' : 'user',
     status: rawStatus === 'suspended' ? 'suspended' : 'active',
     verification_status: verificationStatus,
+    verification_level: verificationLevel,
     verification_notes:
       typeof raw.verification_notes === 'string' ? raw.verification_notes : null,
     verified_at: typeof raw.verified_at === 'string' ? raw.verified_at : null,
@@ -1189,6 +1205,7 @@ export function recordAdminAuditEvent(params: {
 export async function fetchAdminGovernanceData(): Promise<{
   authorized: boolean
   users: UserProfile[]
+  verificationSubmissions: VerificationSubmissionSummary[]
   auditLogs: AuditLog[]
   adminAuditLogs: AdminAuditLogRecord[]
   servicesList: UserServiceRecord[]
@@ -1210,6 +1227,7 @@ export async function fetchAdminGovernanceData(): Promise<{
     return {
       authorized: false,
       users: [],
+      verificationSubmissions: [],
       auditLogs: [],
       adminAuditLogs: [],
       servicesList: [],
@@ -1233,8 +1251,11 @@ export async function fetchAdminGovernanceData(): Promise<{
     resolveQuoteTable(),
   ])
 
+  // Lightweight summary column projection for verification submissions (full notes
+  // and signed storage document previews are lazy-loaded only when an admin expands a row)
   const [
     profilesRes,
+    verifSubsRes,
     auditLogsRes,
     adminAuditLogsRes,
     docsRes,
@@ -1248,6 +1269,13 @@ export async function fetchAdminGovernanceData(): Promise<{
       .select('*')
       .order('created_at', { ascending: false }),
     supabase
+      .from('verification_submissions')
+      .select(
+        'id, user_id, requested_level, status, company_name, phone, licence_reference, document_name, document_mime, document_size_bytes, document_storage_path, reviewer_notes, reviewed_at, created_at',
+      )
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
@@ -1259,8 +1287,9 @@ export async function fetchAdminGovernanceData(): Promise<{
       .limit(300),
     supabase
       .from('user_documents')
-      .select('*')
-      .order('created_at', { ascending: false }),
+      .select('id, user_id, title, content, classification, status, approved, moderation_notes, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(150),
     supabase
       .from(projectTable)
       .select('*')
@@ -1307,6 +1336,10 @@ export async function fetchAdminGovernanceData(): Promise<{
   const users = (profilesRes.data ?? []).map((row) =>
     normalizeProfileRow(row as unknown as Record<string, unknown>, String(row.id))
   )
+  const verificationSubmissions: VerificationSubmissionSummary[] =
+    !verifSubsRes.error && Array.isArray(verifSubsRes.data)
+      ? (verifSubsRes.data as unknown as VerificationSubmissionSummary[])
+      : []
   const auditLogs = auditLogsRes.data ?? []
   const adminAuditLogs: AdminAuditLogRecord[] =
     (adminAuditLogsRes.data && adminAuditLogsRes.data.length > 0)
@@ -1455,6 +1488,7 @@ export async function fetchAdminGovernanceData(): Promise<{
   return {
     authorized: true,
     users,
+    verificationSubmissions,
     auditLogs,
     adminAuditLogs,
     servicesList: services,
@@ -2223,14 +2257,18 @@ export async function createGuidedServiceSubmission(input: {
 }
 
 /**
- * Allows an authenticated member to submit company/contact details and request
- * official Identity Verification (`verification_status = 'pending'`) in `public.profiles`.
+ * Allows an authenticated member to submit company/contact details, target verification
+ * tier (`L1`–`L4`), and an optional client-compressed supporting document into the fast
+ * verification pipeline (`public.verification_submissions` + `public.profiles`).
  */
 export async function submitUserVerificationRequest(input: {
   companyName: string
   phone: string
   notes?: string
-}): Promise<{ profile?: UserProfile; error?: string }> {
+  licenceReference?: string
+  requestedLevel?: Exclude<VerificationLevelCode, 'L0'>
+  preparedFile?: PreparedVerificationFile | null
+}): Promise<{ profile?: UserProfile; submissionId?: string; warning?: string; error?: string }> {
   const session = await waitForAuthReady()
   if (!session) {
     return { error: 'Please sign in before submitting a verification request.' }
@@ -2242,15 +2280,78 @@ export async function submitUserVerificationRequest(input: {
     return { error: 'Company or organization name is required.' }
   }
 
+  const requestedLevel: Exclude<VerificationLevelCode, 'L0'> =
+    input.requestedLevel && ['L1', 'L2', 'L3', 'L4'].includes(input.requestedLevel)
+      ? input.requestedLevel
+      : 'L1'
+
   const supabase = requireSupabaseClient()
   const profileTable = await resolveProfileTable()
+
+  let documentStoragePath: string | null = null
+  let uploadWarning: string | undefined
+
+  if (input.preparedFile) {
+    const objectPath = `${session.user.id}/${Date.now()}-${input.preparedFile.fileName}`
+    const { error: uploadErr } = await supabase.storage
+      .from(VERIFICATION_STORAGE_BUCKET)
+      .upload(objectPath, input.preparedFile.blob, {
+        contentType: input.preparedFile.mimeType,
+        cacheControl: '3600',
+        upsert: false,
+      })
+
+    if (uploadErr) {
+      console.warn('[MineConnect Verification] Storage upload skipped:', uploadErr.message)
+      uploadWarning =
+        'Verification request recorded, but document upload could not be stored yet — an admin can follow up if needed.'
+    } else {
+      documentStoragePath = objectPath
+    }
+  }
+
+  // Insert lightweight verification queue record (gracefully skip if migration not yet applied)
+  let submissionId: string | undefined
+  const { data: subRow, error: subErr } = await supabase
+    .from('verification_submissions')
+    .insert({
+      user_id: session.user.id,
+      requested_level: requestedLevel,
+      status: 'pending',
+      company_name: companyName,
+      phone: phone || null,
+      licence_reference: input.licenceReference?.trim() || null,
+      notes: input.notes?.trim() || null,
+      document_name: input.preparedFile?.fileName ?? null,
+      document_mime: input.preparedFile?.mimeType ?? null,
+      document_size_bytes: input.preparedFile?.compressedBytes ?? null,
+      document_storage_path: documentStoragePath,
+    })
+    .select('id')
+    .single()
+
+  if (!subErr && subRow?.id) {
+    submissionId = String(subRow.id)
+  } else if (subErr && !isMissingRelationError(subErr)) {
+    console.warn('[MineConnect Verification] Queue insert warning:', subErr.message)
+  }
+
+  const combinedNotes = [
+    `Requested ${requestedLevel} (${VERIFICATION_LEVELS[requestedLevel].title})`,
+    input.licenceReference?.trim() ? `Ref: ${input.licenceReference.trim()}` : '',
+    input.notes?.trim() || '',
+    input.preparedFile ? `Doc: ${input.preparedFile.fileName}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   const { data, error } = await supabase
     .from(profileTable)
     .update({
       company_name: companyName,
       phone: phone || null,
       verification_status: 'pending',
-      verification_notes: input.notes?.trim() || null,
+      verification_notes: combinedNotes || null,
     })
     .eq('id', session.user.id)
     .select('*')
@@ -2273,20 +2374,92 @@ export async function submitUserVerificationRequest(input: {
     actionType: 'USER_VERIFICATION_REQUESTED',
     targetTable: `public.${profileTable}`,
     targetId: session.user.id,
-    targetSummary: `${normalized.full_name || normalized.email} (${companyName})`,
-    metadata: { companyName, phone },
+    targetSummary: `${normalized.full_name || normalized.email} (${companyName} · ${requestedLevel})`,
+    metadata: {
+      companyName,
+      phone,
+      requestedLevel,
+      submissionId: submissionId ?? null,
+      hasDocument: Boolean(documentStoragePath),
+    },
   })
 
-  return { profile: normalized }
+  return { profile: normalized, submissionId, warning: uploadWarning }
 }
 
 /**
- * Admin Action: Verify, Reject, or Revoke a user's identity verification status in `public.profiles`.
+ * Lazy-loads full verification submission notes and a short-lived signed storage preview URL
+ * ONLY when an administrator explicitly expands a verification submission row.
  */
-export async function adminVerifyUserProfile(params: {
+export async function fetchVerificationSubmissionPreview(
+  submissionId: string,
+): Promise<{ preview?: VerificationSubmissionPreview; error?: string }> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { error: adminCheck.error }
+  }
+
+  const supabase = requireSupabaseClient()
+  const { data, error } = await supabase
+    .from('verification_submissions')
+    .select(
+      'id, notes, reviewer_notes, document_name, document_mime, document_size_bytes, document_storage_path',
+    )
+    .eq('id', submissionId)
+    .maybeSingle()
+
+  if (error || !data) {
+    return { error: error?.message || 'Verification submission not found.' }
+  }
+
+  let signedUrl: string | null = null
+  let warning: string | null = null
+  const storagePath =
+    typeof data.document_storage_path === 'string'
+      ? data.document_storage_path
+      : null
+
+  if (storagePath) {
+    const { data: signedData, error: signErr } = await supabase.storage
+      .from(VERIFICATION_STORAGE_BUCKET)
+      .createSignedUrl(storagePath, 300)
+    if (signErr) {
+      warning = `Document preview unavailable: ${signErr.message}`
+    } else {
+      signedUrl = signedData?.signedUrl ?? null
+    }
+  }
+
+  return {
+    preview: {
+      id: String(data.id),
+      notes: typeof data.notes === 'string' ? data.notes : null,
+      reviewer_notes:
+        typeof data.reviewer_notes === 'string' ? data.reviewer_notes : null,
+      document_name:
+        typeof data.document_name === 'string' ? data.document_name : null,
+      document_mime:
+        typeof data.document_mime === 'string' ? data.document_mime : null,
+      document_size_bytes:
+        typeof data.document_size_bytes === 'number'
+          ? data.document_size_bytes
+          : null,
+      signedUrl,
+      warning,
+    },
+  }
+}
+
+/**
+ * Admin Action: Set a user's `L0`–`L4` verification level (decoupled from subscription plans)
+ * and/or approve, reject, or revoke their verification status with optional reviewer notes.
+ */
+export async function adminSetUserVerificationLevel(params: {
   targetUserId: string
-  decision: 'VERIFY' | 'REJECT' | 'REVOKE'
+  verificationLevel: VerificationLevelCode
+  decision?: 'VERIFY' | 'REJECT' | 'REVOKE' | 'SET_LEVEL'
   notes?: string
+  submissionId?: string
 }): Promise<{ user?: UserProfile; error?: string }> {
   const adminCheck = await verifyActiveAdmin()
   if (!adminCheck.authorized) {
@@ -2295,42 +2468,97 @@ export async function adminVerifyUserProfile(params: {
 
   const supabase = requireSupabaseClient()
   const profileTable = await resolveProfileTable()
+  const levelCode = normalizeVerificationLevel(params.verificationLevel)
+  const decision = params.decision ?? (levelCode === 'L0' ? 'REVOKE' : 'SET_LEVEL')
+
   const nextStatus: UserVerificationStatus =
-    params.decision === 'VERIFY'
-      ? 'verified'
-      : params.decision === 'REJECT'
-        ? 'rejected'
-        : 'unverified'
+    decision === 'REJECT'
+      ? 'rejected'
+      : decision === 'REVOKE' || levelCode === 'L0'
+        ? 'unverified'
+        : 'verified'
+
+  const effectiveLevel: VerificationLevelCode =
+    decision === 'REJECT' || decision === 'REVOKE' ? 'L0' : levelCode
 
   const nowIso = new Date().toISOString()
-  const { data, error } = await supabase
+  const cleanNotes = params.notes?.trim() || null
+
+  const updatePayload = {
+    verification_status: nextStatus,
+    verification_level: effectiveLevel,
+    verification_notes: cleanNotes,
+    verified_at: nextStatus === 'verified' ? nowIso : null,
+    verified_by: nextStatus === 'verified' ? adminCheck.userId : null,
+  }
+
+  let { data, error } = await supabase
     .from(profileTable)
-    .update({
-      verification_status: nextStatus,
-      verification_notes: params.notes?.trim() || null,
-      verified_at: params.decision === 'VERIFY' ? nowIso : null,
-      verified_by: params.decision === 'VERIFY' ? adminCheck.userId : null,
-    })
+    .update(updatePayload as never)
     .eq('id', params.targetUserId)
     .select('*')
     .single()
 
+  // Graceful fallback if `verification_level` column is not yet migrated in remote DB
+  if (error && /verification_level|42703/i.test(`${error.code ?? ''} ${error.message}`)) {
+    const fallbackPayload = {
+      verification_status: nextStatus,
+      verification_notes: cleanNotes,
+      verified_at: nextStatus === 'verified' ? nowIso : null,
+      verified_by: nextStatus === 'verified' ? adminCheck.userId : null,
+    }
+    const retry = await supabase
+      .from(profileTable)
+      .update(fallbackPayload)
+      .eq('id', params.targetUserId)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
+
   if (error || !data) {
-    console.error('[MineConnect Admin] Verification update failed:', error)
-    return { error: error?.message || 'Failed to update verification status.' }
+    console.error('[MineConnect Admin] Verification level update failed:', error)
+    return { error: error?.message || 'Failed to update verification level.' }
+  }
+
+  // Sync matching verification_submissions queue rows cleanly
+  const submissionStatus: 'approved' | 'rejected' =
+    decision === 'REJECT'
+      ? 'rejected'
+      : nextStatus === 'verified'
+        ? 'approved'
+        : 'rejected'
+
+  const subUpdateQuery = supabase
+    .from('verification_submissions')
+    .update({
+      status: submissionStatus,
+      reviewer_notes: cleanNotes,
+      reviewed_by: adminCheck.userId,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    })
+
+  if (params.submissionId) {
+    await subUpdateQuery.eq('id', params.submissionId)
+  } else {
+    await subUpdateQuery
+      .eq('user_id', params.targetUserId)
+      .eq('status', 'pending')
   }
 
   const normalized = normalizeProfileRow(
-    data as unknown as Record<string, unknown>,
-    params.targetUserId
+    { ...(data as unknown as Record<string, unknown>), verification_level: effectiveLevel },
+    params.targetUserId,
   )
 
   const actionType =
-    params.decision === 'VERIFY'
-      ? 'ADMIN_VERIFY_USER'
-      : params.decision === 'REJECT'
-        ? 'ADMIN_REJECT_VERIFICATION'
-        : 'ADMIN_REVOKE_VERIFICATION'
+    decision === 'REJECT'
+      ? 'ADMIN_REJECT_VERIFICATION'
+      : decision === 'REVOKE'
+        ? 'ADMIN_REVOKE_VERIFICATION'
+        : `ADMIN_SET_VERIFICATION_${effectiveLevel}`
 
   recordAdminAuditEvent({
     actorId: adminCheck.userId,
@@ -2338,15 +2566,42 @@ export async function adminVerifyUserProfile(params: {
     actionType,
     targetTable: `public.${profileTable}`,
     targetId: normalized.id,
-    targetSummary: `${normalized.full_name || normalized.email} → ${nextStatus}`,
+    targetSummary: `${normalized.full_name || normalized.email} → ${effectiveLevel} (${VERIFICATION_LEVELS[effectiveLevel].title})`,
     metadata: {
       targetEmail: normalized.email,
       verificationStatus: nextStatus,
-      notes: params.notes?.trim() || null,
+      verificationLevel: effectiveLevel,
+      notes: cleanNotes,
     },
   })
 
   return { user: normalized }
+}
+
+/**
+ * Admin Action: Verify, Reject, or Revoke a user's identity verification status in `public.profiles`.
+ */
+export async function adminVerifyUserProfile(params: {
+  targetUserId: string
+  decision: 'VERIFY' | 'REJECT' | 'REVOKE'
+  verificationLevel?: VerificationLevelCode
+  notes?: string
+  submissionId?: string
+}): Promise<{ user?: UserProfile; error?: string }> {
+  const targetLevel: VerificationLevelCode =
+    params.decision === 'VERIFY'
+      ? params.verificationLevel && params.verificationLevel !== 'L0'
+        ? params.verificationLevel
+        : 'L1'
+      : 'L0'
+
+  return adminSetUserVerificationLevel({
+    targetUserId: params.targetUserId,
+    verificationLevel: targetLevel,
+    decision: params.decision,
+    notes: params.notes,
+    submissionId: params.submissionId,
+  })
 }
 
 /**

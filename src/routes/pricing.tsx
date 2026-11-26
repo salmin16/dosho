@@ -734,7 +734,7 @@ function Pricing() {
               }
             }}
           />
-          <div className="relative z-10 max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-ink/15 bg-paper text-ink shadow-2xl animate-rise sm:max-w-lg sm:rounded-2xl">
+          <div className="relative z-10 max-h-[88dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-ink/15 bg-paper text-ink shadow-2xl animate-rise sm:max-w-lg sm:rounded-2xl">
             {/* Sheet Header */}
             <div className="flex items-start justify-between gap-3 border-b border-ink/10 bg-ink px-5 py-4 text-paper sm:px-6">
               <div className="min-w-0">
@@ -762,7 +762,7 @@ function Pricing() {
               </button>
             </div>
 
-            <div className="p-5 sm:p-6">
+            <div className="p-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-6">
               {!session ? (
                 <div className="py-4 text-center">
                   <Lock size={28} className="mx-auto text-ochre" />
@@ -1061,14 +1061,19 @@ function Pricing() {
                           {ui('Select Network (Tanzania · AzamPay)', 'Chagua Mtandao (AzamPay)', 'Seleccionar Red (AzamPay)')}
                         </span>
                         <div className="grid grid-cols-2 gap-2">
-                          {MOBILE_MONEY_NETWORKS.map((net) => {
+                          {MOBILE_MONEY_NETWORKS.map((net, idx) => {
                             const active = mobileProvider === net.code
+                            const isSpanFull =
+                              idx === MOBILE_MONEY_NETWORKS.length - 1 &&
+                              MOBILE_MONEY_NETWORKS.length % 2 === 1
                             return (
                               <button
                                 key={net.code}
                                 type="button"
                                 onClick={() => setMobileProvider(net.code)}
-                                className={`min-w-0 rounded-lg border px-3 py-2 text-left transition ${
+                                className={`min-h-[54px] min-w-0 rounded-lg border px-3 py-2 text-left transition ${
+                                  isSpanFull ? 'col-span-2' : ''
+                                } ${
                                   active
                                     ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
                                     : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
@@ -1093,12 +1098,13 @@ function Pricing() {
                         <input
                           id="mm-phone"
                           type="tel"
+                          inputMode="tel"
                           required
                           autoComplete="tel"
                           value={accountInput}
                           onChange={(e) => setAccountInput(e.target.value)}
                           placeholder="07XX XXX XXX or 2557XX XXX XXX"
-                          className="field font-mono text-sm"
+                          className="field font-mono text-base"
                         />
                         <p className="mt-1 font-mono text-[10px] text-stone">
                           {ui(
@@ -1166,10 +1172,11 @@ function Pricing() {
                           <input
                             id="bank-mobile"
                             type="tel"
+                            inputMode="tel"
                             value={bankMobileInput}
                             onChange={(e) => setBankMobileInput(e.target.value)}
                             placeholder="07XX XXX XXX"
-                            className="field font-mono text-sm"
+                            className="field font-mono text-base"
                           />
                         </div>
                         <div>

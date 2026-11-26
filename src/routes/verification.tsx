@@ -1,9 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowRight, Check, CircleSlash, Clock, UserCheck, CalendarCheck } from 'lucide-react'
 import { PROJECTS } from '../data/fixtures'
-import { levelTone } from '../components/VerificationBadge'
+import VerificationBadge, { levelTone } from '../components/VerificationBadge'
 import { useI18n } from '../i18n'
 import { useAuthState } from '../lib/supabaseAuth'
+import {
+  normalizeVerificationLevel,
+  VERIFICATION_LEVEL_LIST,
+} from '../lib/verificationLevels'
 
 export const Route = createFileRoute('/verification')({
   head: () => ({ meta: [{ title: 'Verification framework — MineConnect' }] }),
@@ -15,7 +19,11 @@ function Verification() {
   const { session, profile } = useAuthState()
   const levels = fixtures.verificationLevels
   const counts = levels.map((v) => PROJECTS.filter((p) => p.verification.level === v.level).length)
-  const max = Math.max(...counts)
+  const max = Math.max(...counts, 1)
+  const currentUserLevel = normalizeVerificationLevel(
+    profile?.verification_level,
+    profile?.verification_status,
+  )
 
   return (
     <div className="pt-[72px]">
@@ -30,14 +38,15 @@ function Verification() {
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-paper/70">{t('verif.subtitle')}</p>
           {session && (
             <div className="mt-6 inline-flex flex-wrap items-center gap-3 rounded-xl border border-gold/35 bg-paper/10 px-4 py-3 text-xs">
+              <VerificationBadge level={currentUserLevel} size="md" showQuota />
               <span className="font-mono uppercase tracking-wider text-gold">
-                Your Account Verification Status:{' '}
+                Status:{' '}
                 <strong>{profile?.verification_status || 'unverified'}</strong>
               </span>
               <Link to="/dashboard" className="font-semibold text-paper underline hover:text-gold">
                 {profile?.verification_status === 'verified'
-                  ? 'View Verified Badge in Vault →'
-                  : 'Submit / Manage Verification Request →'}
+                  ? 'Manage Verification in Vault →'
+                  : 'Submit / Upgrade Verification Level →'}
               </Link>
             </div>
           )}
@@ -71,8 +80,11 @@ function Verification() {
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-current/15">
                     <div className="h-full rounded-full bg-current" style={{ width: `${(counts[i] / max) * 100}%` }} />
                   </div>
-                  <div className="mt-1.5 font-mono text-[10px] uppercase tracking-wider opacity-70">
-                    {t('verif.pilotListings', { count: counts[i] })}
+                  <div className="mt-1.5 flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-wider opacity-80 tabular-nums">
+                    <span>{t('verif.pilotListings', { count: counts[i] })}</span>
+                    <span>
+                      Pilot Cap: {VERIFICATION_LEVEL_LIST[v.level]?.pilotListingQuota ?? 1}
+                    </span>
                   </div>
                 </div>
               </div>

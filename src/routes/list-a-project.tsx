@@ -6,6 +6,12 @@ import { useI18n, type TranslationKey } from '../i18n'
 import { createGroundedProject, fetchGroundedUserData, getSession, useAuthState } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
 import { useSubscription } from '../lib/subscriptions'
+import {
+  evaluateListingQuotas,
+  normalizeVerificationLevel,
+  VERIFICATION_LEVELS,
+} from '../lib/verificationLevels'
+import VerificationBadge, { VerificationLimitsNotice } from '../components/VerificationBadge'
 import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
@@ -35,13 +41,14 @@ type Form = Record<string, string | string[] | boolean>
 function ListProject() {
   const { t, tv, fixtures } = useI18n()
   const navigate = useNavigate()
-  const { session, loading: authLoading } = useAuthState()
+  const { session, profile, isAdmin, loading: authLoading } = useAuthState()
   const { currency, toUsd } = useCurrency()
   const {
     plan,
     planId,
     entitlements,
     tierName,
+    isPaidActive,
     isExpired,
     canCreateListing,
     refreshSubscription,
@@ -60,10 +67,20 @@ function ListProject() {
     projectsCount,
     entitlements.active_listings_count,
   )
+  const userVerificationLevel = normalizeVerificationLevel(
+    profile?.verification_level,
+    profile?.verification_status,
+  )
+  const quotaEval = evaluateListingQuotas({
+    verificationLevel: userVerificationLevel,
+    activeListingsUsed: effectiveListingsUsed,
+    isPaidActive: isPaidActive && canCreateListing,
+    subscriptionMaxListings: entitlements.max_active_listings,
+    isAdmin,
+  })
   const listingsLimit = entitlements.max_active_listings
-  const listingsUnlimited = listingsLimit < 0 || listingsLimit >= 999
-  const listingEntitlementOk =
-    canCreateListing && (listingsUnlimited || effectiveListingsUsed < listingsLimit)
+  const listingsUnlimited = quotaEval.subscriptionUnlimited
+  const listingEntitlementOk = quotaEval.allowed
   const [form, setForm] = useState<Form>(() => {
     const active = getSession()
     return {
@@ -154,6 +171,15 @@ function ListProject() {
     if (!validate()) return
     if (step === STEP_KEYS.length - 1) {
       if (!listingEntitlementOk) {
+        if (quotaEval.blockedBy === 'verification_pilot') {
+          setErrors((prev) => ({
+            ...prev,
+            captcha:
+              quotaEval.reason ||
+              `Verification level ${userVerificationLevel} (${VERIFICATION_LEVELS[userVerificationLevel].title}) pilot listing limit reached (${quotaEval.verificationPilotQuota}). Request a higher verification level in your Member Vault.`,
+          }))
+          return
+        }
         setShowUpgradeModal(true)
         return
       }
@@ -281,29 +307,53 @@ function ListProject() {
       </section>
 
       <div className="mx-auto max-w-5xl px-5 py-12 lg:px-8">
-        {/* Subscription Entitlement & Quota Gate */}
+        {/* Decoupled Subscription Entitlement & L0–L4 Verification Pilot Quota Gate */}
         {listingEntitlementOk ? (
-          <div className="mb-8 flex flex-col justify-between gap-4 rounded-2xl border border-ink/15 bg-ink p-5 text-paper sm:flex-row sm:items-center">
-            <div>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-gold">
-                <Crown size={14} />
-                <span>
-                  Active Subscription: <strong>{plan.name}</strong>
-                </span>
-                <span>·</span>
-                <span>
-                  Active Project Listings:{' '}
-                  <strong>
-                    {effectiveListingsUsed} /{' '}
-                    {listingsUnlimited ? 'Unlimited' : listingsLimit}
-                  </strong>
-                </span>
+          <div className="mb-8 space-y-3 rounded-2xl border border-ink/15 bg-ink p-5 text-paper">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-gold tabular-nums">
+                  <Crown size={14} />
+                  <span>
+                    Subscription: <strong>{plan.name}</strong> ({effectiveListingsUsed} /{' '}
+                    {listingsUnlimited ? 'Unlimited' : listingsLimit})
+                  </span>
+                  <span>·</span>
+                  <span>
+                    Verification Pilot Cap ({userVerificationLevel}):{' '}
+                    <strong>
+                      {effectiveListingsUsed} / {quotaEval.verificationPilotQuota}
+                    </strong>
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-paper/70">
+                  Subscription tier and verification level ({userVerificationLevel} ·{' '}
+                  {VERIFICATION_LEVELS[userVerificationLevel].title}) are enforced independently.
+                </p>
               </div>
-              <p className="mt-1 text-xs text-paper/70">
-                Your verified {plan.name} subscription entitles you to publish{' '}
-                {listingsUnlimited ? 'unlimited' : `up to ${listingsLimit}`} active mining project listings.
-              </p>
+              <VerificationBadge level={userVerificationLevel} size="md" showQuota />
             </div>
+            <VerificationLimitsNotice level={userVerificationLevel} compact />
+          </div>
+        ) : quotaEval.blockedBy === 'verification_pilot' ? (
+          <div className="mb-8 space-y-3 rounded-2xl border border-ochre/40 bg-paper-2 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <VerificationBadge level={userVerificationLevel} size="md" showQuota />
+                  <span className="font-mono text-xs font-semibold text-ochre tabular-nums">
+                    Pilot Quota Reached ({effectiveListingsUsed} / {quotaEval.verificationPilotQuota})
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-ink">
+                  {quotaEval.reason}
+                </p>
+              </div>
+              <Link to="/dashboard" className="btn-primary !py-2 !px-4 text-xs shrink-0">
+                Upgrade Verification Level →
+              </Link>
+            </div>
+            <VerificationLimitsNotice level={userVerificationLevel} compact />
           </div>
         ) : (
           <div className="mb-8">

@@ -26,6 +26,36 @@ export type UserVerificationStatus =
   | 'verified'
   | 'rejected';
 
+export type VerificationLevelCode = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+
+export interface VerificationSubmissionSummary {
+  id: string;
+  user_id: string;
+  requested_level: Exclude<VerificationLevelCode, 'L0'>;
+  status: 'pending' | 'approved' | 'rejected';
+  company_name: string;
+  phone: string | null;
+  licence_reference: string | null;
+  document_name: string | null;
+  document_mime: string | null;
+  document_size_bytes: number | null;
+  document_storage_path: string | null;
+  reviewer_notes: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface VerificationSubmissionPreview {
+  id: string;
+  notes: string | null;
+  reviewer_notes: string | null;
+  document_name: string | null;
+  document_mime: string | null;
+  document_size_bytes: number | null;
+  signedUrl: string | null;
+  warning?: string | null;
+}
+
 export type DocumentClassification =
   | 'PUBLIC'
   | 'INTERNAL'
@@ -122,6 +152,7 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   verification_status?: UserVerificationStatus;
+  verification_level?: VerificationLevelCode;
   verification_notes?: string | null;
   verified_at?: string | null;
   verified_by?: string | null;
@@ -219,6 +250,7 @@ export interface UserListedProject {
     | 'REJECTED';
   approved?: boolean;
   is_featured?: boolean;
+  verification_level?: VerificationLevelCode;
   rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
@@ -248,6 +280,7 @@ export interface QuoteRequestRecord {
     | 'REJECTED';
   approved?: boolean;
   is_featured?: boolean;
+  verification_level?: VerificationLevelCode;
   rejection_reason?: string | null;
   moderation_notes?: string | null;
   reviewed_by?: string | null;
@@ -542,6 +575,7 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;
@@ -557,11 +591,69 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;
           preferred_currency?: SupportedCurrency;
           terms_accepted_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      verification_submissions: {
+        Row: {
+          id: string;
+          user_id: string;
+          requested_level: Exclude<VerificationLevelCode, 'L0'>;
+          status: 'pending' | 'approved' | 'rejected';
+          company_name: string;
+          phone: string | null;
+          licence_reference: string | null;
+          notes: string | null;
+          reviewer_notes: string | null;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          document_name: string | null;
+          document_mime: string | null;
+          document_size_bytes: number | null;
+          document_storage_path: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          requested_level?: Exclude<VerificationLevelCode, 'L0'>;
+          status?: 'pending' | 'approved' | 'rejected';
+          company_name: string;
+          phone?: string | null;
+          licence_reference?: string | null;
+          notes?: string | null;
+          reviewer_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          document_name?: string | null;
+          document_mime?: string | null;
+          document_size_bytes?: number | null;
+          document_storage_path?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          requested_level?: Exclude<VerificationLevelCode, 'L0'>;
+          status?: 'pending' | 'approved' | 'rejected';
+          company_name?: string;
+          phone?: string | null;
+          licence_reference?: string | null;
+          notes?: string | null;
+          reviewer_notes?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          document_name?: string | null;
+          document_mime?: string | null;
+          document_size_bytes?: number | null;
+          document_storage_path?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -630,6 +722,7 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;
@@ -645,6 +738,7 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;
@@ -898,6 +992,7 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;
@@ -913,6 +1008,7 @@ export type Database = {
           role?: UserRole;
           status?: UserStatus;
           verification_status?: UserVerificationStatus;
+          verification_level?: VerificationLevelCode;
           verification_notes?: string | null;
           verified_at?: string | null;
           verified_by?: string | null;

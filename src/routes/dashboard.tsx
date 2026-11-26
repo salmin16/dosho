@@ -10,6 +10,7 @@ import {
   PlusCircle,
   ShieldCheck,
   Trash2,
+  UploadCloud,
   Wrench,
 } from 'lucide-react'
 import {
@@ -26,6 +27,20 @@ import { useLocalization } from '../context/LocalizationContext'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
+import VerificationBadge, {
+  VerificationLimitsNotice,
+} from '../components/VerificationBadge'
+import {
+  normalizeVerificationLevel,
+  VERIFICATION_LEVELS,
+  VERIFICATION_LEVEL_LIST,
+  type VerificationLevelCode,
+} from '../lib/verificationLevels'
+import {
+  formatBytesCompact,
+  validateAndCompressVerificationFile,
+  type PreparedVerificationFile,
+} from '../lib/verificationUpload'
 import type {
   DocumentClassification,
   QuoteRequestRecord,
@@ -66,10 +81,16 @@ export function DashboardRouteComponent() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Member Identity Verification Request State (`public.profiles.verification_status`)
+  // Member Identity Verification Request State (`public.profiles` + `verification_submissions`)
   const [verifCompany, setVerifCompany] = useState('')
   const [verifPhone, setVerifPhone] = useState('')
+  const [verifLicenceRef, setVerifLicenceRef] = useState('')
+  const [verifRequestedLevel, setVerifRequestedLevel] =
+    useState<Exclude<VerificationLevelCode, 'L0'>>('L1')
   const [verifNotes, setVerifNotes] = useState('')
+  const [verifFile, setVerifFile] = useState<PreparedVerificationFile | null>(null)
+  const [verifFileError, setVerifFileError] = useState<string | null>(null)
+  const [verifCompressing, setVerifCompressing] = useState(false)
   const [verifMessage, setVerifMessage] = useState<string | null>(null)
   const [verifSubmitting, setVerifSubmitting] = useState(false)
 
@@ -135,6 +156,29 @@ export function DashboardRouteComponent() {
     navigate({ to: '/login' })
   }
 
+  const handleVerificationFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0]
+    setVerifFileError(null)
+    if (!file) {
+      setVerifFile(null)
+      return
+    }
+    setVerifCompressing(true)
+    try {
+      const result = await validateAndCompressVerificationFile(file)
+      if (!result.ok) {
+        setVerifFile(null)
+        setVerifFileError(result.error)
+      } else {
+        setVerifFile(result.prepared)
+      }
+    } finally {
+      setVerifCompressing(false)
+    }
+  }
+
   const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault()
     setVerifMessage(null)
@@ -143,13 +187,20 @@ export function DashboardRouteComponent() {
       const res = await submitUserVerificationRequest({
         companyName: verifCompany,
         phone: verifPhone,
+        licenceReference: verifLicenceRef,
+        requestedLevel: verifRequestedLevel,
         notes: verifNotes,
+        preparedFile: verifFile,
       })
       if (res.error) {
         setVerifMessage(res.error)
       } else {
-        setVerifMessage('Verification request submitted! An administrator will review your profile shortly.')
+        setVerifMessage(
+          res.warning ||
+            `Verification request for ${verifRequestedLevel} (${VERIFICATION_LEVELS[verifRequestedLevel].title}) submitted! An administrator will review your profile shortly.`,
+        )
         setVerifNotes('')
+        setVerifFile(null)
         await loadData()
       }
     } finally {
@@ -157,11 +208,17 @@ export function DashboardRouteComponent() {
     }
   }
 
+  const currentVerifLevel = normalizeVerificationLevel(
+    profile?.verification_level,
+    profile?.verification_status,
+  )
+  const currentVerifSpec = VERIFICATION_LEVELS[currentVerifLevel]
+
   return (
     <div
       data-currency={currency}
       data-language={language}
-      className="min-h-screen bg-paper pb-24 pt-28 text-ink"
+      className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink"
     >
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
         {/* Clean Workspace Welcome Header */}
@@ -218,14 +275,15 @@ export function DashboardRouteComponent() {
           />
         </div>
 
-        {/* Member Identity Verification Status & Request Panel */}
-        <section className="mt-6 rounded-xl border border-ink/12 bg-white/80 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+        {/* Member Identity Verification Status & 5-Tier (L0–L4) Fast Pipeline Panel */}
+        <section className="mt-6 space-y-4 rounded-xl border border-ink/12 bg-white/80 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-display text-lg font-semibold text-ink">
-                  Identity &amp; Organization Verification
+                  5-Tier Account &amp; Tenement Verification (L0–L4)
                 </h2>
+                <VerificationBadge level={currentVerifLevel} size="sm" showQuota />
                 <span
                   className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${
                     profile?.verification_status === 'verified'
@@ -241,60 +299,112 @@ export function DashboardRouteComponent() {
                 </span>
               </div>
               <p className="mt-1 text-xs text-stone">
-                {profile?.verification_status === 'verified'
-                  ? 'Your account holds an official MineConnect Verified badge across all listings and quotes.'
-                  : profile?.verification_status === 'pending'
-                    ? 'Your verification submission is in the Admin Governance queue for review.'
-                    : 'Submit your organization details to earn a Verified badge on your services, projects, and opportunities.'}
+                Current tier: <strong className="text-ink">{currentVerifSpec.code} · {currentVerifSpec.title}</strong>{' '}
+                (Pilot listing quota: <strong className="font-mono tabular-nums">{currentVerifSpec.pilotListingQuota}</strong> — decoupled from your subscription plan).
               </p>
               {profile?.verification_notes && (
                 <p className="mt-1 text-xs italic text-ink/75">
-                  Admin Note: {profile.verification_notes}
+                  Reviewer Note: {profile.verification_notes}
                 </p>
               )}
             </div>
+            <Link to="/verification" className="font-mono text-[11px] font-semibold text-ochre hover:underline shrink-0">
+              View L0–L4 Framework →
+            </Link>
           </div>
 
-          {profile?.verification_status !== 'verified' && (
-            <form onSubmit={handleSubmitVerification} className="mt-4 grid gap-3 sm:grid-cols-4">
-              <input
-                type="text"
-                required
-                value={verifCompany}
-                onChange={(e) => setVerifCompany(e.target.value)}
-                placeholder="Company / Organization Name"
-                className="field !py-2 !text-xs"
-              />
-              <input
-                type="tel"
-                value={verifPhone}
-                onChange={(e) => setVerifPhone(e.target.value)}
-                placeholder="Phone (+255 ...)"
-                className="field !py-2 !text-xs"
-              />
-              <input
-                type="text"
-                value={verifNotes}
-                onChange={(e) => setVerifNotes(e.target.value)}
-                placeholder="BRELA / Mining Licence Ref (optional)"
-                className="field !py-2 !text-xs"
-              />
-              <button
-                type="submit"
-                disabled={verifSubmitting}
-                className="btn-primary !py-2 text-xs disabled:opacity-50"
-              >
-                {verifSubmitting
-                  ? 'Submitting...'
-                  : profile?.verification_status === 'pending'
-                    ? 'Update Request'
-                    : 'Request Verification'}
-              </button>
+          <VerificationLimitsNotice level={currentVerifLevel} compact />
+
+          {currentVerifLevel !== 'L4' && (
+            <form onSubmit={handleSubmitVerification} className="space-y-3 border-t border-ink/10 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <input
+                  type="text"
+                  required
+                  value={verifCompany}
+                  onChange={(e) => setVerifCompany(e.target.value)}
+                  placeholder="Company / Organization Name"
+                  className="field !py-2 !text-xs"
+                />
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={verifPhone}
+                  onChange={(e) => setVerifPhone(e.target.value)}
+                  placeholder="Phone (+255 ...)"
+                  className="field !py-2 !text-xs"
+                />
+                <select
+                  value={verifRequestedLevel}
+                  onChange={(e) =>
+                    setVerifRequestedLevel(
+                      e.target.value as Exclude<VerificationLevelCode, 'L0'>,
+                    )
+                  }
+                  className="field !py-2 !text-xs"
+                  aria-label="Target verification level"
+                >
+                  {VERIFICATION_LEVEL_LIST.filter((v) => v.code !== 'L0').map((v) => (
+                    <option key={v.code} value={v.code}>
+                      {v.code} · {v.title} (Pilot cap: {v.pilotListingQuota})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={verifLicenceRef}
+                  onChange={(e) => setVerifLicenceRef(e.target.value)}
+                  placeholder="BRELA / Mining Licence Ref"
+                  className="field !py-2 !text-xs"
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+                <input
+                  type="text"
+                  value={verifNotes}
+                  onChange={(e) => setVerifNotes(e.target.value)}
+                  placeholder="Additional verification notes (optional)"
+                  className="field !py-2 !text-xs"
+                />
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-ink/25 bg-paper/70 px-3 py-2 text-xs text-stone transition hover:border-ochre hover:text-ink">
+                  <UploadCloud size={15} className="shrink-0 text-ochre" />
+                  <span className="truncate font-mono text-[11px]">
+                    {verifCompressing
+                      ? 'Compressing file...'
+                      : verifFile
+                        ? `${verifFile.fileName} (${formatBytesCompact(verifFile.compressedBytes)}${verifFile.wasCompressed ? ' compressed' : ''})`
+                        : 'Attach KYC / Licence Doc (PDF/JPG/PNG)'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => void handleVerificationFileChange(e)}
+                    className="sr-only"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={verifSubmitting || verifCompressing}
+                  className="btn-primary !min-h-[36px] !py-2 text-xs disabled:opacity-50"
+                >
+                  {verifSubmitting
+                    ? 'Submitting...'
+                    : profile?.verification_status === 'pending'
+                      ? `Update ${verifRequestedLevel} Request`
+                      : `Request ${verifRequestedLevel}`}
+                </button>
+              </div>
+              {verifFileError && (
+                <p className="rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-xs text-danger">
+                  {verifFileError}
+                </p>
+              )}
             </form>
           )}
 
           {verifMessage && (
-            <p className="mt-3 rounded border border-moss/30 bg-moss-light px-3 py-2 text-xs font-medium text-moss">
+            <p className="rounded border border-moss/30 bg-moss-light px-3 py-2 text-xs font-medium text-moss">
               {verifMessage}
             </p>
           )}

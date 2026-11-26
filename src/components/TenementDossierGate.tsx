@@ -22,6 +22,7 @@ import {
 import { useLocalization } from '../context/LocalizationContext'
 import { useSubscription } from '../lib/subscriptions'
 import type { CounterpartyDossierData } from '../lib/counterpartyDossier'
+import VerificationBadge, { VerificationLimitsNotice } from './VerificationBadge'
 
 export interface TenementDossierGateProps {
   dossier: CounterpartyDossierData
@@ -82,6 +83,7 @@ export default function TenementDossierGate({
             <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-semibold text-gold">
               {dossier.recordCode}
             </span>
+            <VerificationBadge level={dossier.verificationLevel} size="sm" />
             {hasDossierAccess ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-moss/40 bg-moss-light px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-moss">
                 <Unlock size={11} />
@@ -127,6 +129,7 @@ export default function TenementDossierGate({
 
       {/* Body Content */}
       <div className="space-y-5 p-4 sm:p-6">
+        <VerificationLimitsNotice level={dossier.verificationLevel} />
         {hasDossierAccess ? (
           <>
             {/* UNLOCKED: Full Tenement / Accreditation & Due-Diligence Dossier */}

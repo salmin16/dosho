@@ -1,5 +1,11 @@
 import type { Project, ServiceProvider } from '../data/fixtures'
-import type { UserListedProject, UserOpportunityRecord, UserServiceRecord } from '../types/database'
+import type {
+  UserListedProject,
+  UserOpportunityRecord,
+  UserServiceRecord,
+  VerificationLevelCode,
+} from '../types/database'
+import { normalizeVerificationLevel } from './verificationLevels'
 
 export interface DossierComplianceNote {
   label: string
@@ -20,6 +26,7 @@ export interface CounterpartyDossierData {
   licenceStatus: string
   licenceDates?: string
   areaLabel?: string
+  verificationLevel: VerificationLevelCode
   verificationStatus: string
   verificationAuthority: string
   complianceNotes: DossierComplianceNote[]
@@ -103,6 +110,7 @@ export function buildProjectDossier(project: Project): CounterpartyDossierData {
     licenceStatus: project.licence.status,
     licenceDates: `Issued ${project.licence.issued} · Expires ${project.licence.expires}`,
     areaLabel: `${project.areaHa.toLocaleString('en-US')} ha · ${project.stage}`,
+    verificationLevel: normalizeVerificationLevel(project.verification.level),
     verificationStatus: `Level ${project.verification.level} Verified`,
     verificationAuthority: `${project.verification.checkedBy} (${project.verification.checkedOn})`,
     complianceNotes: [
@@ -140,6 +148,7 @@ export function buildServiceProviderDossier(
     licenceStatus: provider.verified ? 'Verified & Accredited' : 'Active Directory Member',
     licenceDates: 'Valid 2026–2027 Mining Commission Cycle',
     areaLabel: `Operating Base: ${provider.location} · Nationwide Deployment`,
+    verificationLevel: provider.verified ? 'L1' : 'L0',
     verificationStatus: provider.verified
       ? `MineConnect Verified (${provider.rating.toFixed(1)}★ · ${provider.reviews} reviews)`
       : `Standard Profile (${provider.rating.toFixed(1)}★ · ${provider.reviews} reviews)`,
@@ -187,6 +196,7 @@ export function buildLiveServiceDossier(
     licenceReference: service.reference_code,
     licenceStatus: service.status === 'active' ? 'Admin Approved · Active' : service.status,
     areaLabel: `Coverage: ${service.regional_coverage}`,
+    verificationLevel: service.approved || service.status === 'active' ? 'L1' : 'L0',
     verificationStatus: 'Admin Approved & Compliance Checked',
     verificationAuthority: 'MineConnect Admin Governance Queue',
     complianceNotes: [
@@ -232,6 +242,7 @@ export function buildLiveOpportunityDossier(
     licenceReference: opp.reference_code,
     licenceStatus: opp.status === 'active' ? 'Active Tender / Opportunity' : opp.status,
     licenceDates: `Submission Deadline: ${opp.deadline}`,
+    verificationLevel: opp.approved || opp.status === 'active' ? 'L1' : 'L0',
     verificationStatus: 'Admin Verified Member Listing',
     verificationAuthority: 'MineConnect Moderation & Governance Desk',
     complianceNotes:
@@ -280,6 +291,10 @@ export function buildLiveProjectDossier(
         ? 'Verified Active Tenement'
         : proj.status,
     areaLabel: `${proj.region} · Target US$${Number(proj.investment_usd).toLocaleString('en-US')}`,
+    verificationLevel: normalizeVerificationLevel(
+      proj.verification_level,
+      proj.approved || proj.status === 'VERIFIED' ? 'verified' : 'unverified',
+    ),
     verificationStatus: 'MineConnect Admin Verified Listing',
     verificationAuthority: 'MineConnect Cadastre & Compliance Queue',
     complianceNotes: [
