@@ -286,6 +286,7 @@ export type Database = {
       opportunities: {
         Row: {
           approved: boolean
+          attachments: Json
           category: string
           compensation_usd: number
           created_at: string
@@ -302,12 +303,14 @@ export type Database = {
           reviewed_at: string | null
           reviewed_by: string | null
           status: string
+          structured_details: Json
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
           approved?: boolean
+          attachments?: Json
           category: string
           compensation_usd?: number
           created_at?: string
@@ -324,12 +327,14 @@ export type Database = {
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
+          structured_details?: Json
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
           approved?: boolean
+          attachments?: Json
           category?: string
           compensation_usd?: number
           created_at?: string
@@ -346,6 +351,7 @@ export type Database = {
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
+          structured_details?: Json
           title?: string
           updated_at?: string
           user_id?: string
@@ -694,6 +700,7 @@ export type Database = {
       services: {
         Row: {
           approved: boolean
+          attachments: Json
           certifications: string
           created_at: string
           estimated_rate_usd: number
@@ -712,11 +719,13 @@ export type Database = {
           scope_description: string
           service_name: string
           status: string
+          structured_details: Json
           updated_at: string
           user_id: string
         }
         Insert: {
           approved?: boolean
+          attachments?: Json
           certifications?: string
           created_at?: string
           estimated_rate_usd?: number
@@ -735,11 +744,13 @@ export type Database = {
           scope_description: string
           service_name: string
           status?: string
+          structured_details?: Json
           updated_at?: string
           user_id: string
         }
         Update: {
           approved?: boolean
+          attachments?: Json
           certifications?: string
           created_at?: string
           estimated_rate_usd?: number
@@ -758,6 +769,7 @@ export type Database = {
           scope_description?: string
           service_name?: string
           status?: string
+          structured_details?: Json
           updated_at?: string
           user_id?: string
         }
