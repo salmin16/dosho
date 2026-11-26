@@ -1156,6 +1156,7 @@ export type Database = {
           document_name: string | null
           document_size_bytes: number | null
           document_storage_path: string | null
+          documents: Json
           id: string
           licence_reference: string | null
           notes: string | null
@@ -1175,6 +1176,7 @@ export type Database = {
           document_name?: string | null
           document_size_bytes?: number | null
           document_storage_path?: string | null
+          documents?: Json
           id?: string
           licence_reference?: string | null
           notes?: string | null
@@ -1194,6 +1196,7 @@ export type Database = {
           document_name?: string | null
           document_size_bytes?: number | null
           document_storage_path?: string | null
+          documents?: Json
           id?: string
           licence_reference?: string | null
           notes?: string | null
