@@ -1238,8 +1238,9 @@ function Pricing() {
                         action="subscription-payment"
                         appearance="interaction-only"
                         execution="render"
-                        timeoutMs={20000}
+                        timeoutMs={5000}
                         allowMobileFallback
+                        fallbackLabel="Verified via signed-in session"
                         onVerify={handleTurnstileVerify}
                         onExpire={handleTurnstileExpire}
                         onFallbackReady={handleTurnstileFallback}

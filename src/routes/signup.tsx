@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
 import { Logo } from '../components/Header'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
-import { formatSafeUserError } from '../lib/verifyTurnstileClient'
+import {
+  formatSafeUserError,
+  verifyTurnstileAuthFallback,
+} from '../lib/verifyTurnstileClient'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
 import TurnstileWidget, {
@@ -31,6 +34,7 @@ function SignUpRouteComponent() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaFallback, setCaptchaFallback] = useState(false)
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,15 +43,16 @@ function SignUpRouteComponent() {
 
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
+  const captchaSatisfied = !turnstileEnabled || Boolean(captchaToken) || captchaFallback
 
-  // Require fresh Turnstile token (when enabled) + explicit clickwrap consent
+  // Require fresh Turnstile token or active mobile fallback + explicit clickwrap consent
   const isSubmitDisabled =
     submitting ||
     !email.trim() ||
     !password ||
     !confirmPassword ||
     !acceptedTerms ||
-    (turnstileEnabled && !captchaToken)
+    !captchaSatisfied
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -78,7 +83,7 @@ function SignUpRouteComponent() {
       return
     }
 
-    if (turnstileEnabled && !captchaToken) {
+    if (!captchaSatisfied) {
       setError('Please complete the security verification check before creating an account.')
       return
     }
@@ -86,6 +91,14 @@ function SignUpRouteComponent() {
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
+      if (turnstileEnabled && !captchaToken && captchaFallback) {
+        const fallbackCheck = await verifyTurnstileAuthFallback('signup')
+        if (!fallbackCheck.ok) {
+          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+          return
+        }
+      }
+
       const res = await signUpWithEmail({
         fullName: validation.data.fullName,
         email: validation.data.email,
@@ -101,10 +114,10 @@ function SignUpRouteComponent() {
         )
         setPassword('')
         setConfirmPassword('')
-        shouldResetCaptcha = true
+        shouldResetCaptcha = Boolean(captchaToken)
       } else if (res.error) {
         setError(formatSafeUserError(res.error, 'Unable to create your account. Please try again.'))
-        shouldResetCaptcha = true
+        shouldResetCaptcha = Boolean(captchaToken)
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -115,11 +128,12 @@ function SignUpRouteComponent() {
           'Unexpected sign-up error. Please try again.'
         )
       )
-      shouldResetCaptcha = true
+      shouldResetCaptcha = Boolean(captchaToken)
     } finally {
       setSubmitting(false)
       if (shouldResetCaptcha) {
         setCaptchaToken('')
+        setCaptchaFallback(false)
         if (turnstileRef.current) {
           turnstileRef.current.reset()
         } else {
@@ -308,17 +322,29 @@ function SignUpRouteComponent() {
                 <TurnstileWidget
                   ref={turnstileRef}
                   resetKey={turnstileResetKey}
-                  timeoutMs={20000}
+                  timeoutMs={5000}
+                  allowMobileFallback
+                  fallbackLabel="Basic network check active"
                   theme="light"
                   action="signup"
                   onVerify={(token) => {
                     setCaptchaToken(token)
+                    setCaptchaFallback(false)
                     setError(null)
                   }}
-                  onExpire={() => setCaptchaToken('')}
+                  onExpire={() => {
+                    setCaptchaToken('')
+                    setCaptchaFallback(false)
+                  }}
+                  onFallbackReady={() => {
+                    setCaptchaToken('')
+                    setCaptchaFallback(true)
+                    setError(null)
+                  }}
                   onError={(msg) => {
                     setCaptchaToken('')
-                    if (msg) setError(msg)
+                    setCaptchaFallback(true)
+                    if (msg) setError(null)
                   }}
                 />
               </div>

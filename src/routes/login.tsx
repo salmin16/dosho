@@ -20,7 +20,10 @@ import {
   signInWithEmail,
   useAuthState,
 } from '../lib/supabaseAuth'
-import { formatSafeUserError } from '../lib/verifyTurnstileClient'
+import {
+  formatSafeUserError,
+  verifyTurnstileAuthFallback,
+} from '../lib/verifyTurnstileClient'
 
 const RESET_COOLDOWN_KEY = 'mineconnect_pwd_reset_cooldown_until'
 const RESET_COOLDOWN_SECONDS = 60
@@ -74,6 +77,7 @@ function LoginRouteComponent() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaFallback, setCaptchaFallback] = useState(false)
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -83,6 +87,7 @@ function LoginRouteComponent() {
 
   const triggerTurnstileReset = () => {
     setCaptchaToken('')
+    setCaptchaFallback(false)
     if (turnstileRef.current) {
       turnstileRef.current.reset()
     } else {
@@ -122,14 +127,16 @@ function LoginRouteComponent() {
     return () => window.clearInterval(timer)
   }, [cooldownSeconds])
 
+  const captchaSatisfied = !turnstileEnabled || Boolean(captchaToken) || captchaFallback
+
   const isSubmitDisabled =
-    submitting || !email.trim() || !password || (turnstileEnabled && !captchaToken)
+    submitting || !email.trim() || !password || !captchaSatisfied
 
   const isResetSubmitDisabled =
     resetSending ||
     !email.trim() ||
     cooldownSeconds > 0 ||
-    (turnstileEnabled && !captchaToken)
+    !captchaSatisfied
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -140,7 +147,7 @@ function LoginRouteComponent() {
       return
     }
 
-    if (turnstileEnabled && !captchaToken) {
+    if (!captchaSatisfied) {
       setError('Please complete the security verification check before logging in.')
       return
     }
@@ -148,6 +155,14 @@ function LoginRouteComponent() {
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
+      if (turnstileEnabled && !captchaToken && captchaFallback) {
+        const fallbackCheck = await verifyTurnstileAuthFallback('login')
+        if (!fallbackCheck.ok) {
+          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+          return
+        }
+      }
+
       const res = await signInWithEmail({
         email,
         password,
@@ -155,7 +170,7 @@ function LoginRouteComponent() {
       })
       if (res.error) {
         setError(formatSafeUserError(res.error, 'Invalid email or password. Please try again.'))
-        shouldResetCaptcha = true
+        shouldResetCaptcha = Boolean(captchaToken)
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -166,7 +181,7 @@ function LoginRouteComponent() {
           'Unexpected sign-in error. Please try again.'
         )
       )
-      shouldResetCaptcha = true
+      shouldResetCaptcha = Boolean(captchaToken)
     } finally {
       setSubmitting(false)
       if (shouldResetCaptcha) {
@@ -189,13 +204,21 @@ function LoginRouteComponent() {
       return
     }
 
-    if (turnstileEnabled && !captchaToken) {
+    if (!captchaSatisfied) {
       setError('Please complete the security verification check before requesting a reset link.')
       return
     }
 
     setResetSending(true)
     try {
+      if (turnstileEnabled && !captchaToken && captchaFallback) {
+        const fallbackCheck = await verifyTurnstileAuthFallback('forgot-password')
+        if (!fallbackCheck.ok) {
+          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+          return
+        }
+      }
+
       const res = await requestPasswordResetEmail(
         trimmedEmail,
         captchaToken || undefined
@@ -214,7 +237,9 @@ function LoginRouteComponent() {
       setCooldownSeconds(RESET_COOLDOWN_SECONDS)
     } finally {
       setResetSending(false)
-      triggerTurnstileReset()
+      if (captchaToken) {
+        triggerTurnstileReset()
+      }
     }
   }
 
@@ -368,17 +393,29 @@ function LoginRouteComponent() {
                     key="turnstile-login"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
-                    timeoutMs={20000}
+                    timeoutMs={5000}
+                    allowMobileFallback
+                    fallbackLabel="Basic network check active"
                     theme="light"
                     action="login"
                     onVerify={(token) => {
                       setCaptchaToken(token)
+                      setCaptchaFallback(false)
                       setError(null)
                     }}
-                    onExpire={() => setCaptchaToken('')}
+                    onExpire={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(false)
+                    }}
+                    onFallbackReady={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(true)
+                      setError(null)
+                    }}
                     onError={(msg) => {
                       setCaptchaToken('')
-                      if (msg) setError(msg)
+                      setCaptchaFallback(true)
+                      if (msg) setError(null)
                     }}
                   />
                 )}
@@ -469,17 +506,29 @@ function LoginRouteComponent() {
                     key="turnstile-forgot"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
-                    timeoutMs={20000}
+                    timeoutMs={5000}
+                    allowMobileFallback
+                    fallbackLabel="Basic network check active"
                     theme="light"
                     action="forgot-password"
                     onVerify={(token) => {
                       setCaptchaToken(token)
+                      setCaptchaFallback(false)
                       setError(null)
                     }}
-                    onExpire={() => setCaptchaToken('')}
+                    onExpire={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(false)
+                    }}
+                    onFallbackReady={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(true)
+                      setError(null)
+                    }}
                     onError={(msg) => {
                       setCaptchaToken('')
-                      if (msg) setError(msg)
+                      setCaptchaFallback(true)
+                      if (msg) setError(null)
                     }}
                   />
                 )}

@@ -222,16 +222,24 @@ export default function SignUpPage() {
             </div>
           </div>
 
-          {turnstileEnabled && !captchaTimedOut && (
+          {turnstileEnabled && (
             <TurnstileWidget
               ref={turnstileRef}
               theme="dark"
-              timeoutMs={20000}
+              timeoutMs={5000}
+              allowMobileFallback
+              fallbackLabel="Basic network check active"
               onVerify={(token) => {
                 setCaptchaToken(token);
+                setCaptchaTimedOut(false);
                 setClientError(null);
               }}
               onExpire={() => setCaptchaToken('')}
+              onFallbackReady={() => {
+                setCaptchaToken('');
+                setCaptchaTimedOut(true);
+                setClientError(null);
+              }}
               onTimeout={() => setCaptchaTimedOut(true)}
               onError={() => setCaptchaTimedOut(true)}
             />

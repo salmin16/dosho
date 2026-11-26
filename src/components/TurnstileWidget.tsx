@@ -99,9 +99,8 @@ function loadTurnstileApi(
         if (typeof window.turnstile?.render === 'function') {
           window.clearInterval(poll);
           finishResolve(window.turnstile);
-        } else if (attempts >= 80) {
+        } else if (attempts >= 45) {
           window.clearInterval(poll);
-          removeExistingTurnstileScripts();
           finishReject(new Error('TURNSTILE_INIT_TIMEOUT'));
         }
       }, 100);
@@ -204,6 +203,8 @@ export interface TurnstileWidgetProps {
   onFallbackReady?: (reason: 'timeout_or_mobile_challenge') => void;
   /** Enables non-blocking fallback UX when widget stalls on mobile/in-app browsers */
   allowMobileFallback?: boolean;
+  /** Label displayed in the non-blocking fallback pill */
+  fallbackLabel?: string;
   /** Incrementing this counter declaratively clears the token and resets the widget */
   resetKey?: number;
   timeoutMs?: number;
@@ -252,8 +253,9 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       onTimeout,
       onFallbackReady,
       allowMobileFallback = false,
+      fallbackLabel = 'Basic network check active',
       resetKey,
-      timeoutMs = 20000,
+      timeoutMs = 5000,
       appearance = 'interaction-only',
       execution = 'render',
       action,
@@ -293,10 +295,16 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       (fallbackMsg: string, hint?: string | null) => {
         if (widgetStateRef.current === 'verified') return;
         if (allowMobileFallback) {
+          if (widgetIdRef.current && typeof window.turnstile?.remove === 'function') {
+            try {
+              window.turnstile.remove(widgetIdRef.current);
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+          widgetIdRef.current = null;
           setWidgetState('fallback');
-          setStatusMessage(
-            'Mobile browser verification took too long — secured via your signed-in account.',
-          );
+          setStatusMessage(fallbackLabel);
           setDiagnosticHint(hint ?? 'Mobile fallback active');
           onFallbackReadyRef.current?.('timeout_or_mobile_challenge');
           onTimeoutRef.current?.();
@@ -307,7 +315,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
         setDiagnosticHint(hint ?? null);
         onTimeoutRef.current?.();
       },
-      [allowMobileFallback],
+      [allowMobileFallback, fallbackLabel],
     );
 
     const hardRemountWidget = useCallback(() => {
@@ -377,28 +385,31 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       prevResetKeyRef.current = resetKey;
     }, [resetKey, resetWidget]);
 
-    // Watchdog (default 20s): auto-retry once past halfway, then show non-blocking fallback/retry UI
+    // Fast watchdog (default 5s): transition cleanly to non-blocking fallback so mobile/WebView users never stall
     useEffect(() => {
       if (!siteKey) return;
       if (widgetState !== 'loading' && widgetState !== 'ready') return;
 
-      const halfDelay = Math.max(8000, Math.round(timeoutMs * 0.55));
       const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
-      const retryTimer = window.setTimeout(() => {
-        if (
-          widgetStateRef.current !== 'verified' &&
-          !autoRetriedRef.current &&
-          widgetIdRef.current &&
-          typeof window.turnstile?.reset === 'function'
-        ) {
-          autoRetriedRef.current = true;
-          try {
-            window.turnstile.reset(widgetIdRef.current);
-          } catch {
-            // ignore transient reset error
-          }
-        }
-      }, halfDelay);
+      const halfDelay = Math.max(2200, Math.round(timeoutMs * 0.55));
+      const retryTimer =
+        timeoutMs >= 4500
+          ? window.setTimeout(() => {
+              if (
+                widgetStateRef.current === 'ready' &&
+                !autoRetriedRef.current &&
+                widgetIdRef.current &&
+                typeof window.turnstile?.reset === 'function'
+              ) {
+                autoRetriedRef.current = true;
+                try {
+                  window.turnstile.reset(widgetIdRef.current);
+                } catch {
+                  // ignore transient reset error
+                }
+              }
+            }, halfDelay)
+          : null;
 
       const fallbackTimer = window.setTimeout(() => {
         if (widgetStateRef.current === 'verified') return;
@@ -409,7 +420,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       }, timeoutMs);
 
       return () => {
-        window.clearTimeout(retryTimer);
+        if (retryTimer !== null) window.clearTimeout(retryTimer);
         window.clearTimeout(fallbackTimer);
       };
     }, [siteKey, widgetState, timeoutMs, activateFallbackOrError]);
@@ -600,20 +611,18 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
             </div>
           )}
 
-          <div
-            ref={containerRef}
-            className={
-              widgetState === 'fallback'
-                ? 'hidden'
-                : 'flex w-full min-w-0 max-w-full items-center justify-center overflow-hidden'
-            }
-          />
+          {widgetState !== 'fallback' && (
+            <div
+              ref={containerRef}
+              className="flex w-full min-w-0 max-w-full items-center justify-center overflow-hidden"
+            />
+          )}
 
           {widgetState === 'fallback' && (
             <>
               <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] font-medium text-moss">
                 <CheckCircle2 size={13} className="shrink-0" />
-                <span className="truncate">Verified via signed-in session</span>
+                <span className="truncate">{fallbackLabel}</span>
               </span>
               <button
                 type="button"

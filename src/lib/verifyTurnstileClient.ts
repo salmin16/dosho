@@ -63,13 +63,15 @@ export async function verifyTurnstileForForm(
     | 'request-quote'
     | 'compliance-complaint'
     | 'subscription-payment',
+  options?: { fallback?: boolean },
 ): Promise<ClientTurnstileVerificationResult> {
   if (!isTurnstileEnabled()) {
     return { ok: true }
   }
 
   const trimmed = token.trim()
-  if (!trimmed) {
+  const useFallback = Boolean(!trimmed && options?.fallback)
+  if (!trimmed && !useFallback) {
     return {
       ok: false,
       error: 'Please complete the security verification check before submitting.',
@@ -89,7 +91,13 @@ export async function verifyTurnstileForForm(
       success?: boolean
       error?: string
     }>('verify-turnstile', {
-      body: { token: trimmed, action },
+      body: useFallback
+        ? {
+            fallback: true,
+            turnstileBypassReason: 'timeout_or_mobile_challenge',
+            action,
+          }
+        : { token: trimmed, action },
     })
 
     if (error) {
@@ -117,5 +125,58 @@ export async function verifyTurnstileForForm(
       error:
         'Unable to reach the security verification service. Please retry in a moment.',
     }
+  }
+}
+
+/**
+ * Validates a mobile / in-app WebView fallback request (`fallback: true`)
+ * against the `verify-turnstile` Edge Function before proceeding with Supabase Auth.
+ * Respects server-enforced rate limits (429) while staying resilient on transient mobile network blips.
+ */
+export async function verifyTurnstileAuthFallback(
+  action: 'login' | 'signup' | 'forgot-password',
+): Promise<ClientTurnstileVerificationResult> {
+  if (!isTurnstileEnabled()) {
+    return { ok: true }
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return { ok: true }
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      success?: boolean
+      error?: string
+    }>('verify-turnstile', {
+      body: {
+        fallback: true,
+        turnstileBypassReason: 'timeout_or_mobile_challenge',
+        action,
+      },
+    })
+
+    if (data && data.success === false) {
+      return {
+        ok: false,
+        error: formatSafeUserError(
+          data.error,
+          'Too many attempts from this network. Please wait a moment and try again.',
+        ),
+      }
+    }
+
+    if (error && /429|too many/i.test(error.message ?? '')) {
+      return {
+        ok: false,
+        error: 'Too many attempts from this network. Please wait a moment and try again.',
+      }
+    }
+
+    return { ok: true }
+  } catch {
+    // Allow Supabase Auth's own server-side rate limits to govern if the edge function is transiently unreachable
+    return { ok: true }
   }
 }

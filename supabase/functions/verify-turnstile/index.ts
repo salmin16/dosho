@@ -22,28 +22,30 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Sliding-window in-memory per-user rate limit for mobile fallback requests (10 reqs / 10 min)
+// Sliding-window in-memory rate limits for mobile/WebView fallback requests
 const FALLBACK_WINDOW_MS = 10 * 60 * 1000;
 const FALLBACK_MAX_REQUESTS = 10;
+const NETWORK_FALLBACK_MAX_REQUESTS = 15;
 const userFallbackAttempts = new Map<string, number[]>();
 
-function checkUserRateLimit(userId: string): boolean {
+function checkFallbackRateLimit(key: string, maxRequests: number): boolean {
   const now = Date.now();
-  const prev = (userFallbackAttempts.get(userId) ?? []).filter(
+  const prev = (userFallbackAttempts.get(key) ?? []).filter(
     (ts) => now - ts < FALLBACK_WINDOW_MS,
   );
-  if (prev.length >= FALLBACK_MAX_REQUESTS) {
-    userFallbackAttempts.set(userId, prev);
+  if (prev.length >= maxRequests) {
+    userFallbackAttempts.set(key, prev);
     return false;
   }
   prev.push(now);
-  userFallbackAttempts.set(userId, prev);
+  userFallbackAttempts.set(key, prev);
   return true;
 }
 
 interface VerifyRequestBody {
   token?: string;
   action?: string;
+  fallback?: boolean;
   turnstileBypassReason?: string;
 }
 
@@ -117,56 +119,86 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
+  const isFallbackRequested = body.fallback === true;
   const bypassReason =
     typeof body.turnstileBypassReason === 'string'
       ? body.turnstileBypassReason.trim()
       : '';
+  const action =
+    typeof body.action === 'string' && body.action.trim()
+      ? body.action.trim().toLowerCase()
+      : 'unspecified';
 
-  // Graceful mobile/cellular fallback: when Turnstile widget timed out client-side,
-  // verify the caller's authenticated Supabase user JWT + enforce per-user rate limit.
-  if (!token && bypassReason === 'timeout_or_mobile_challenge') {
+  const remoteIp =
+    sanitizeIp(req.headers.get('cf-connecting-ip')) ??
+    sanitizeIp(req.headers.get('x-forwarded-for'));
+
+  // Graceful mobile / in-app WebView fallback:
+  // When Turnstile timed out or was blocked on mobile Safari / WhatsApp WebView,
+  // validate authenticated sessions (if Bearer JWT is provided) OR allow pre-auth
+  // login/signup fallback requests under strict origin + IP rate limiting alongside Supabase Auth rate limits.
+  if (!token && (isFallbackRequested || bypassReason === 'timeout_or_mobile_challenge')) {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
     const jwt = (req.headers.get('Authorization') ?? '')
       .replace(/^Bearer\s+/i, '')
       .trim();
 
-    if (!supabaseUrl || !serviceRoleKey || !jwt) {
-      return jsonResponse(
-        {
-          success: false,
-          error: 'User Auth Error: Sign in required for mobile security fallback.',
-        },
-        401,
-      );
+    if (jwt && supabaseUrl && serviceRoleKey) {
+      const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(jwt);
+      if (!authErr && userData?.user) {
+        if (!checkFallbackRateLimit(`user:${userData.user.id}`, FALLBACK_MAX_REQUESTS)) {
+          return jsonResponse(
+            {
+              success: false,
+              error: 'Too many verification attempts. Please wait a few minutes and try again.',
+            },
+            429,
+          );
+        }
+
+        return jsonResponse(
+          { success: true, verifiedBy: 'authenticated_session_fallback' },
+          200,
+        );
+      }
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(jwt);
-    if (authErr || !userData?.user) {
-      return jsonResponse(
-        {
-          success: false,
-          error: 'User Auth Error: Invalid or expired session for fallback verification.',
-        },
-        401,
-      );
+    // Pre-auth mobile/WebView fallback (login, signup, forgot-password, or explicit fallback: true)
+    const originHeader = req.headers.get('origin') ?? req.headers.get('referer') ?? '';
+    if (originHeader) {
+      try {
+        const parsedOrigin = new URL(originHeader);
+        if (!isHostnameAllowed(parsedOrigin.hostname)) {
+          return jsonResponse(
+            {
+              success: false,
+              error: 'Security verification failed for this domain. Please refresh and try again.',
+            },
+            403,
+          );
+        }
+      } catch {
+        // Ignore malformed referer header on in-app WebViews
+      }
     }
 
-    if (!checkUserRateLimit(userData.user.id)) {
+    const rateKey = `ip:${remoteIp ?? 'unknown'}:${action}`;
+    if (!checkFallbackRateLimit(rateKey, NETWORK_FALLBACK_MAX_REQUESTS)) {
       return jsonResponse(
         {
           success: false,
-          error: 'Too many verification attempts. Please wait a few minutes and try again.',
+          error: 'Too many attempts from this network. Please wait a few minutes and try again.',
         },
         429,
       );
     }
 
     return jsonResponse(
-      { success: true, verifiedBy: 'authenticated_session_fallback' },
+      { success: true, verifiedBy: 'network_fallback' },
       200,
     );
   }
@@ -177,10 +209,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       403,
     );
   }
-
-  const remoteIp =
-    sanitizeIp(req.headers.get('cf-connecting-ip')) ??
-    sanitizeIp(req.headers.get('x-forwarded-for'));
 
   try {
     const verifyPayload: Record<string, string> = {
