@@ -37,7 +37,7 @@ export function formatSafeUserError(
     return 'Too many attempts. Please wait a moment before trying again.'
   }
   if (/captcha|turnstile|invalid-input-response|timeout-or-duplicate/i.test(msg)) {
-    return `Supabase Auth security check rejected this request (${msg}). Please tap Retry on the security widget or try again.`
+    return 'Security verification expired or could not be completed. Tap Retry Verification below (or open in Chrome / Safari if using an in-app browser).'
   }
   if (
     msg.startsWith('{') ||

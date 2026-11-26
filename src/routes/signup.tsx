@@ -1,12 +1,8 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react'
-import { Logo } from '../components/Header'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
-import {
-  formatSafeUserError,
-  verifyTurnstileForAuth,
-} from '../lib/verifyTurnstileClient'
+import { formatSafeUserError } from '../lib/verifyTurnstileClient'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
 import TurnstileWidget, {
@@ -34,7 +30,7 @@ function SignUpRouteComponent() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
-  const [captchaFallback, setCaptchaFallback] = useState(false)
+  const [captchaTimedOut, setCaptchaTimedOut] = useState(false)
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,31 +77,25 @@ function SignUpRouteComponent() {
       return
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        captchaTimedOut
+          ? 'Security verification could not issue a token in this browser. Tap Retry Verification below or open MineConnect in Chrome / Safari to create your account.'
+          : 'Waiting for the security check below to complete (usually 1–2 seconds). Please wait or tap Retry Verification.',
+      )
+      return
+    }
+
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
-      if (turnstileEnabled) {
-        const verification = await verifyTurnstileForAuth({
-          token: captchaToken || undefined,
-          fallback: !captchaToken || captchaFallback,
-          action: 'signup',
-        })
-        if (!verification.ok) {
-          setError(
-            verification.error ||
-              'Security verification token was invalid. Please tap Retry and try again.',
-          )
-          shouldResetCaptcha = Boolean(captchaToken)
-          return
-        }
-      }
-
       const res = await signUpWithEmail({
         fullName: validation.data.fullName,
         email: validation.data.email,
         password: validation.data.password,
         confirmPassword,
         termsAcceptedAt: new Date().toISOString(),
+        ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.confirmationRequired) {
         setNotice(
@@ -133,7 +123,7 @@ function SignUpRouteComponent() {
       setSubmitting(false)
       if (shouldResetCaptcha) {
         setCaptchaToken('')
-        setCaptchaFallback(false)
+        setCaptchaTimedOut(false)
         if (turnstileRef.current) {
           turnstileRef.current.reset()
         } else {
@@ -156,13 +146,6 @@ function SignUpRouteComponent() {
     <div className="min-h-[100dvh] bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
         <div className="rounded-xl border border-ink/12 bg-[#FCFBF8] p-6 shadow-sm sm:p-8">
-          {/* Crisp Brand-Anchored MineConnect Logo Header */}
-          <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
-            <Link to="/" aria-label="MineConnect Home" className="inline-flex">
-              <Logo light={false} />
-            </Link>
-          </div>
-
           <h1 className="font-display text-3xl font-semibold text-ink">
             Create an account
           </h1>
@@ -322,14 +305,14 @@ function SignUpRouteComponent() {
                 <TurnstileWidget
                   ref={turnstileRef}
                   resetKey={turnstileResetKey}
-                  timeoutMs={5000}
-                  allowMobileFallback
-                  fallbackLabel="Basic network check active"
+                  timeoutMs={12000}
+                  allowMobileFallback={false}
+                  showOpenInBrowserHelper
                   theme="light"
                   action="signup"
                   onVerify={(token) => {
                     setCaptchaToken(token)
-                    setCaptchaFallback(false)
+                    setCaptchaTimedOut(false)
                     setError(null)
                   }}
                   onExpire={() => {
@@ -337,18 +320,16 @@ function SignUpRouteComponent() {
                   }}
                   onRetry={() => {
                     setCaptchaToken('')
-                    setCaptchaFallback(true)
+                    setCaptchaTimedOut(false)
                     setError(null)
                   }}
-                  onFallbackReady={() => {
+                  onTimeout={() => {
                     setCaptchaToken('')
-                    setCaptchaFallback(true)
-                    setError(null)
+                    setCaptchaTimedOut(true)
                   }}
-                  onError={(msg) => {
+                  onError={() => {
                     setCaptchaToken('')
-                    setCaptchaFallback(true)
-                    if (msg) setError(null)
+                    setCaptchaTimedOut(true)
                   }}
                 />
               </div>

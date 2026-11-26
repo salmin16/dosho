@@ -10,7 +10,6 @@ import {
   Lock,
   Mail,
 } from 'lucide-react'
-import { Logo } from '../components/Header'
 import TurnstileWidget, {
   isTurnstileEnabled,
   type TurnstileWidgetHandle,
@@ -20,10 +19,7 @@ import {
   signInWithEmail,
   useAuthState,
 } from '../lib/supabaseAuth'
-import {
-  formatSafeUserError,
-  verifyTurnstileForAuth,
-} from '../lib/verifyTurnstileClient'
+import { formatSafeUserError } from '../lib/verifyTurnstileClient'
 
 const RESET_COOLDOWN_KEY = 'mineconnect_pwd_reset_cooldown_until'
 const RESET_COOLDOWN_SECONDS = 60
@@ -77,7 +73,7 @@ function LoginRouteComponent() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
-  const [captchaFallback, setCaptchaFallback] = useState(false)
+  const [captchaTimedOut, setCaptchaTimedOut] = useState(false)
   const [turnstileResetKey, setTurnstileResetKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -87,7 +83,7 @@ function LoginRouteComponent() {
 
   const triggerTurnstileReset = () => {
     setCaptchaToken('')
-    setCaptchaFallback(false)
+    setCaptchaTimedOut(false)
     if (turnstileRef.current) {
       turnstileRef.current.reset()
     } else {
@@ -141,30 +137,23 @@ function LoginRouteComponent() {
       return
     }
 
+    // Supabase Auth CAPTCHA protection requires a fresh Turnstile token; do not send a tokenless call
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        captchaTimedOut
+          ? 'Security verification could not issue a token in this browser. Tap Retry Verification below or open MineConnect in Chrome / Safari to sign in.'
+          : 'Waiting for the security check below to complete (usually 1–2 seconds). Please wait or tap Retry Verification.',
+      )
+      return
+    }
+
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
-      // Verify Turnstile token when present, or use approved fallback mode when no token was issued.
-      // Never block signInWithPassword in fallback mode; only block if a real token was explicitly rejected.
-      if (turnstileEnabled) {
-        const verification = await verifyTurnstileForAuth({
-          token: captchaToken || undefined,
-          fallback: !captchaToken || captchaFallback,
-          action: 'login',
-        })
-        if (!verification.ok) {
-          setError(
-            verification.error ||
-              'Security verification token was invalid. Please tap Retry and try again.',
-          )
-          shouldResetCaptcha = Boolean(captchaToken)
-          return
-        }
-      }
-
       const res = await signInWithEmail({
         email,
         password,
+        ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.error) {
         setError(
@@ -207,24 +196,21 @@ function LoginRouteComponent() {
       return
     }
 
+    if (turnstileEnabled && !captchaToken) {
+      setError(
+        captchaTimedOut
+          ? 'Security verification could not issue a token in this browser. Tap Retry Verification below or open MineConnect in Chrome / Safari.'
+          : 'Waiting for the security check below to complete before sending your reset link.',
+      )
+      return
+    }
+
     setResetSending(true)
     try {
-      if (turnstileEnabled) {
-        const verification = await verifyTurnstileForAuth({
-          token: captchaToken || undefined,
-          fallback: !captchaToken || captchaFallback,
-          action: 'forgot-password',
-        })
-        if (!verification.ok) {
-          setError(
-            verification.error ||
-              'Too many attempts. Please wait a moment and try again.',
-          )
-          return
-        }
-      }
-
-      const res = await requestPasswordResetEmail(trimmedEmail)
+      const res = await requestPasswordResetEmail(
+        trimmedEmail,
+        captchaToken || undefined,
+      )
       if (!res.ok && res.error) {
         setError(
           formatSafeUserError(
@@ -279,13 +265,6 @@ function LoginRouteComponent() {
     <div className="min-h-[100dvh] bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
         <div className="rounded-xl border border-ink/12 bg-[#FCFBF8] p-6 shadow-sm sm:p-8">
-          {/* Crisp Brand-Anchored MineConnect Logo Header */}
-          <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
-            <Link to="/" aria-label="MineConnect Home" className="inline-flex">
-              <Logo light={false} />
-            </Link>
-          </div>
-
           {mode === 'signin' ? (
             <>
               <h1 className="font-display text-3xl font-semibold text-ink">
@@ -406,14 +385,14 @@ function LoginRouteComponent() {
                     key="turnstile-login"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
-                    timeoutMs={5000}
-                    allowMobileFallback
-                    fallbackLabel="Basic network check active"
+                    timeoutMs={12000}
+                    allowMobileFallback={false}
+                    showOpenInBrowserHelper
                     theme="light"
                     action="login"
                     onVerify={(token) => {
                       setCaptchaToken(token)
-                      setCaptchaFallback(false)
+                      setCaptchaTimedOut(false)
                       setError(null)
                     }}
                     onExpire={() => {
@@ -421,18 +400,16 @@ function LoginRouteComponent() {
                     }}
                     onRetry={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
+                      setCaptchaTimedOut(false)
                       setError(null)
                     }}
-                    onFallbackReady={() => {
+                    onTimeout={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
-                      setError(null)
+                      setCaptchaTimedOut(true)
                     }}
-                    onError={(msg) => {
+                    onError={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
-                      if (msg) setError(null)
+                      setCaptchaTimedOut(true)
                     }}
                   />
                 )}
@@ -523,14 +500,14 @@ function LoginRouteComponent() {
                     key="turnstile-forgot"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
-                    timeoutMs={5000}
-                    allowMobileFallback
-                    fallbackLabel="Basic network check active"
+                    timeoutMs={12000}
+                    allowMobileFallback={false}
+                    showOpenInBrowserHelper
                     theme="light"
                     action="forgot-password"
                     onVerify={(token) => {
                       setCaptchaToken(token)
-                      setCaptchaFallback(false)
+                      setCaptchaTimedOut(false)
                       setError(null)
                     }}
                     onExpire={() => {
@@ -538,18 +515,16 @@ function LoginRouteComponent() {
                     }}
                     onRetry={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
+                      setCaptchaTimedOut(false)
                       setError(null)
                     }}
-                    onFallbackReady={() => {
+                    onTimeout={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
-                      setError(null)
+                      setCaptchaTimedOut(true)
                     }}
-                    onError={(msg) => {
+                    onError={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(true)
-                      if (msg) setError(null)
+                      setCaptchaTimedOut(true)
                     }}
                   />
                 )}

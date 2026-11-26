@@ -9,7 +9,21 @@ import {
   useRef,
   useState,
 } from 'react';
-import { CheckCircle2, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+} from 'lucide-react';
+
+function detectEmbeddedMobileWebView(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /WhatsApp|FBAN|FBAV|Instagram|Line\/|TikTok|Snapchat|MicroMessenger|Telegram|; wv\)|\bWebView\b/i.test(
+    ua,
+  );
+}
 
 const TURNSTILE_SCRIPT_SRC =
   'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -196,15 +210,19 @@ export interface TurnstileWidgetHandle {
 
 export interface TurnstileWidgetProps {
   onVerify: (token: string) => void;
+  /** Optional alias for onVerify */
+  onSuccess?: (token: string) => void;
   onExpire?: () => void;
   onError?: (message: string) => void;
   onTimeout?: () => void;
   /** Called if mobile/cellular Turnstile stalls past timeoutMs or fails so authenticated flows stay non-blocking */
   onFallbackReady?: (reason: 'timeout_or_mobile_challenge') => void;
-  /** Called when the user explicitly clicks Retry so parent forms can keep submit enabled while re-verifying */
+  /** Called when the user explicitly clicks Retry so parent forms can respond cleanly */
   onRetry?: () => void;
-  /** Enables non-blocking fallback UX when widget stalls on mobile/in-app browsers */
+  /** Enables non-blocking fallback UX when widget stalls on mobile/in-app browsers (e.g. authenticated checkout) */
   allowMobileFallback?: boolean;
+  /** Shows an "Open in Browser" helper alongside "Retry Verification" when Turnstile stalls/errors (ideal for WhatsApp/in-app WebViews) */
+  showOpenInBrowserHelper?: boolean;
   /** Label displayed in the non-blocking fallback pill */
   fallbackLabel?: string;
   /** Incrementing this counter declaratively clears the token and resets the widget */
@@ -250,12 +268,14 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
   function TurnstileWidget(
     {
       onVerify,
+      onSuccess,
       onExpire,
       onError,
       onTimeout,
       onFallbackReady,
       onRetry,
       allowMobileFallback = false,
+      showOpenInBrowserHelper = false,
       fallbackLabel = 'Basic network check active',
       resetKey,
       timeoutMs = 5000,
@@ -274,14 +294,17 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
     const prevResetKeyRef = useRef<number | undefined>(resetKey);
     const autoRetriedRef = useRef<boolean>(false);
     const isManualRetryRef = useRef<boolean>(false);
+    const isEmbeddedWebView = detectEmbeddedMobileWebView();
 
     const onVerifyRef = useRef(onVerify);
+    const onSuccessRef = useRef(onSuccess);
     const onExpireRef = useRef(onExpire);
     const onErrorRef = useRef(onError);
     const onTimeoutRef = useRef(onTimeout);
     const onFallbackReadyRef = useRef(onFallbackReady);
     const onRetryRef = useRef(onRetry);
     onVerifyRef.current = onVerify;
+    onSuccessRef.current = onSuccess;
     onExpireRef.current = onExpire;
     onErrorRef.current = onError;
     onTimeoutRef.current = onTimeout;
@@ -295,7 +318,30 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
     widgetStateRef.current = widgetState;
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [diagnosticHint, setDiagnosticHint] = useState<string | null>(null);
+    const [browserCopyNotice, setBrowserCopyNotice] = useState<string | null>(null);
     const [renderGeneration, setRenderGeneration] = useState(0);
+
+    const handleOpenInBrowser = useCallback(() => {
+      if (typeof window === 'undefined') return;
+      const currentUrl = window.location.href;
+      try {
+        window.open(currentUrl, '_blank', 'noopener,noreferrer');
+      } catch {
+        // ignore popup restrictions in strict WebViews
+      }
+      if (navigator.clipboard?.writeText) {
+        void navigator.clipboard
+          .writeText(currentUrl)
+          .then(() => {
+            setBrowserCopyNotice('Link copied — paste in Chrome or Safari if the page did not open externally.');
+          })
+          .catch(() => {
+            setBrowserCopyNotice('Tap the top-right menu (⋮ / ⋯) and choose "Open in Browser".');
+          });
+      } else {
+        setBrowserCopyNotice('Tap the top-right menu (⋮ / ⋯) and choose "Open in Browser".');
+      }
+    }, []);
 
     const activateFallbackOrError = useCallback(
       (fallbackMsg: string, hint?: string | null) => {
@@ -477,10 +523,13 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
             'refresh-expired': 'auto',
             callback: (token: string) => {
               if (cancelled) return;
+              isManualRetryRef.current = false;
               setWidgetState('verified');
               setStatusMessage(null);
               setDiagnosticHint(null);
+              setBrowserCopyNotice(null);
               onVerifyRef.current(token);
+              onSuccessRef.current?.(token);
             },
             'expired-callback': () => {
               if (cancelled) return;
@@ -656,26 +705,47 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
           )}
 
           {(widgetState === 'error' || widgetState === 'expired') && (
-            <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-ink/10 bg-paper/70 px-3 py-2 text-xs">
-              <div className="min-w-0 flex-1">
-                <span className="inline-flex items-start gap-1.5 text-danger">
-                  <ShieldAlert size={13} className="mt-0.5 shrink-0" />
-                  <span>{statusMessage || 'Verification expired. Please retry.'}</span>
+            <div className="mt-2 w-full space-y-2.5 rounded-lg border border-ink/12 bg-paper/80 px-3.5 py-3 text-xs">
+              <div className="min-w-0">
+                <span className="inline-flex items-start gap-1.5 font-medium text-danger">
+                  <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    {isEmbeddedWebView && showOpenInBrowserHelper
+                      ? 'In-app browsers (such as WhatsApp) often block Cloudflare security checks. Open this page in Chrome or Safari to sign in.'
+                      : statusMessage || 'Security verification could not complete. Please retry.'}
+                  </span>
                 </span>
                 {diagnosticHint && (
-                  <span className="mt-0.5 block pl-5 font-mono text-[10px] text-stone">
+                  <span className="mt-1 block pl-5 font-mono text-[10px] text-stone">
                     {diagnosticHint}
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={handleManualRetry}
-                className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre active:scale-[0.99]"
-              >
-                <RefreshCw size={11} />
-                Retry Verification
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleManualRetry}
+                  className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-md border border-ink/20 bg-white px-3 py-1.5 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre active:scale-[0.99]"
+                >
+                  <RefreshCw size={12} />
+                  Retry Verification
+                </button>
+                {showOpenInBrowserHelper && (
+                  <button
+                    type="button"
+                    onClick={handleOpenInBrowser}
+                    className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-md border border-ochre/40 bg-ochre/10 px-3 py-1.5 font-mono text-[11px] font-semibold text-ochre transition hover:bg-ochre/20 active:scale-[0.99]"
+                  >
+                    <ExternalLink size={12} />
+                    Open in Browser
+                  </button>
+                )}
+              </div>
+              {browserCopyNotice && (
+                <p className="font-mono text-[10.5px] text-moss">
+                  {browserCopyNotice}
+                </p>
+              )}
             </div>
           )}
         </div>
