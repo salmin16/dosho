@@ -32,12 +32,12 @@ export interface MarketTrendChartProps {
   onCurrencyChange?: (currency: CurrencyCode) => void
   /** Optional non-TZS/USD/EUR currency synchronized from global app localization */
   customCurrency?: CustomDisplayCurrency | null
-  /** When embedded inside an existing page container (e.g. /markets), omits full-page outer padding */
+  /** When embedded inside an existing page container (e.g. /markets), omits outer section padding */
   embedded?: boolean
 }
 
 interface DataPoint {
-  ts: number // Unix timestamp in ms
+  ts: number
   priceUsd: number
 }
 
@@ -94,7 +94,7 @@ const DEFAULT_FX: Record<CurrencyCode, number> = {
 
 const CURRENT_YEAR = 2026
 const FIRST_MARKET_YEAR = 1968
-const MIN_SPAN_MS = 5 * 60 * 1000 // 5 minutes minimum zoom span
+const MIN_SPAN_MS = 5 * 60 * 1000
 
 const PRESET_DURATIONS_MS: Record<PresetRangeKey, number> = {
   '15m': 15 * 60 * 1000,
@@ -106,7 +106,6 @@ const PRESET_DURATIONS_MS: Record<PresetRangeKey, number> = {
   '1Y': 365 * 24 * 60 * 60 * 1000,
 }
 
-// Deterministic pseudo-random generator for clean, repeatable trend curves
 function createRng(seed: number) {
   let s = seed % 2147483647
   if (s <= 0) s += 2147483646
@@ -116,7 +115,6 @@ function createRng(seed: number) {
   }
 }
 
-// Safe rounded rectangle path helper for broad browser & WebView compatibility
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -138,7 +136,6 @@ function drawRoundedRect(
   ctx.closePath()
 }
 
-// Multi-resolution series spanning 1968 -> anchorNowTs with 1-minute resolution near now
 function buildMultiResolutionSeries(
   asset: MineralAssetConfig,
   anchorNowTs: number,
@@ -146,7 +143,6 @@ function buildMultiResolutionSeries(
   const rng = createRng(asset.seed)
   const points: DataPoint[] = []
 
-  // 1) Historical monthly anchors from Jan 1968 up to 400 days ago
   const start1968 = Date.UTC(FIRST_MARKET_YEAR, 0, 1)
   const cutoff400d = anchorNowTs - 400 * 24 * 60 * 60 * 1000
   const monthStep = 30 * 24 * 60 * 60 * 1000
@@ -154,8 +150,7 @@ function buildMultiResolutionSeries(
   let t = start1968
   const totalHistSpan = Math.max(1, cutoff400d - start1968)
   while (t < cutoff400d) {
-    const progress = (t - start1968) / totalHistSpan // 0..1
-    // Secular growth curve + multi-decade cycle waves + controlled noise
+    const progress = (t - start1968) / totalHistSpan
     const baseRatio = 0.045 + 0.72 * Math.pow(progress, 1.55)
     const wave =
       0.06 * Math.sin(progress * Math.PI * 7) +
@@ -166,7 +161,6 @@ function buildMultiResolutionSeries(
     t += monthStep
   }
 
-  // 2) Daily points from 400 days ago up to 7 days ago
   const cutoff7d = anchorNowTs - 7 * 24 * 60 * 60 * 1000
   const dayStep = 24 * 60 * 60 * 1000
   let lastPrice =
@@ -182,7 +176,6 @@ function buildMultiResolutionSeries(
     points.push({ ts, priceUsd: lastPrice })
   }
 
-  // 3) 15-minute bars from 7 days ago up to 2 hours ago
   const cutoff2h = anchorNowTs - 2 * 60 * 60 * 1000
   const step15m = 15 * 60 * 1000
   const bars15m = Math.max(1, Math.floor((cutoff2h - cutoff7d) / step15m))
@@ -199,7 +192,6 @@ function buildMultiResolutionSeries(
     points.push({ ts, priceUsd: lastPrice })
   }
 
-  // 4) High-resolution 1-minute points over the last 2 hours up to anchorNowTs
   const step1m = 60 * 1000
   const mins = Math.floor((anchorNowTs - cutoff2h) / step1m)
   for (let i = 0; i <= mins; i++) {
@@ -217,8 +209,7 @@ function buildMultiResolutionSeries(
   return points
 }
 
-// Clean "nice number" Y-axis ticks so trend movement occupies balanced vertical space
-function computeNiceYScale(minVal: number, maxVal: number, targetTicks = 7) {
+function computeNiceYScale(minVal: number, maxVal: number, targetTicks = 6) {
   let rawMin = minVal
   let rawMax = maxVal
   if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) {
@@ -231,10 +222,9 @@ function computeNiceYScale(minVal: number, maxVal: number, targetTicks = 7) {
     rawMax += pad
   }
 
-  // Add 12% visual breathing room above and below so peaks/troughs never touch borders
   const span = rawMax - rawMin
-  const paddedMin = Math.max(0, rawMin - span * 0.12)
-  const paddedMax = rawMax + span * 0.12
+  const paddedMin = Math.max(0, rawMin - span * 0.08)
+  const paddedMax = rawMax + span * 0.08
   const roughStep = (paddedMax - paddedMin) / Math.max(2, targetTicks - 1)
 
   const mag = Math.pow(10, Math.floor(Math.log10(roughStep)))
@@ -265,8 +255,7 @@ function formatPrice(
   customCurrency?: CustomDisplayCurrency | null,
 ): string {
   if (customCurrency) {
-    const isZeroDec = Boolean(customCurrency.zeroDecimal)
-    if (isZeroDec) {
+    if (customCurrency.zeroDecimal) {
       if (compactAxis && val >= 1_000_000) {
         return `${(val / 1_000_000).toFixed(2)}M`
       }
@@ -316,7 +305,6 @@ function formatMonthYear(ts: number): string {
   })
 }
 
-// Collision-free X-axis ticks tailored to the selected timeline
 function buildBalancedXTicks(
   startTs: number,
   endTs: number,
@@ -327,8 +315,6 @@ function buildBalancedXTicks(
   const minLabelGapPx = chartWidthPx < 480 ? 64 : 84
   const maxLabels = Math.max(3, Math.floor(chartWidthPx / minLabelGapPx))
 
-  // Case 1: Historical year selected from 1Y+ (e.g., 2020 -> 2026 or 1968 -> 2026)
-  // Always anchor selectedYear on the left and 2026 on the right
   if (selectedYear !== null) {
     const endYear = CURRENT_YEAR
     const totalYears = Math.max(1, endYear - selectedYear)
@@ -354,7 +340,6 @@ function buildBalancedXTicks(
     return ticks
   }
 
-  // Case 2: 15-minute default (or <= 30m zoomed) -> crisp 5-minute intervals
   if (spanMs <= 35 * 60 * 1000) {
     const step = 5 * 60 * 1000
     const firstTick = Math.ceil(startTs / step) * step
@@ -365,7 +350,6 @@ function buildBalancedXTicks(
     return ticks
   }
 
-  // Case 3: Intraday (35m -> 36h)
   if (spanMs <= 36 * 60 * 60 * 1000) {
     const steps = [
       15 * 60 * 1000,
@@ -383,7 +367,6 @@ function buildBalancedXTicks(
     return ticks
   }
 
-  // Case 4: Multi-day up to ~4 months
   if (spanMs <= 120 * 24 * 60 * 60 * 1000) {
     const dayMs = 24 * 60 * 60 * 1000
     const daySteps = [1, 2, 5, 7, 14, 21]
@@ -397,7 +380,6 @@ function buildBalancedXTicks(
     return ticks
   }
 
-  // Case 5: 6M / 1Y rolling or multi-year manual pan
   const count = Math.min(maxLabels, 6)
   const step = spanMs / Math.max(1, count - 1)
   const ticks: XTick[] = []
@@ -434,7 +416,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
   const [internalCurrency, setInternalCurrency] = useState<CurrencyCode>('TZS')
   const currency = controlledCurrency ?? internalCurrency
 
-  // Anchor timestamp aligned cleanly to current minute so 5m intervals land cleanly
   const [anchorNowTs] = useState<number>(() => {
     const now = Date.now()
     return Math.floor(now / 60000) * 60000
@@ -445,20 +426,18 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
   const [yearMenuOpen, setYearMenuOpen] = useState(false)
   const [isFullChart, setIsFullChart] = useState(false)
 
-  // Active viewport [viewStartTs, viewEndTs] — defaults to latest 15m
   const [viewRange, setViewRange] = useState<{ start: number; end: number }>(() => ({
     start: anchorNowTs - PRESET_DURATIONS_MS['15m'],
     end: anchorNowTs,
   }))
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 540 })
+  const [canvasSize, setCanvasSize] = useState({ width: 720, height: 420 })
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const yearPopoverRef = useRef<HTMLDivElement | null>(null)
 
-  // Pointer & pinch gesture refs
   const dragStateRef = useRef<{
     isDragging: boolean
     startX: number
@@ -494,7 +473,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
 
   const earliestTs = series[0]?.ts ?? Date.UTC(FIRST_MARKET_YEAR, 0, 1)
 
-  // Descending list of years: 2025 -> 1968
   const selectableYears = useMemo(() => {
     const list: number[] = []
     for (let y = CURRENT_YEAR - 1; y >= FIRST_MARKET_YEAR; y--) {
@@ -503,7 +481,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     return list
   }, [])
 
-  // Close year picker when clicking outside
   useEffect(() => {
     if (!yearMenuOpen) return
     const handleOutside = (e: MouseEvent) => {
@@ -518,7 +495,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [yearMenuOpen])
 
-  // Escape key & body scroll lock when expanded to full chart
   useEffect(() => {
     if (!isFullChart) return
     const prevOverflow = document.body.style.overflow
@@ -533,7 +509,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     }
   }, [isFullChart])
 
-  // Measure chart container responsively for crisp DPR rendering & balanced axis labels
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -583,13 +558,11 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     })
   }
 
-  // Visible data slice + boundary interpolation so lines never clip awkwardly at edges
   const visiblePoints = useMemo(() => {
     const { start, end } = viewRange
     const inRange = series.filter((p) => p.ts >= start && p.ts <= end)
     if (inRange.length >= 2) return inRange
 
-    // Fallback if zoomed tightly between two points
     const prev = [...series].reverse().find((p) => p.ts <= start) ?? series[0]
     const next = series.find((p) => p.ts >= end) ?? series[series.length - 1]
     return [
@@ -598,7 +571,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     ]
   }, [series, viewRange])
 
-  // Period change calculation (from left edge of selected range to latest live price)
   const periodStats = useMemo(() => {
     const openUsd = visiblePoints[0]?.priceUsd ?? activeAsset.prevCloseUsd
     const currentUsd = activeAsset.spotUsd
@@ -613,7 +585,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     }
   }, [visiblePoints, activeAsset, fx])
 
-  // Precomputed preset delta badges for the timeframe strip
   const presetDeltas = useMemo(() => {
     const out = {} as Record<PresetRangeKey, number>
     ;(Object.keys(PRESET_DURATIONS_MS) as PresetRangeKey[]).forEach((key) => {
@@ -625,7 +596,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     return out
   }, [series, anchorNowTs, activeAsset.spotUsd])
 
-  // Zoom helper centered around a normalized horizontal anchor (0..1)
   const zoomAroundRatio = useCallback(
     (scaleFactor: number, anchorRatio: number) => {
       setSelectedStartYear(null)
@@ -652,7 +622,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     [anchorNowTs, earliestTs],
   )
 
-  // Attach non-passive wheel listener so zooming never triggers page scroll warnings
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -667,7 +636,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     return () => canvas.removeEventListener('wheel', onNativeWheel)
   }, [zoomAroundRatio])
 
-  // Canvas rendering
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -681,22 +649,20 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const isMobile = width < 640
-    const rightAxisWidth = isMobile ? 84 : 104
-    const bottomAxisHeight = 34
-    const topPad = 18
-    const leftPad = isMobile ? 10 : 16
+    const rightAxisWidth = isMobile ? 76 : 96
+    const bottomAxisHeight = 32
+    const topPad = 14
+    const leftPad = isMobile ? 8 : 14
 
     const plotLeft = leftPad
-    const plotRight = Math.max(plotLeft + 80, width - rightAxisWidth)
+    const plotRight = Math.max(plotLeft + 70, width - rightAxisWidth)
     const plotTop = topPad
-    const plotBottom = Math.max(plotTop + 120, height - bottomAxisHeight)
+    const plotBottom = Math.max(plotTop + 100, height - bottomAxisHeight)
     const plotWidth = plotRight - plotLeft
     const plotHeight = plotBottom - plotTop
 
-    // Clear background
     ctx.clearRect(0, 0, width, height)
 
-    // Compute balanced Y-axis domain
     let minPrice = Infinity
     let maxPrice = -Infinity
     for (const pt of visiblePoints) {
@@ -708,7 +674,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     minPrice = Math.min(minPrice, openLocal)
     maxPrice = Math.max(maxPrice, openLocal)
 
-    const yScale = computeNiceYScale(minPrice, maxPrice, isMobile ? 6 : 8)
+    const yScale = computeNiceYScale(minPrice, maxPrice, isMobile ? 5 : 7)
     const ySpan = Math.max(1e-9, yScale.max - yScale.min)
 
     const xSpan = Math.max(1, viewRange.end - viewRange.start)
@@ -716,8 +682,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     const toY = (val: number) =>
       plotBottom - ((val - yScale.min) / ySpan) * plotHeight
 
-    // Horizontal grid lines & right-aligned price labels
-    ctx.font = `500 ${isMobile ? 11 : 12}px ui-monospace, SFMono-Regular, Menlo, monospace`
+    ctx.font = `500 ${isMobile ? 10.5 : 11.5}px ui-monospace, SFMono-Regular, Menlo, monospace`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
 
@@ -740,7 +705,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       )
     }
 
-    // Vertical X-axis grid lines & balanced timeline labels
     const xTicks = buildBalancedXTicks(
       viewRange.start,
       viewRange.end,
@@ -765,14 +729,13 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       else ctx.textAlign = 'center'
 
       ctx.font = tick.highlight
-        ? `700 ${isMobile ? 11 : 12}px ui-monospace, SFMono-Regular, Menlo, monospace`
-        : `500 ${isMobile ? 11 : 12}px ui-monospace, SFMono-Regular, Menlo, monospace`
+        ? `700 ${isMobile ? 10.5 : 11.5}px ui-monospace, SFMono-Regular, Menlo, monospace`
+        : `500 ${isMobile ? 10.5 : 11.5}px ui-monospace, SFMono-Regular, Menlo, monospace`
       ctx.fillStyle =
         tick.highlight && idx === xTicks.length - 1 ? '#B85D19' : '#3F3F46'
-      ctx.fillText(tick.label, x, plotBottom + 10)
+      ctx.fillText(tick.label, x, plotBottom + 9)
     })
 
-    // Dotted reference line for period open / prev baseline
     const refY = toY(openLocal)
     if (refY >= plotTop && refY <= plotBottom) {
       ctx.save()
@@ -786,11 +749,10 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       ctx.restore()
     }
 
-    // Trend line + soft area gradient fill
     const lineColor = periodStats.isPositive ? '#15803D' : '#C2410C'
     const fillTopColor = periodStats.isPositive
-      ? 'rgba(21, 128, 61, 0.18)'
-      : 'rgba(184, 93, 25, 0.18)'
+      ? 'rgba(21, 128, 61, 0.16)'
+      : 'rgba(184, 93, 25, 0.16)'
     const fillBottomColor = periodStats.isPositive
       ? 'rgba(21, 128, 61, 0.0)'
       : 'rgba(184, 93, 25, 0.0)'
@@ -820,7 +782,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     ctx.fillStyle = grad
     ctx.fill()
 
-    // Main trend stroke
     ctx.beginPath()
     visiblePoints.forEach((pt, idx) => {
       const x = toX(pt.ts)
@@ -829,12 +790,11 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       else ctx.lineTo(x, y)
     })
     ctx.strokeStyle = lineColor
-    ctx.lineWidth = 2.25
+    ctx.lineWidth = 2.2
     ctx.lineJoin = 'round'
     ctx.stroke()
     ctx.restore()
 
-    // Latest live spot marker dot + right-axis highlight badge
     const latestX = toX(lastPt.ts)
     const latestY = Math.min(
       plotBottom,
@@ -843,7 +803,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
 
     if (latestX >= plotLeft && latestX <= plotRight + 2) {
       ctx.beginPath()
-      ctx.arc(latestX, latestY, 4.5, 0, Math.PI * 2)
+      ctx.arc(latestX, latestY, 4, 0, Math.PI * 2)
       ctx.fillStyle = lineColor
       ctx.fill()
       ctx.lineWidth = 2
@@ -851,8 +811,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       ctx.stroke()
     }
 
-    // Highlighted current price badge on Y-axis
-    const badgeH = 22
+    const badgeH = 21
     const badgeW = rightAxisWidth - 6
     const badgeY = Math.min(
       plotBottom - badgeH / 2,
@@ -864,16 +823,15 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     ctx.fill()
 
     ctx.fillStyle = '#FFFFFF'
-    ctx.font = `700 ${isMobile ? 10.5 : 11.5}px ui-monospace, SFMono-Regular, Menlo, monospace`
+    ctx.font = `700 ${isMobile ? 10 : 11}px ui-monospace, SFMono-Regular, Menlo, monospace`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(
       formatPrice(periodStats.currentLocal, currency, true, customCurrency),
-      plotRight + 9,
+      plotRight + 8,
       badgeY,
     )
 
-    // Interactive crosshair when scrubbing
     if (hoverIndex !== null && visiblePoints[hoverIndex]) {
       const hPt = visiblePoints[hoverIndex]
       const hx = toX(hPt.ts)
@@ -896,7 +854,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       ctx.restore()
 
       ctx.beginPath()
-      ctx.arc(hx, hy, 5, 0, Math.PI * 2)
+      ctx.arc(hx, hy, 4.5, 0, Math.PI * 2)
       ctx.fillStyle = '#18181B'
       ctx.fill()
       ctx.lineWidth = 2
@@ -915,7 +873,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     hoverIndex,
   ])
 
-  // Pointer scrubbing + drag-to-pan
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId)
     dragStateRef.current = {
@@ -929,9 +886,9 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const isMobile = rect.width < 640
-    const plotLeft = isMobile ? 10 : 16
-    const plotRight = rect.width - (isMobile ? 84 : 104)
-    const plotWidth = Math.max(80, plotRight - plotLeft)
+    const plotLeft = isMobile ? 8 : 14
+    const plotRight = rect.width - (isMobile ? 76 : 96)
+    const plotWidth = Math.max(70, plotRight - plotLeft)
 
     if (dragStateRef.current.isDragging) {
       const dx = e.clientX - dragStateRef.current.startX
@@ -955,7 +912,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       }
     }
 
-    // Update hover crosshair index
     const relX = Math.min(
       1,
       Math.max(0, (e.clientX - rect.left - plotLeft) / plotWidth),
@@ -977,7 +933,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     dragStateRef.current.isDragging = false
   }
 
-  // Touch pinch-to-zoom
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX
@@ -1047,24 +1002,28 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
         : `${activePreset ?? 'Custom'} range`
 
   const sectionClassName = isFullChart
-    ? 'fixed inset-0 z-50 flex flex-col bg-[#FAF8F5] text-[#18181B] p-3 sm:p-6'
+    ? 'fixed inset-0 z-50 flex flex-col bg-[#FAF8F5] text-[#18181B] p-2.5 sm:p-5'
     : embedded
       ? 'w-full text-[#18181B]'
-      : 'w-full min-h-[100dvh] bg-[#FAF8F5] text-[#18181B] px-3 py-4 sm:px-6 sm:py-6'
+      : 'w-full bg-[#FAF8F5] text-[#18181B] px-2.5 py-3 sm:px-5 sm:py-4'
 
   return (
     <section className={sectionClassName}>
       <div
-        className={`flex w-full flex-1 flex-col rounded-2xl border border-[#18181B]/12 bg-[#F5F1EA] shadow-sm ${
-          embedded && !isFullChart ? '' : 'mx-auto max-w-7xl'
+        className={`flex w-full flex-col rounded-2xl border border-[#18181B]/12 bg-[#F5F1EA] shadow-sm ${
+          isFullChart
+            ? 'mx-auto max-w-6xl flex-1'
+            : embedded
+              ? ''
+              : 'mx-auto max-w-6xl'
         }`}
       >
-        {/* Top Controls: Mineral Tabs, Currency Switcher & Full Chart Toggle */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#18181B]/10 px-3 py-3 sm:px-5">
+        {/* Top Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[#18181B]/10 px-3 py-2.5 sm:px-4">
           <div
             role="tablist"
             aria-label="Mineral benchmarks"
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto"
           >
             {safeMinerals.map((m) => {
               const selected = m.id === activeAsset.id
@@ -1075,21 +1034,20 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
                   role="tab"
                   aria-selected={selected}
                   onClick={() => handleSelectMineral(m.id)}
-                  className={`min-h-[40px] shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
+                  className={`min-h-[36px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
                     selected
                       ? 'bg-[#18181B] text-[#FAF8F5]'
                       : 'border border-[#18181B]/12 bg-[#FAF8F5] text-[#3F3F46] hover:bg-[#18181B]/5'
                   }`}
                 >
-                  <span className="font-mono">{m.symbol}</span>{' '}
-                  <span className="hidden sm:inline">· {m.name.split(' (')[0]}</span>
+                  <span className="font-mono">{m.symbol}</span>
+                  <span className="hidden sm:inline"> · {m.name.split(' (')[0]}</span>
                 </button>
               )
             })}
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Currency Switcher */}
             <div
               role="group"
               aria-label="Display currency"
@@ -1103,7 +1061,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
                     type="button"
                     aria-pressed={active}
                     onClick={() => handleSelectCurrency(code)}
-                    className={`min-h-[34px] rounded-md px-2.5 text-xs font-semibold tabular-nums transition-colors ${
+                    className={`min-h-[30px] rounded-md px-2 text-xs font-semibold tabular-nums transition-colors ${
                       active
                         ? 'bg-[#B85D19] text-white'
                         : 'text-[#3F3F46] hover:text-[#18181B]'
@@ -1115,30 +1073,29 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
               })}
             </div>
 
-            {/* Full Chart Expand Toggle */}
             <button
               type="button"
               onClick={() => setIsFullChart((v) => !v)}
-              className="min-h-[38px] rounded-lg border border-[#18181B]/15 bg-[#FAF8F5] px-3 text-xs font-semibold text-[#18181B] hover:bg-[#18181B]/5"
+              className="min-h-[34px] rounded-lg border border-[#18181B]/15 bg-[#FAF8F5] px-2.5 text-xs font-semibold text-[#18181B] hover:bg-[#18181B]/5"
             >
               {isFullChart ? 'Exit full chart' : 'Full chart'}
             </button>
           </div>
         </div>
 
-        {/* Active Mineral Headline & Live Scrubbing Price Readout */}
-        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3.5 pb-2 sm:px-6">
+        {/* Active Mineral Headline & Price */}
+        <div className="flex flex-wrap items-baseline justify-between gap-2 px-3.5 pt-3 pb-1.5 sm:px-5">
           <div>
-            <h2 className="text-base font-bold tracking-tight text-[#18181B] sm:text-xl">
+            <h2 className="text-sm font-bold tracking-tight text-[#18181B] sm:text-lg">
               {activeAsset.name}
             </h2>
-            <p className="mt-0.5 text-xs font-medium text-[#52525B] tabular-nums">
+            <p className="text-[11px] font-medium text-[#52525B] tabular-nums">
               {activeTimestampLabel}
             </p>
           </div>
 
-          <div className="flex items-baseline gap-2.5 tabular-nums">
-            <span className="text-xl font-bold text-[#18181B] sm:text-2xl">
+          <div className="flex items-baseline gap-2 tabular-nums">
+            <span className="text-lg font-bold text-[#18181B] sm:text-2xl">
               {formatPrice(activeDisplayPrice, currency, false, customCurrency)}
               <span className="ml-0.5 text-xs font-medium text-[#52525B]">
                 {activeAsset.unitLabel}
@@ -1157,16 +1114,14 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
           </div>
         </div>
 
-        {/* Large Responsive Chart Canvas (Covers Generous Viewport Space) */}
+        {/* Well-Proportioned Chart Viewport */}
         <div
           ref={containerRef}
-          className="relative w-full flex-1 px-1 sm:px-2"
-          style={{
-            height: isFullChart
-              ? 'calc(100dvh - 190px)'
-              : 'clamp(460px, 66dvh, 740px)',
-            minHeight: isFullChart ? 380 : 460,
-          }}
+          className={`relative w-full px-1 sm:px-2 ${
+            isFullChart
+              ? 'flex-1 min-h-[300px]'
+              : 'h-[340px] sm:h-[420px] lg:h-[460px]'
+          }`}
         >
           <canvas
             ref={canvasRef}
@@ -1185,54 +1140,52 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
           />
         </div>
 
-        {/* Bottom Timeframe Bar + Years-Only (1Y +) Selector (2025 -> 1968) */}
-        <div className="relative border-t border-[#18181B]/10 px-3 py-2.5 sm:px-5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
-              {(['15m', '1D', '5D', '1M', '3M', '6M'] as PresetRangeKey[]).map(
-                (preset) => {
-                  const selected =
-                    activePreset === preset && selectedStartYear === null
-                  const delta = presetDeltas[preset]
-                  return (
-                    <button
-                      key={preset}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => handleSelectPreset(preset)}
-                      className={`flex min-h-[46px] min-w-[58px] shrink-0 flex-col items-center justify-center rounded-xl px-2.5 py-1.5 text-center transition-colors tabular-nums ${
+        {/* Single Contiguous Timeframe Row: 15m -> 1Y + */}
+        <div className="relative border-t border-[#18181B]/10 px-3 py-2 sm:px-4">
+          <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible py-0.5">
+            {(['15m', '1D', '5D', '1M', '3M', '6M'] as PresetRangeKey[]).map(
+              (preset) => {
+                const selected =
+                  activePreset === preset && selectedStartYear === null
+                const delta = presetDeltas[preset]
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`flex min-h-[42px] min-w-[54px] shrink-0 flex-col items-center justify-center rounded-xl px-2 py-1 text-center transition-colors tabular-nums ${
+                      selected
+                        ? 'bg-[#18181B] text-[#FAF8F5]'
+                        : 'bg-[#FAF8F5] text-[#18181B] hover:bg-[#18181B]/5'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{preset}</span>
+                    <span
+                      className={`text-[10px] font-semibold ${
                         selected
-                          ? 'bg-[#18181B] text-[#FAF8F5]'
-                          : 'bg-[#FAF8F5] text-[#18181B] hover:bg-[#18181B]/5'
+                          ? 'text-[#FAF8F5]/85'
+                          : delta >= 0
+                            ? 'text-[#15803D]'
+                            : 'text-[#C2410C]'
                       }`}
                     >
-                      <span className="text-xs font-bold">{preset}</span>
-                      <span
-                        className={`text-[10.5px] font-semibold ${
-                          selected
-                            ? 'text-[#FAF8F5]/85'
-                            : delta >= 0
-                              ? 'text-[#15803D]'
-                              : 'text-[#C2410C]'
-                        }`}
-                      >
-                        {delta >= 0 ? '+' : ''}
-                        {delta.toFixed(2)}%
-                      </span>
-                    </button>
-                  )
-                },
-              )}
-            </div>
+                      {delta >= 0 ? '+' : ''}
+                      {delta.toFixed(2)}%
+                    </span>
+                  </button>
+                )
+              },
+            )}
 
-            {/* 1Y + Historical Year Selector Trigger (outside overflow-x-auto so popover never clips) */}
+            {/* 1Y + Right Next to 6M in the Same Series */}
             <div ref={yearPopoverRef} className="relative shrink-0">
               <button
                 type="button"
                 aria-expanded={yearMenuOpen}
                 aria-haspopup="listbox"
                 onClick={() => setYearMenuOpen((open) => !open)}
-                className={`flex min-h-[46px] min-w-[68px] flex-col items-center justify-center rounded-xl px-3 py-1.5 text-center transition-colors tabular-nums ${
+                className={`flex min-h-[42px] min-w-[62px] flex-col items-center justify-center rounded-xl px-2.5 py-1 text-center transition-colors tabular-nums ${
                   selectedStartYear !== null || activePreset === '1Y'
                     ? 'bg-[#B85D19] text-white'
                     : 'bg-[#FAF8F5] text-[#18181B] hover:bg-[#18181B]/5'
@@ -1241,19 +1194,18 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
                 <span className="text-xs font-bold">
                   {selectedStartYear !== null ? `${selectedStartYear}–26` : '1Y +'}
                 </span>
-                <span className="text-[10.5px] font-semibold opacity-90">
+                <span className="text-[10px] font-semibold opacity-90">
                   {selectedStartYear !== null
                     ? `${periodStats.pct >= 0 ? '+' : ''}${periodStats.pct.toFixed(1)}%`
                     : `${presetDeltas['1Y'] >= 0 ? '+' : ''}${presetDeltas['1Y'].toFixed(2)}%`}
                 </span>
               </button>
 
-              {/* Years-Only Descending List (2025 -> 1968) */}
               {yearMenuOpen && (
                 <div
                   role="listbox"
                   aria-label="Select starting year"
-                  className="absolute right-0 bottom-full z-40 mb-2 max-h-64 w-28 overflow-y-auto rounded-xl border border-[#18181B]/15 bg-[#FAF8F5] p-1 shadow-xl"
+                  className="fixed sm:absolute left-3 sm:left-auto right-3 sm:right-0 bottom-16 sm:bottom-full z-50 sm:mb-2 max-h-60 sm:w-28 overflow-y-auto rounded-xl border border-[#18181B]/15 bg-[#FAF8F5] p-1 shadow-xl"
                 >
                   <button
                     type="button"
@@ -1290,7 +1242,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
             </div>
           </div>
 
-          <p className="mt-1.5 text-center text-[11px] text-[#52525B] sm:text-left">
+          <p className="mt-1 text-[11px] text-[#52525B]">
             Drag left/right to pan history. Pinch or scroll to zoom.
           </p>
         </div>
