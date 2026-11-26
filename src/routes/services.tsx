@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { BadgeCheck, Clock, FileCheck2, Lock, MapPin, Star, CheckCircle2, Unlock, X } from 'lucide-react'
+import { BadgeCheck, Check, Clock, FileCheck2, Lock, MapPin, Star, CheckCircle2, Unlock, X } from 'lucide-react'
 import { SERVICE_CATEGORIES, type ServiceProvider } from '../data/fixtures'
 import { useI18n } from '../i18n'
+import { ServiceListingSkeletonGrid } from '../components/Skeletons'
 import TenementDossierGate from '../components/TenementDossierGate'
 import TurnstileWidget, {
   isTurnstileEnabled,
@@ -59,11 +60,22 @@ function Services() {
   } | null>(null)
   const [showRfqUpgrade, setShowRfqUpgrade] = useState(false)
   const [liveApprovedServices, setLiveApprovedServices] = useState<UserServiceRecord[]>([])
+  const [loadingLiveServices, setLoadingLiveServices] = useState(true)
   const hasDossierUnlocked = isPaidActive || canAccessDataRoom
   const canRequestQuoteNow = Boolean(session) && isPaidActive && canSubmitRfq
 
   useEffect(() => {
-    void fetchApprovedPublicServices().then(setLiveApprovedServices)
+    let active = true
+    void fetchApprovedPublicServices()
+      .then((rows) => {
+        if (active) setLiveApprovedServices(rows)
+      })
+      .finally(() => {
+        if (active) setLoadingLiveServices(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   const list = fixtures.serviceProviders.filter(
@@ -116,7 +128,12 @@ function Services() {
       </section>
 
       <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
-        {liveApprovedServices.length > 0 && (
+        {loadingLiveServices ? (
+          <section className="mb-10">
+            <div className="mb-4 h-6 w-64 animate-pulse rounded bg-ink/10" />
+            <ServiceListingSkeletonGrid count={2} />
+          </section>
+        ) : liveApprovedServices.length > 0 && (
           <section className="mb-10">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -361,12 +378,16 @@ function CatChip({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-pressed={on}
-      className={`shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition ${
-        on ? 'border-ink bg-ink text-paper' : 'border-ink/15 bg-paper hover:border-ink/40'
+      className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-sm transition-colors ${
+        on
+          ? 'border-ochre bg-ink text-paper font-semibold shadow-xs ring-1 ring-ochre/35'
+          : 'border-ink/15 bg-[#FCFBF8] font-medium text-ink-3 hover:border-ink/40'
       }`}
     >
+      {on && <Check size={14} className="shrink-0 text-gold" />}
       {children}
     </button>
   )
@@ -412,10 +433,11 @@ function QuoteModal({
         className="absolute inset-0 bg-ink/60 backdrop-blur-sm animate-fade"
         onClick={onClose}
       />
-      <div className="relative w-full rounded-t-2xl bg-paper p-6 shadow-2xl animate-rise sm:max-w-md sm:rounded-2xl sm:p-8">
+      <div className="relative max-h-[88dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl bg-paper p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl animate-rise sm:max-w-md sm:rounded-2xl sm:p-8">
         <button
+          type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-full p-1.5 text-stone hover:bg-ink/5"
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-stone transition-colors hover:bg-ink/5 hover:text-ink"
           aria-label={t('modal.close')}
         >
           <X size={18} />
@@ -542,51 +564,65 @@ function QuoteModal({
               {t('services.modal.fromProvider', { name: provider.name })}
             </p>
             <div className="mt-6 space-y-4">
-              <label className="block">
-                <span className="label">{t('services.modal.email')}</span>
+              <div>
+                <label htmlFor="quote-email" className="label">
+                  {t('services.modal.email')}
+                </label>
                 <input
+                  id="quote-email"
                   name="email"
                   type="email"
+                  inputMode="email"
+                  autoComplete="email"
                   defaultValue={session?.user.email ?? ''}
+                  placeholder="operator@miningcorp.co.tz"
                   className="field"
                 />
-              </label>
-              <label className="block">
-                <span className="label">{t('services.modal.serviceNeeded')}</span>
-                <select name="service" className="field">
+              </div>
+              <div>
+                <label htmlFor="quote-service" className="label">
+                  {t('services.modal.serviceNeeded')}
+                </label>
+                <select id="quote-service" name="service" className="field">
                   {provider.services.map((s) => (
                     <option key={s}>{s}</option>
                   ))}
                 </select>
-              </label>
-              <label className="block">
-                <span className="label">
+              </div>
+              <div>
+                <label htmlFor="quote-budget" className="label">
                   Estimated Budget ({currencyMeta.flag} {currency})
-                </span>
+                </label>
                 <input
+                  id="quote-budget"
                   name="budget"
                   type="number"
+                  inputMode="decimal"
                   min="0"
                   step="any"
                   value={budgetInput}
                   onChange={(e) => setBudgetInput(e.target.value)}
-                  className="field"
+                  placeholder="25000"
+                  className="field tabular-nums"
                 />
                 {currency !== 'USD' && (
-                  <span className="mt-1 block font-mono text-[11px] text-stone">
+                  <span className="mt-1 block font-mono text-[11px] text-stone tabular-nums">
                     Normalized USD Equivalent: US${normalizedUsd.toLocaleString('en-US')}
                   </span>
                 )}
-              </label>
-              <label className="block">
-                <span className="label">{t('services.modal.scopeLocation')}</span>
+              </div>
+              <div>
+                <label htmlFor="quote-scope" className="label">
+                  {t('services.modal.scopeLocation')}
+                </label>
                 <textarea
+                  id="quote-scope"
                   name="scope"
                   rows={3}
                   className="field resize-none"
                   placeholder={t('services.modal.scopePlaceholder')}
                 />
-              </label>
+              </div>
               <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/12 bg-white p-3 text-xs leading-relaxed text-ink-3">
                 <input
                   type="checkbox"

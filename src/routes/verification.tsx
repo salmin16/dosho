@@ -71,10 +71,27 @@ function Verification() {
 
       <section className="px-5 py-20 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-5">
-          {levels.map((v, i) => (
-            <article key={v.level} className="grid overflow-hidden rounded-2xl border border-ink/10 bg-white/50 md:grid-cols-[220px_1fr_1fr]">
-              <div className={`flex flex-col justify-between border-b p-6 md:border-b-0 md:border-r ${levelTone(v.level)}`}>
-                <span className="font-display text-6xl font-light">L{v.level}</span>
+          {levels.map((v, i) => {
+            const isCurrentTier = Boolean(session) && currentUserLevel === `L${v.level}`
+            return (
+              <article
+                key={v.level}
+                aria-current={isCurrentTier ? 'step' : undefined}
+                className={`grid overflow-hidden rounded-2xl border bg-[#FCFBF8] transition-colors md:grid-cols-[220px_1fr_1fr] ${
+                  isCurrentTier
+                    ? 'border-ochre ring-2 ring-ochre/25 shadow-sm'
+                    : 'border-ink/12'
+                }`}
+              >
+                <div className={`flex flex-col justify-between border-b p-6 md:border-b-0 md:border-r ${levelTone(v.level)}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-display text-6xl font-light tabular-nums">L{v.level}</span>
+                    {isCurrentTier && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-ink px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-gold">
+                        <Check size={11} /> Current
+                      </span>
+                    )}
+                  </div>
                 <div>
                   <div className="font-display text-xl">{v.name}</div>
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-current/15">
@@ -99,14 +116,15 @@ function Verification() {
                   ))}
                 </ul>
               </div>
-              <div className="border-t border-ink/10 bg-paper-2/60 p-6 md:border-l md:border-t-0">
-                <div className="label">{t('verif.limitsOfLevel')}</div>
-                <p className="flex gap-2 text-sm leading-relaxed text-stone">
-                  <CircleSlash size={15} className="mt-0.5 shrink-0 text-danger" /> {v.notCovered}
-                </p>
-              </div>
-            </article>
-          ))}
+                <div className="border-t border-ink/10 bg-paper-2/60 p-6 md:border-l md:border-t-0">
+                  <div className="label">{t('verif.limitsOfLevel')}</div>
+                  <p className="flex gap-2 text-sm leading-relaxed text-stone">
+                    <CircleSlash size={15} className="mt-0.5 shrink-0 text-danger" /> {v.notCovered}
+                  </p>
+                </div>
+              </article>
+            )
+          })}
         </div>
       </section>
 

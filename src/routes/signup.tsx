@@ -130,9 +130,9 @@ function SignUpRouteComponent() {
           : null
 
   return (
-    <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
+    <div className="min-h-[100dvh] bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
-        <div className="rounded-xl border border-ink/12 bg-white p-6 shadow-sm sm:p-8">
+        <div className="rounded-xl border border-ink/12 bg-[#FCFBF8] p-6 shadow-sm sm:p-8">
           {/* Crisp Brand-Anchored MineConnect Logo Header */}
           <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
             <Link to="/" aria-label="MineConnect Home" className="inline-flex">
@@ -215,12 +215,13 @@ function SignUpRouteComponent() {
                 <input
                   id="signup-email"
                   type="email"
+                  inputMode="email"
                   required
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@miningcorp.co.tz"
-                  className="field !bg-paper/45 !pl-10"
+                  className="field !pl-10"
                 />
               </div>
             </div>

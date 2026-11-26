@@ -78,8 +78,14 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
         >
           <Link
             to="/markets"
-            className="link-underline flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-gold opacity-95 transition hover:opacity-100"
-            activeProps={{ className: 'opacity-100 !bg-[length:100%_1px]' }}
+            className={`link-underline flex items-center gap-1 whitespace-nowrap border-b-2 border-transparent py-1 text-sm font-semibold transition-colors ${
+              dark ? 'text-gold hover:text-paper' : 'text-ochre hover:text-ochre-dark'
+            }`}
+            activeProps={{
+              className: dark
+                ? '!border-gold !text-gold font-bold'
+                : '!border-ochre !text-ochre font-bold',
+            }}
           >
             {ui('Markets', 'Masoko', 'Mercados')}
           </Link>
@@ -87,10 +93,14 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             <Link
               key={n.to}
               to={n.to}
-              className="link-underline flex items-center gap-1 whitespace-nowrap text-sm font-medium opacity-80 transition hover:opacity-100"
-              activeProps={{ className: 'opacity-100 !bg-[length:100%_1px]' }}
+              className="link-underline flex items-center gap-1 whitespace-nowrap border-b-2 border-transparent py-1 text-sm font-medium opacity-80 transition-colors hover:opacity-100"
+              activeProps={{
+                className: dark
+                  ? '!opacity-100 !border-gold !text-paper font-semibold'
+                  : '!opacity-100 !border-ochre !text-ink font-semibold',
+              }}
             >
-              {!session && <Lock size={11} className="text-gold opacity-75" />}
+              {!session && <Lock size={11} className="text-gold opacity-80" />}
               {t(n.key)}
             </Link>
           ))}
@@ -160,7 +170,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
           <div
             role="dialog"
             aria-label="Mobile Navigation"
-            className="relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto border-t border-ink/10 bg-paper px-4 pb-5 pt-2.5 text-ink shadow-2xl lg:hidden"
+            className="relative z-50 max-h-[calc(100dvh-72px)] overflow-y-auto overscroll-contain border-t border-ink/10 bg-paper px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2.5 text-ink shadow-2xl lg:hidden"
           >
             <div className="mb-2 w-full min-w-0 rounded-lg border border-ink/10 bg-paper-2/80 p-2.5 sm:hidden">
               <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wider text-stone">
@@ -179,8 +189,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             <Link
               to="/markets"
               onClick={() => setOpen(false)}
-              className="flex items-center justify-between border-b border-ink/8 py-2.5 font-display text-[17px] leading-snug text-ink transition hover:text-ochre focus-visible:text-ochre"
-              activeProps={{ className: '!text-ochre' }}
+              className="flex min-h-[44px] items-center justify-between border-b border-ink/8 border-l-2 border-l-transparent pl-2 py-2.5 font-display text-[17px] leading-snug text-ink transition-colors hover:text-ochre focus-visible:text-ochre"
+              activeProps={{ className: '!border-l-ochre bg-ochre/8 !text-ochre font-semibold' }}
             >
               <span>
                 {ui('Indicative Mineral Markets', 'Bei Elekezi za Madini', 'Mercados de Minerales')}
@@ -191,8 +201,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 key={n.to}
                 to={n.to}
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-between border-b border-ink/8 py-2.5 font-display text-[17px] leading-snug text-ink transition hover:text-ochre focus-visible:text-ochre"
-                activeProps={{ className: '!text-ochre' }}
+                className="flex min-h-[44px] items-center justify-between border-b border-ink/8 border-l-2 border-l-transparent pl-2 py-2.5 font-display text-[17px] leading-snug text-ink transition-colors hover:text-ochre focus-visible:text-ochre"
+                activeProps={{ className: '!border-l-ochre bg-ochre/8 !text-ochre font-semibold' }}
               >
                 <span>{t(n.key)}</span>
                 {!session && <Lock size={13} className="shrink-0 text-stone" />}
@@ -203,8 +213,8 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               <Link
                 to="/dashboard"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-2 border-b border-ink/8 py-2.5 text-sm font-semibold text-ink transition hover:text-ochre focus-visible:text-ochre"
-                activeProps={{ className: '!text-ochre' }}
+                className="flex min-h-[44px] items-center gap-2 border-b border-ink/8 border-l-2 border-l-transparent pl-2 py-2.5 text-sm font-semibold text-ink transition-colors hover:text-ochre focus-visible:text-ochre"
+                activeProps={{ className: '!border-l-ochre bg-ochre/8 !text-ochre' }}
               >
                 <ShieldCheck size={15} className="shrink-0" />
                 <span className="truncate">
@@ -216,7 +226,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
                 <Link
                   to="/login"
                   onClick={() => setOpen(false)}
-                  className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-ochre px-4 py-2 text-sm font-semibold text-paper shadow-xs transition hover:bg-ochre-dark"
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md bg-ochre px-4 py-2 text-sm font-semibold text-paper shadow-xs transition-colors hover:bg-ochre-dark"
                 >
                   <User size={15} />
                   {ui('Login', 'Ingia', 'Iniciar sesión')}
@@ -228,7 +238,7 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
               <Link
                 to="/admin"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-2 border-b border-ink/8 py-2.5 text-sm font-semibold text-moss"
+                className="flex min-h-[44px] items-center gap-2 border-b border-ink/8 pl-2 py-2.5 text-sm font-semibold text-moss"
               >
                 <ShieldCheck size={15} className="shrink-0" />
                 {ui('Admin Dashboard (/admin)', 'Dashibodi ya Utawala (/admin)', 'Panel Admin (/admin)')}

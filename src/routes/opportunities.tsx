@@ -34,6 +34,7 @@ import { fetchApprovedPublicOpportunities } from '../lib/supabaseAuth'
 import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
+import { ProjectListingSkeletonGrid } from '../components/Skeletons'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
 import TenementDossierGate from '../components/TenementDossierGate'
 import VerificationBadge from '../components/VerificationBadge'
@@ -143,14 +144,24 @@ function Opportunities() {
   const [selected, setSelected] = useState<string | null>(null)
   const [liveOpportunities, setLiveOpportunities] = useState<UserOpportunityRecord[]>([])
   const [liveProjects, setLiveProjects] = useState<UserListedProject[]>([])
+  const [loadingLiveFeed, setLoadingLiveFeed] = useState(true)
   const [activeLiveDossier, setActiveLiveDossier] = useState<CounterpartyDossierData | null>(null)
   const hasDossierUnlocked = isPaidActive || canAccessDataRoom
 
   useEffect(() => {
-    void fetchApprovedPublicOpportunities().then((res) => {
-      setLiveOpportunities(res.opportunities)
-      setLiveProjects(res.projects)
-    })
+    let active = true
+    void fetchApprovedPublicOpportunities()
+      .then((res) => {
+        if (!active) return
+        setLiveOpportunities(res.opportunities)
+        setLiveProjects(res.projects)
+      })
+      .finally(() => {
+        if (active) setLoadingLiveFeed(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   const results = useMemo(
@@ -186,25 +197,39 @@ function Opportunities() {
           <p className="eyebrow mb-3 text-ochre">{t('opp.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('opp.title')}</h1>
-            <label className="relative w-full lg:max-w-md">
-              <span className="sr-only">{t('opp.searchLabel')}</span>
-              <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone" />
-              <input
-                defaultValue={search.q}
-                onChange={(e) => set({ q: e.target.value || undefined })}
-                placeholder={t('opp.searchPlaceholder')}
-                className="field !h-12 !pl-10"
-              />
-            </label>
+            <div className="w-full lg:max-w-md">
+              <label htmlFor="opp-search-input" className="label">
+                {t('opp.searchLabel')}
+              </label>
+              <div className="relative">
+                <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone" />
+                <input
+                  id="opp-search-input"
+                  type="search"
+                  inputMode="search"
+                  defaultValue={search.q}
+                  onChange={(e) => set({ q: e.target.value || undefined })}
+                  placeholder={t('opp.searchPlaceholder')}
+                  className="field !h-12 !pl-10"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       <OpportunityStreamsHub activeType={search.type} onSelectType={(type) => set({ type: search.type === type ? undefined : type })} />
 
-      {(liveOpportunities.length > 0 || liveProjects.length > 0) && (
+      {loadingLiveFeed ? (
         <section className="mx-auto max-w-7xl px-5 pt-10 lg:px-8">
-          <div className="rounded-2xl border border-moss/30 bg-white/90 p-6 shadow-xs">
+          <div className="rounded-2xl border border-ink/10 bg-[#FCFBF8] p-6 shadow-xs">
+            <div className="mb-4 h-6 w-64 animate-pulse rounded bg-ink/10" />
+            <ProjectListingSkeletonGrid count={3} />
+          </div>
+        </section>
+      ) : (liveOpportunities.length > 0 || liveProjects.length > 0) && (
+        <section className="mx-auto max-w-7xl px-5 pt-10 lg:px-8">
+          <div className="rounded-2xl border border-moss/30 bg-[#FCFBF8] p-6 shadow-xs">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-moss">

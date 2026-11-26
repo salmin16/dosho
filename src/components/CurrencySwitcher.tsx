@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Coins, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, Coins, RefreshCw } from 'lucide-react';
 import { CURRENCY_LIST, useCurrency } from '../lib/currency';
 import { updatePreferredCurrency } from '../lib/supabaseAuth';
 
@@ -137,12 +137,16 @@ export default function CurrencySwitcher({
             ? `${statusMeta.label} (${ratesProvider}) · Synced ${formattedSyncTime}`
             : `${statusMeta.label}`
         }
-        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 font-mono text-xs font-medium transition ${
-          fullWidth ? 'h-9 w-full min-w-0 justify-between text-[11px]' : ''
+        className={`inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 font-mono text-xs font-medium transition-colors ${
+          fullWidth ? 'w-full min-w-0 justify-between text-[11px]' : ''
         } ${
           dark
-            ? 'border-paper/25 bg-paper/10 text-paper hover:bg-paper/20'
-            : 'border-ink/15 bg-paper-2/80 text-ink hover:border-ink/35'
+            ? open
+              ? 'border-gold bg-paper/20 text-paper'
+              : 'border-paper/25 bg-paper/10 text-paper hover:bg-paper/20'
+            : open
+              ? 'border-ochre bg-ochre/10 text-ink'
+              : 'border-ink/15 bg-paper-2/80 text-ink hover:border-ink/35'
         }`}
       >
         <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
@@ -216,18 +220,21 @@ export default function CurrencySwitcher({
                   role="option"
                   aria-selected={active}
                   onClick={() => handleSelect(item.code)}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                  className={`flex min-h-[44px] sm:min-h-[36px] w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-colors ${
                     active
-                      ? 'bg-ochre text-paper font-semibold'
-                      : 'text-ink hover:bg-ink/5'
+                      ? 'border-ochre bg-ochre text-paper font-semibold shadow-xs'
+                      : 'border-transparent text-ink hover:bg-ink/5'
                   }`}
                 >
                   <span className="flex items-center gap-2">
                     <span>{item.flag}</span>
                     <span>{item.name}</span>
                   </span>
-                  <span className="font-mono text-[11px] opacity-85">
-                    {item.code} ({item.symbol.trim()})
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                    <span className={active ? 'text-paper' : 'text-stone'}>
+                      {item.code} ({item.symbol.trim()})
+                    </span>
+                    {active && <Check size={13} className="shrink-0 text-paper" aria-hidden />}
                   </span>
                 </button>
               );

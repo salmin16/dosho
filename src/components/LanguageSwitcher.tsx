@@ -59,12 +59,16 @@ export default function LanguageSwitcher({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${t('nav.selectLanguage')}: ${current.label}`}
-        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre ${
-          fullWidth ? 'h-9 w-full min-w-0 justify-between text-[11px]' : ''
+        className={`inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre ${
+          fullWidth ? 'w-full min-w-0 justify-between text-[11px]' : ''
         } ${
           dark
-            ? 'border-paper/20 bg-paper/[0.06] text-paper hover:border-paper/40 hover:bg-paper/10'
-            : 'border-ink/15 bg-white/60 text-ink hover:border-ink/35 hover:bg-white'
+            ? open
+              ? 'border-gold bg-paper/18 text-paper'
+              : 'border-paper/20 bg-paper/[0.06] text-paper hover:border-paper/40 hover:bg-paper/10'
+            : open
+              ? 'border-ochre bg-ochre/10 text-ink'
+              : 'border-ink/15 bg-[#FCFBF8] text-ink hover:border-ink/35 hover:bg-paper-2'
         }`}
       >
         <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
@@ -95,8 +99,10 @@ export default function LanguageSwitcher({
                 <button
                   type="button"
                   onClick={() => selectLanguage(l.code)}
-                  className={`flex w-full items-center justify-between gap-3 px-3.5 py-2 text-left text-sm transition ${
-                    active ? 'bg-ochre/10 font-semibold text-ochre' : 'text-ink hover:bg-ink/5'
+                  className={`flex min-h-[44px] sm:min-h-[38px] w-full items-center justify-between gap-3 border-l-2 px-3.5 py-2 text-left text-sm transition-colors ${
+                    active
+                      ? 'border-ochre bg-ochre/12 font-semibold text-ochre'
+                      : 'border-transparent text-ink hover:bg-ink/5'
                   }`}
                 >
                   <span>{l.label}</span>

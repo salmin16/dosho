@@ -5,19 +5,20 @@
   --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --color-ink: #15120f;
-  --color-ink-2: #231e1a;
-  --color-ink-3: #3a322b;
-  --color-paper: #f6f1e7;
-  --color-paper-2: #ede5d6;
-  --color-sand: #d9ccb4;
-  --color-stone: #776c60;
-  --color-ochre: #c0612b;
-  --color-ochre-dark: #9a4a1e;
-  --color-gold: #d6a443;
-  --color-moss: #3e5c49;
-  --color-moss-light: #dfe8df;
-  --color-danger: #a33a2a;
+  --color-ink: #141413;
+  --color-ink-2: #221f1c;
+  --color-ink-3: #38332e;
+  --color-paper: #faf8f5;
+  --color-paper-2: #f3efe7;
+  --color-surface: #fcfbf8;
+  --color-sand: #d8cebe;
+  --color-stone: #5c554c;
+  --color-ochre: #b85824;
+  --color-ochre-dark: #944419;
+  --color-gold: #cfa03d;
+  --color-moss: #365944;
+  --color-moss-light: #e2ece4;
+  --color-danger: #9e3526;
 
   --animate-rise: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-fade: fade 1.2s ease both;
@@ -129,20 +130,31 @@ table th,
   background-size: 100% 1px;
 }
 
+/* Crisp keyboard accessibility outline across all interactive elements */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-ochre);
+  outline-offset: 2px;
+}
+
 .field {
-  @apply min-h-[44px] w-full rounded-md border border-sand bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-stone/70 focus:border-ochre focus:ring-2 focus:ring-ochre/20;
+  @apply min-h-[44px] w-full rounded-md border border-sand bg-[#fcfbf8] px-3.5 py-2.5 text-base text-ink outline-none transition-colors placeholder:text-stone/65 focus:border-ochre focus:ring-2 focus:ring-ochre/20 sm:text-sm;
 }
 
 .label {
-  @apply mb-1.5 block font-mono text-[11px] uppercase tracking-[0.14em] text-stone;
+  @apply mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.13em] text-stone;
 }
 
 .btn-primary {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-sm transition duration-150 hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-ochre px-5 py-3 text-sm font-semibold text-paper shadow-sm transition-colors duration-150 hover:bg-ochre-dark active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
 }
 
 .btn-ghost {
-  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition duration-150 hover:border-current/55 hover:bg-current/5 active:translate-y-px;
+  @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-current/25 px-5 py-3 text-sm font-semibold transition-colors duration-150 hover:border-current/55 hover:bg-current/5 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ochre;
 }
 
 .eyebrow {

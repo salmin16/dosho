@@ -45,6 +45,7 @@ import { useLocalization } from '../context/LocalizationContext'
 import CurrencySwitcher from '../components/CurrencySwitcher'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import PriceDisplay from '../components/PriceDisplay'
+import { AdminGovernanceSkeleton } from '../components/Skeletons'
 import VerificationBadge from '../components/VerificationBadge'
 import {
   normalizeVerificationLevel,
@@ -825,19 +826,7 @@ export function MasterAdminDashboard({
   }
 
   if (authLoading || profileLoading || initialLoading) {
-    return (
-      <div className="min-h-[100dvh] bg-paper pb-24 pt-28 text-ink">
-        <div className="mx-auto max-w-7xl space-y-6 px-5 lg:px-8">
-          <div className="h-40 rounded-2xl bg-ink/10" />
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="min-h-[104px] rounded-xl bg-ink/10" />
-            ))}
-          </div>
-          <div className="h-72 rounded-2xl bg-ink/10" />
-        </div>
-      </div>
-    )
+    return <AdminGovernanceSkeleton />
   }
 
   if (!session) {
@@ -961,8 +950,9 @@ export function MasterAdminDashboard({
             </div>
           </div>
 
-          {/* Governance Tabs — Fixed Height & Shrink-0 Pills (Zero Reflow) */}
+          {/* Governance Tabs — Fixed Height, Accessible Tab Semantics & Multi-Cue Active State */}
           <nav
+            role="tablist"
             className="mt-6 flex flex-wrap gap-2 border-t border-paper/10 pt-5"
             aria-label="Admin sections"
           >
@@ -973,11 +963,13 @@ export function MasterAdminDashboard({
                 <button
                   key={tab.id}
                   type="button"
+                  role="tab"
+                  aria-selected={active}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex min-h-[38px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
+                  className={`inline-flex min-h-[44px] sm:min-h-[38px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 py-2 text-xs transition-colors ${
                     active
-                      ? 'border-gold bg-gold text-ink shadow-sm'
-                      : 'border-paper/15 bg-paper/5 text-paper/80 hover:bg-paper/15 hover:text-paper'
+                      ? 'border-gold bg-gold font-bold text-ink shadow-sm ring-1 ring-gold/60'
+                      : 'border-paper/15 bg-paper/5 font-medium text-paper/80 hover:bg-paper/15 hover:text-paper'
                   }`}
                 >
                   <Icon size={14} className="shrink-0" />
@@ -1039,7 +1031,7 @@ export function MasterAdminDashboard({
                   key={card.label}
                   type="button"
                   onClick={() => setActiveTab(card.tab)}
-                  className="flex min-h-[104px] flex-col justify-between rounded-xl border border-ink/15 bg-white p-4 text-left shadow-xs transition-colors duration-150 hover:border-ochre/50"
+                  className="flex min-h-[104px] flex-col justify-between rounded-xl border border-ink/15 bg-[#FCFBF8] p-4 text-left shadow-xs transition-colors duration-150 hover:border-ochre/50"
                 >
                   <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
                     {card.label}
@@ -1101,8 +1093,8 @@ export function MasterAdminDashboard({
 
         {/* TAB 2: USER MANAGEMENT & 5-TIER (L0–L4) VERIFICATION PIPELINE */}
         {activeTab === 'users' && (
-          <section className="space-y-5 rounded-2xl border border-ink/12 bg-white/85 p-6">
-            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <section className="space-y-5 rounded-2xl border border-ink/12 bg-[#FCFBF8] p-6">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
               <div>
                 <h2 className="font-display text-2xl font-semibold tabular-nums">
                   User Directory &amp; L0–L4 Verification ({filteredUsers.length} / {users.length})
@@ -1112,29 +1104,42 @@ export function MasterAdminDashboard({
                 </p>
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
-                  <input
-                    type="search"
-                    value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="Search email, name, company..."
-                    className="field !min-h-[34px] !py-1.5 !pl-8 !text-xs"
-                  />
+              <div className="grid w-full gap-2.5 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:items-end">
+                <div className="min-w-0">
+                  <label htmlFor="admin-user-search" className="label !mb-1 !text-[10px]">
+                    Search Members
+                  </label>
+                  <div className="relative">
+                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone" />
+                    <input
+                      id="admin-user-search"
+                      type="search"
+                      inputMode="search"
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="name@company.co.tz"
+                      className="field !min-h-[44px] sm:!min-h-[36px] !py-1.5 !pl-8 !text-base sm:!text-xs"
+                    />
+                  </div>
                 </div>
-                <select
-                  value={userVerifFilter}
-                  onChange={(e) => setUserVerifFilter(e.target.value as typeof userVerifFilter)}
-                  className="field !min-h-[34px] !w-auto shrink-0 !py-1.5 !text-xs"
-                >
-                  <option value="ALL">All Users</option>
-                  <option value="pending">Pending Verification</option>
-                  <option value="verified">Verified (L1–L4)</option>
-                  <option value="unverified">Unverified (L0)</option>
-                  <option value="rejected">Rejected</option>
-                  <option value="suspended">Suspended</option>
-                </select>
+                <div className="min-w-0">
+                  <label htmlFor="admin-user-filter" className="label !mb-1 !text-[10px]">
+                    Verification Filter
+                  </label>
+                  <select
+                    id="admin-user-filter"
+                    value={userVerifFilter}
+                    onChange={(e) => setUserVerifFilter(e.target.value as typeof userVerifFilter)}
+                    className="field !min-h-[44px] sm:!min-h-[36px] !w-full sm:!w-auto shrink-0 !py-1.5 !text-base sm:!text-xs"
+                  >
+                    <option value="ALL">All Users</option>
+                    <option value="pending">Pending Verification</option>
+                    <option value="verified">Verified (L1–L4)</option>
+                    <option value="unverified">Unverified (L0)</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1169,7 +1174,14 @@ export function MasterAdminDashboard({
                               <BadgeCheck size={11} /> Verified
                             </span>
                           ) : (
-                            <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${verificationBadgeClasses(verifStatus)}`}>
+                            <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${verificationBadgeClasses(verifStatus)}`}>
+                              {verifStatus === 'pending' ? (
+                                <Clock size={11} />
+                              ) : verifStatus === 'rejected' ? (
+                                <XCircle size={11} />
+                              ) : (
+                                <ShieldAlert size={11} />
+                              )}
                               {verifStatus}
                             </span>
                           )}
@@ -1282,33 +1294,44 @@ export function MasterAdminDashboard({
                         )}
                       </div>
 
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        <select
-                          aria-label={`Verification level for ${u.email}`}
-                          value={selectedDraftLevel}
-                          onChange={(e) =>
-                            setLevelDraftMap((prev) => ({
-                              ...prev,
-                              [u.id]: e.target.value as VerificationLevelCode,
-                            }))
-                          }
-                          className="field !min-h-[32px] !w-auto shrink-0 !py-1 !text-xs font-mono"
-                        >
-                          {VERIFICATION_LEVEL_LIST.map((spec) => (
-                            <option key={spec.code} value={spec.code}>
-                              {spec.code} · {spec.title} (Cap {spec.pilotListingQuota})
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          value={verifNotesMap[u.id] ?? ''}
-                          onChange={(e) =>
-                            setVerifNotesMap((prev) => ({ ...prev, [u.id]: e.target.value }))
-                          }
-                          placeholder="Reviewer note (optional)..."
-                          className="field !min-h-[32px] !w-44 !py-1 !text-xs"
-                        />
+                      <div className="flex shrink-0 flex-wrap items-end gap-2">
+                        <div>
+                          <label htmlFor={`verif-lvl-${u.id}`} className="label !mb-1 !text-[9.5px]">
+                            Verification Level
+                          </label>
+                          <select
+                            id={`verif-lvl-${u.id}`}
+                            value={selectedDraftLevel}
+                            onChange={(e) =>
+                              setLevelDraftMap((prev) => ({
+                                ...prev,
+                                [u.id]: e.target.value as VerificationLevelCode,
+                              }))
+                            }
+                            className="field !min-h-[44px] sm:!min-h-[34px] !w-auto shrink-0 !py-1 !text-base sm:!text-xs font-mono"
+                          >
+                            {VERIFICATION_LEVEL_LIST.map((spec) => (
+                              <option key={spec.code} value={spec.code}>
+                                {spec.code} · {spec.title} (Cap {spec.pilotListingQuota})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`verif-note-${u.id}`} className="label !mb-1 !text-[9.5px]">
+                            Reviewer Note
+                          </label>
+                          <input
+                            id={`verif-note-${u.id}`}
+                            type="text"
+                            value={verifNotesMap[u.id] ?? ''}
+                            onChange={(e) =>
+                              setVerifNotesMap((prev) => ({ ...prev, [u.id]: e.target.value }))
+                            }
+                            placeholder="e.g. BRELA verified"
+                            className="field !min-h-[44px] sm:!min-h-[34px] !w-44 !py-1 !text-base sm:!text-xs"
+                          />
+                        </div>
                         <button
                           type="button"
                           disabled={busyId === u.id}
@@ -1319,7 +1342,7 @@ export function MasterAdminDashboard({
                               latestSub?.id,
                             )
                           }
-                          className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-xs font-semibold text-gold transition-colors hover:bg-ochre hover:text-paper disabled:opacity-50"
+                          className="inline-flex min-h-[44px] sm:min-h-[34px] shrink-0 items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-gold transition-colors hover:bg-ochre hover:text-paper disabled:opacity-50"
                         >
                           Apply {selectedDraftLevel}
                         </button>
@@ -2089,17 +2112,37 @@ export function MasterAdminDashboard({
             </div>
 
             {editingMineral && (
-              <form onSubmit={handleSaveMineralEdit} className="grid gap-3 rounded-xl border border-ochre/40 bg-paper p-4 sm:grid-cols-5">
+              <form onSubmit={handleSaveMineralEdit} className="grid gap-3 rounded-xl border border-ochre/40 bg-paper p-4 sm:grid-cols-5 sm:items-end">
                 <div className="sm:col-span-5 font-display text-base font-semibold">
                   Editing {editingMineral.mineral_name} ({editingMineral.symbol})
                 </div>
-                <input value={editWorldPrice} onChange={(e) => setEditWorldPrice(e.target.value)} placeholder="World USD" className="field !text-xs" />
-                <input value={editLocalPrice} onChange={(e) => setEditLocalPrice(e.target.value)} placeholder="Local USD" className="field !text-xs" />
-                <input value={editBuyingPrice} onChange={(e) => setEditBuyingPrice(e.target.value)} placeholder="Buying USD" className="field !text-xs" />
-                <input value={editTrendPct} onChange={(e) => setEditTrendPct(e.target.value)} placeholder="Trend %" className="field !text-xs" />
+                <div>
+                  <label htmlFor="mineral-edit-world" className="label !mb-1 !text-[10px]">
+                    World Spot (USD)
+                  </label>
+                  <input id="mineral-edit-world" type="number" inputMode="decimal" step="any" value={editWorldPrice} onChange={(e) => setEditWorldPrice(e.target.value)} placeholder="e.g. 2650" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+                </div>
+                <div>
+                  <label htmlFor="mineral-edit-local" className="label !mb-1 !text-[10px]">
+                    Soko la Madini (USD)
+                  </label>
+                  <input id="mineral-edit-local" type="number" inputMode="decimal" step="any" value={editLocalPrice} onChange={(e) => setEditLocalPrice(e.target.value)} placeholder="e.g. 2465" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+                </div>
+                <div>
+                  <label htmlFor="mineral-edit-buying" className="label !mb-1 !text-[10px]">
+                    Buying Centre (USD)
+                  </label>
+                  <input id="mineral-edit-buying" type="number" inputMode="decimal" step="any" value={editBuyingPrice} onChange={(e) => setEditBuyingPrice(e.target.value)} placeholder="e.g. 2320" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+                </div>
+                <div>
+                  <label htmlFor="mineral-edit-trend" className="label !mb-1 !text-[10px]">
+                    24h Trend (%)
+                  </label>
+                  <input id="mineral-edit-trend" type="number" inputMode="decimal" step="any" value={editTrendPct} onChange={(e) => setEditTrendPct(e.target.value)} placeholder="e.g. 1.25" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+                </div>
                 <div className="flex gap-2">
-                  <button type="submit" className="btn-primary !py-1.5 !px-3 text-xs">Save</button>
-                  <button type="button" onClick={() => setEditingMineral(null)} className="rounded border border-ink/20 px-3 text-xs">Cancel</button>
+                  <button type="submit" className="btn-primary !min-h-[44px] sm:!min-h-[36px] !py-1.5 !px-3 text-xs">Save</button>
+                  <button type="button" onClick={() => setEditingMineral(null)} className="min-h-[44px] sm:min-h-[36px] rounded border border-ink/20 px-3 text-xs font-medium">Cancel</button>
                 </div>
               </form>
             )}

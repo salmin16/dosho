@@ -236,9 +236,9 @@ function LoginRouteComponent() {
             : null
 
   return (
-    <div className="min-h-screen bg-paper pb-20 pt-24 text-ink sm:pt-28">
+    <div className="min-h-[100dvh] bg-paper pb-20 pt-24 text-ink sm:pt-28">
       <div className="mx-auto max-w-md px-4 sm:px-5">
-        <div className="rounded-xl border border-ink/12 bg-white p-6 shadow-sm sm:p-8">
+        <div className="rounded-xl border border-ink/12 bg-[#FCFBF8] p-6 shadow-sm sm:p-8">
           {/* Crisp Brand-Anchored MineConnect Logo Header */}
           <div className="mb-6 flex items-center justify-center border-b border-ink/10 pb-5">
             <Link to="/" aria-label="MineConnect Home" className="inline-flex">
@@ -305,12 +305,13 @@ function LoginRouteComponent() {
                     <input
                       id="login-email"
                       type="email"
+                      inputMode="email"
                       required
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="operator@miningcorp.co.tz"
-                      className="field !bg-paper/45 !pl-10"
+                      className="field !pl-10"
                     />
                   </div>
                 </div>
@@ -343,11 +344,11 @@ function LoginRouteComponent() {
                       {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
                   </div>
-                  <div className="mt-2 flex justify-end">
+                  <div className="mt-1 flex justify-end">
                     <button
                       type="button"
                       onClick={switchToForgot}
-                      className="text-xs font-medium text-ochre transition hover:text-ochre-dark hover:underline"
+                      className="inline-flex min-h-[44px] items-center px-1 text-xs font-semibold text-ochre transition-colors hover:text-ochre-dark hover:underline"
                     >
                       Forgot password
                     </button>
@@ -443,12 +444,13 @@ function LoginRouteComponent() {
                     <input
                       id="reset-email"
                       type="email"
+                      inputMode="email"
                       required
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="operator@miningcorp.co.tz"
-                      className="field !bg-paper/45 !pl-10"
+                      className="field !pl-10"
                     />
                   </div>
                 </div>

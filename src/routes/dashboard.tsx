@@ -27,9 +27,11 @@ import { useLocalization } from '../context/LocalizationContext'
 import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import SubscriptionStatusWidget from '../components/SubscriptionStatusWidget'
+import { DashboardWorkspaceSkeleton } from '../components/Skeletons'
 import VerificationBadge, {
   VerificationLimitsNotice,
 } from '../components/VerificationBadge'
+import { formatTanzaniaPhoneDisplay } from '../lib/phoneFormat'
 import {
   normalizeVerificationLevel,
   VERIFICATION_LEVELS,
@@ -93,17 +95,22 @@ export function DashboardRouteComponent() {
   const [verifCompressing, setVerifCompressing] = useState(false)
   const [verifMessage, setVerifMessage] = useState<string | null>(null)
   const [verifSubmitting, setVerifSubmitting] = useState(false)
+  const [initialDataLoading, setInitialDataLoading] = useState(true)
 
   const loadData = useCallback(async () => {
-    const data = await fetchGroundedUserData()
-    setProfile(data.profile)
-    if (data.profile?.company_name) setVerifCompany(data.profile.company_name)
-    if (data.profile?.phone) setVerifPhone(data.profile.phone)
-    setDocuments(data.documents)
-    setListedProjects(data.listedProjects)
-    setQuoteRequests(data.quoteRequests)
-    setUserOpportunities(data.userOpportunities)
-    setUserServices(data.userServices)
+    try {
+      const data = await fetchGroundedUserData()
+      setProfile(data.profile)
+      if (data.profile?.company_name) setVerifCompany(data.profile.company_name)
+      if (data.profile?.phone) setVerifPhone(formatTanzaniaPhoneDisplay(data.profile.phone))
+      setDocuments(data.documents)
+      setListedProjects(data.listedProjects)
+      setQuoteRequests(data.quoteRequests)
+      setUserOpportunities(data.userOpportunities)
+      setUserServices(data.userServices)
+    } finally {
+      setInitialDataLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -115,7 +122,11 @@ export function DashboardRouteComponent() {
     void loadData()
   }, [authLoading, session, navigate, loadData])
 
-  if (authLoading || !session) {
+  if (authLoading || (session && initialDataLoading && !profile)) {
+    return <DashboardWorkspaceSkeleton />
+  }
+
+  if (!session) {
     return null
   }
 
@@ -276,7 +287,7 @@ export function DashboardRouteComponent() {
         </div>
 
         {/* Member Identity Verification Status & 5-Tier (L0–L4) Fast Pipeline Panel */}
-        <section className="mt-6 space-y-4 rounded-xl border border-ink/12 bg-white/80 p-5">
+        <section className="mt-6 space-y-4 rounded-xl border border-ink/12 bg-[#FCFBF8] p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -285,7 +296,7 @@ export function DashboardRouteComponent() {
                 </h2>
                 <VerificationBadge level={currentVerifLevel} size="sm" showQuota />
                 <span
-                  className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${
                     profile?.verification_status === 'verified'
                       ? 'border-moss/40 bg-moss-light text-moss'
                       : profile?.verification_status === 'pending'
@@ -295,6 +306,7 @@ export function DashboardRouteComponent() {
                           : 'border-ink/15 bg-paper text-stone'
                   }`}
                 >
+                  <ShieldCheck size={11} className="shrink-0" />
                   {profile?.verification_status || 'unverified'}
                 </span>
               </div>
@@ -308,7 +320,7 @@ export function DashboardRouteComponent() {
                 </p>
               )}
             </div>
-            <Link to="/verification" className="font-mono text-[11px] font-semibold text-ochre hover:underline shrink-0">
+            <Link to="/verification" className="inline-flex min-h-[44px] sm:min-h-[32px] items-center font-mono text-[11px] font-semibold text-ochre hover:underline shrink-0">
               View L0–L4 Framework →
             </Link>
           </div>
@@ -316,77 +328,116 @@ export function DashboardRouteComponent() {
           <VerificationLimitsNotice level={currentVerifLevel} compact />
 
           {currentVerifLevel !== 'L4' && (
-            <form onSubmit={handleSubmitVerification} className="space-y-3 border-t border-ink/10 pt-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <input
-                  type="text"
-                  required
-                  value={verifCompany}
-                  onChange={(e) => setVerifCompany(e.target.value)}
-                  placeholder="Company / Organization Name"
-                  className="field !py-2 !text-xs"
-                />
-                <input
-                  type="tel"
-                  inputMode="tel"
-                  value={verifPhone}
-                  onChange={(e) => setVerifPhone(e.target.value)}
-                  placeholder="Phone (+255 ...)"
-                  className="field !py-2 !text-xs"
-                />
-                <select
-                  value={verifRequestedLevel}
-                  onChange={(e) =>
-                    setVerifRequestedLevel(
-                      e.target.value as Exclude<VerificationLevelCode, 'L0'>,
-                    )
-                  }
-                  className="field !py-2 !text-xs"
-                  aria-label="Target verification level"
-                >
-                  {VERIFICATION_LEVEL_LIST.filter((v) => v.code !== 'L0').map((v) => (
-                    <option key={v.code} value={v.code}>
-                      {v.code} · {v.title} (Pilot cap: {v.pilotListingQuota})
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={verifLicenceRef}
-                  onChange={(e) => setVerifLicenceRef(e.target.value)}
-                  placeholder="BRELA / Mining Licence Ref"
-                  className="field !py-2 !text-xs"
-                />
+            <form onSubmit={handleSubmitVerification} className="space-y-4 border-t border-ink/10 pt-4">
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label htmlFor="verif-company" className="label">
+                    Company / Organization
+                  </label>
+                  <input
+                    id="verif-company"
+                    type="text"
+                    required
+                    autoComplete="organization"
+                    value={verifCompany}
+                    onChange={(e) => setVerifCompany(e.target.value)}
+                    placeholder="e.g. Geita Goldfields Ltd"
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="verif-phone" className="label">
+                    Phone Number
+                  </label>
+                  <input
+                    id="verif-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={verifPhone}
+                    onChange={(e) => setVerifPhone(e.target.value)}
+                    onBlur={() => setVerifPhone((prev) => formatTanzaniaPhoneDisplay(prev))}
+                    placeholder="0712 345 678 or +255 712 345 678"
+                    className="field font-mono tabular-nums"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="verif-level" className="label">
+                    Target Verification Level
+                  </label>
+                  <select
+                    id="verif-level"
+                    value={verifRequestedLevel}
+                    onChange={(e) =>
+                      setVerifRequestedLevel(
+                        e.target.value as Exclude<VerificationLevelCode, 'L0'>,
+                      )
+                    }
+                    className="field"
+                  >
+                    {VERIFICATION_LEVEL_LIST.filter((v) => v.code !== 'L0').map((v) => (
+                      <option key={v.code} value={v.code}>
+                        {v.code} · {v.title} (Pilot cap: {v.pilotListingQuota})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="verif-licence-ref" className="label">
+                    BRELA / Licence Ref
+                  </label>
+                  <input
+                    id="verif-licence-ref"
+                    type="text"
+                    value={verifLicenceRef}
+                    onChange={(e) => setVerifLicenceRef(e.target.value)}
+                    placeholder="e.g. PML-2026-00412"
+                    className="field font-mono"
+                  />
+                </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
-                <input
-                  type="text"
-                  value={verifNotes}
-                  onChange={(e) => setVerifNotes(e.target.value)}
-                  placeholder="Additional verification notes (optional)"
-                  className="field !py-2 !text-xs"
-                />
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-ink/25 bg-paper/70 px-3 py-2 text-xs text-stone transition hover:border-ochre hover:text-ink">
-                  <UploadCloud size={15} className="shrink-0 text-ochre" />
-                  <span className="truncate font-mono text-[11px]">
-                    {verifCompressing
-                      ? 'Compressing file...'
-                      : verifFile
-                        ? `${verifFile.fileName} (${formatBytesCompact(verifFile.compressedBytes)}${verifFile.wasCompressed ? ' compressed' : ''})`
-                        : 'Attach KYC / Licence Doc (PDF/JPG/PNG)'}
-                  </span>
+              <div className="grid gap-3.5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <div>
+                  <label htmlFor="verif-notes" className="label">
+                    Reviewer Notes (Optional)
+                  </label>
                   <input
-                    type="file"
-                    accept=".pdf,image/jpeg,image/png,image/webp"
-                    onChange={(e) => void handleVerificationFileChange(e)}
-                    className="sr-only"
+                    id="verif-notes"
+                    type="text"
+                    value={verifNotes}
+                    onChange={(e) => setVerifNotes(e.target.value)}
+                    placeholder="e.g. Attached BRELA & PML certificate"
+                    className="field"
                   />
-                </label>
+                </div>
+                <div>
+                  <span className="label">Supporting Document (PDF / Image)</span>
+                  <label
+                    htmlFor="verif-file-upload"
+                    className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-ink/25 bg-paper/75 px-3 py-2 text-xs text-stone transition-colors hover:border-ochre hover:text-ink"
+                  >
+                    <UploadCloud size={15} className="shrink-0 text-ochre" />
+                    <span className="truncate font-mono text-[11px]">
+                      {verifCompressing
+                        ? 'Compressing file...'
+                        : verifFile
+                          ? `${verifFile.fileName} (${formatBytesCompact(verifFile.compressedBytes)}${verifFile.wasCompressed ? ' compressed' : ''})`
+                          : 'Choose PDF, JPG, PNG, or WebP'}
+                    </span>
+                    <input
+                      id="verif-file-upload"
+                      type="file"
+                      accept=".pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => void handleVerificationFileChange(e)}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
                 <button
                   type="submit"
                   disabled={verifSubmitting || verifCompressing}
-                  className="btn-primary !min-h-[36px] !py-2 text-xs disabled:opacity-50"
+                  className="btn-primary !min-h-[44px] text-xs disabled:opacity-50"
                 >
                   {verifSubmitting
                     ? 'Submitting...'
@@ -396,7 +447,7 @@ export function DashboardRouteComponent() {
                 </button>
               </div>
               {verifFileError && (
-                <p className="rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-xs text-danger">
+                <p role="alert" className="rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-xs text-danger">
                   {verifFileError}
                 </p>
               )}
@@ -404,7 +455,7 @@ export function DashboardRouteComponent() {
           )}
 
           {verifMessage && (
-            <p className="rounded border border-moss/30 bg-moss-light px-3 py-2 text-xs font-medium text-moss">
+            <p role="status" className="rounded border border-moss/30 bg-moss-light px-3 py-2 text-xs font-medium text-moss">
               {verifMessage}
             </p>
           )}

@@ -33,6 +33,7 @@ import {
   type AzamPayProviderCode,
 } from '../lib/subscriptions'
 import { useAuthState } from '../lib/supabaseAuth'
+import { formatTanzaniaPhoneDisplay } from '../lib/phoneFormat'
 import type { SubscriptionPlanId } from '../types/database'
 
 export const Route = createFileRoute('/pricing')({
@@ -1017,18 +1018,20 @@ function Pricing() {
                 /* Clean AzamPay Mobile Money & Bank Transfer Checkout Form */
                 <form onSubmit={handleStartAzamPayCheckout} className="space-y-4">
                   {/* Switch between Option A (Mobile Money STK) and Option B (Bank Transfer) */}
-                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink/12 bg-paper-2 p-1">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink/12 bg-paper-2 p-1" role="tablist" aria-label="AzamPay payment channel">
                     <button
                       type="button"
+                      role="tab"
+                      aria-selected={channel === 'mobile_money'}
                       onClick={() => {
                         setChannel('mobile_money')
                         setAccountInput('')
                         setErrorMsg(null)
                       }}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition ${
+                      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
                         channel === 'mobile_money'
-                          ? 'bg-ink text-gold shadow-xs'
-                          : 'text-stone hover:text-ink'
+                          ? 'border-ink bg-ink text-gold shadow-xs'
+                          : 'border-transparent text-stone hover:text-ink'
                       }`}
                     >
                       <Smartphone size={13} />
@@ -1036,6 +1039,8 @@ function Pricing() {
                     </button>
                     <button
                       type="button"
+                      role="tab"
+                      aria-selected={channel === 'bank_transfer'}
                       onClick={() => {
                         setChannel('bank_transfer')
                         setAccountInput('')
@@ -1043,10 +1048,10 @@ function Pricing() {
                         setBankOtpInput('')
                         setErrorMsg(null)
                       }}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-mono text-[11px] font-semibold transition ${
+                      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] font-semibold transition-colors ${
                         channel === 'bank_transfer'
-                          ? 'bg-ink text-gold shadow-xs'
-                          : 'text-stone hover:text-ink'
+                          ? 'border-ink bg-ink text-gold shadow-xs'
+                          : 'border-transparent text-stone hover:text-ink'
                       }`}
                     >
                       <CreditCard size={13} />
@@ -1070,21 +1075,29 @@ function Pricing() {
                               <button
                                 key={net.code}
                                 type="button"
+                                aria-pressed={active}
                                 onClick={() => setMobileProvider(net.code)}
-                                className={`min-h-[54px] min-w-0 rounded-lg border px-3 py-2 text-left transition ${
+                                className={`flex min-h-[56px] min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
                                   isSpanFull ? 'col-span-2' : ''
                                 } ${
                                   active
-                                    ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
-                                    : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
+                                    ? 'border-ochre bg-ochre/12 text-ink ring-2 ring-ochre/30'
+                                    : 'border-ink/15 bg-[#FCFBF8] text-stone hover:border-ink/35 hover:text-ink'
                                 }`}
                               >
-                                <span className="block truncate font-mono text-xs font-bold text-ink">
-                                  {net.label}
+                                <span className="min-w-0">
+                                  <span className="block truncate font-mono text-xs font-bold text-ink">
+                                    {net.label}
+                                  </span>
+                                  <span className="block truncate font-mono text-[10px] text-stone">
+                                    {net.sublabel}
+                                  </span>
                                 </span>
-                                <span className="block truncate font-mono text-[10px] text-stone">
-                                  {net.sublabel}
-                                </span>
+                                {active && (
+                                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ochre text-paper" aria-hidden="true">
+                                    <Check size={12} />
+                                  </span>
+                                )}
                               </button>
                             )
                           })}
@@ -1103,8 +1116,11 @@ function Pricing() {
                           autoComplete="tel"
                           value={accountInput}
                           onChange={(e) => setAccountInput(e.target.value)}
-                          placeholder="07XX XXX XXX or 2557XX XXX XXX"
-                          className="field font-mono text-base"
+                          onBlur={() =>
+                            setAccountInput((prev) => formatTanzaniaPhoneDisplay(prev))
+                          }
+                          placeholder="0712 345 678 or 255712345678"
+                          className="field font-mono text-base tabular-nums"
                         />
                         <p className="mt-1 font-mono text-[10px] text-stone">
                           {ui(
@@ -1128,16 +1144,20 @@ function Pricing() {
                               <button
                                 key={prov.code}
                                 type="button"
+                                aria-pressed={active}
                                 onClick={() => setBankProvider(prov.code)}
-                                className={`flex min-w-0 flex-col rounded-lg border px-2.5 py-2.5 text-left transition ${
+                                className={`flex min-h-[56px] min-w-0 flex-col justify-between rounded-lg border px-2.5 py-2.5 text-left transition-colors ${
                                   active
-                                    ? 'border-ochre bg-ochre/12 text-ink ring-1 ring-ochre/40'
-                                    : 'border-ink/15 bg-white text-stone hover:border-ink/35 hover:text-ink'
+                                    ? 'border-ochre bg-ochre/12 text-ink ring-2 ring-ochre/30'
+                                    : 'border-ink/15 bg-[#FCFBF8] text-stone hover:border-ink/35 hover:text-ink'
                                 }`}
                               >
-                                <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-ink">
-                                  <Building2 size={12} className="shrink-0 text-ochre" />
-                                  <span className="truncate">{prov.code}</span>
+                                <span className="flex w-full items-center justify-between gap-1 font-mono text-xs font-bold text-ink">
+                                  <span className="inline-flex min-w-0 items-center gap-1">
+                                    <Building2 size={12} className="shrink-0 text-ochre" />
+                                    <span className="truncate">{prov.code}</span>
+                                  </span>
+                                  {active && <Check size={12} className="shrink-0 text-ochre" />}
                                 </span>
                                 <span className="mt-0.5 truncate font-mono text-[9.5px] text-stone">
                                   {prov.label}
@@ -1155,12 +1175,13 @@ function Pricing() {
                         <input
                           id="bank-acct"
                           type="text"
+                          inputMode="numeric"
                           required
                           minLength={4}
                           value={accountInput}
                           onChange={(e) => setAccountInput(e.target.value)}
-                          placeholder={`e.g. ${bankProvider} account number`}
-                          className="field font-mono text-sm"
+                          placeholder="e.g. 0152001234500"
+                          className="field font-mono text-base tabular-nums"
                         />
                       </div>
 
@@ -1173,10 +1194,14 @@ function Pricing() {
                             id="bank-mobile"
                             type="tel"
                             inputMode="tel"
+                            autoComplete="tel"
                             value={bankMobileInput}
                             onChange={(e) => setBankMobileInput(e.target.value)}
-                            placeholder="07XX XXX XXX"
-                            className="field font-mono text-base"
+                            onBlur={() =>
+                              setBankMobileInput((prev) => formatTanzaniaPhoneDisplay(prev))
+                            }
+                            placeholder="0712 345 678"
+                            className="field font-mono text-base tabular-nums"
                           />
                         </div>
                         <div>
@@ -1186,10 +1211,12 @@ function Pricing() {
                           <input
                             id="bank-otp"
                             type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
                             value={bankOtpInput}
                             onChange={(e) => setBankOtpInput(e.target.value)}
-                            placeholder="Optional"
-                            className="field font-mono text-sm"
+                            placeholder="e.g. 123456"
+                            className="field font-mono text-base tabular-nums"
                           />
                         </div>
                       </div>

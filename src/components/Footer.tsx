@@ -46,7 +46,7 @@ export default function Footer() {
   return (
     <footer className="relative overflow-hidden bg-ink text-paper/80">
       <div className="contours absolute inset-0 opacity-60" aria-hidden />
-      <div className="relative mx-auto max-w-7xl px-5 pb-10 pt-20 lg:px-8">
+      <div className="relative mx-auto max-w-7xl px-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
           <div>
             <Logo light />

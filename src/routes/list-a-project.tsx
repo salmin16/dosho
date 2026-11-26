@@ -21,6 +21,7 @@ import {
   formatSafeUserError,
   verifyTurnstileForForm,
 } from '../lib/verifyTurnstileClient'
+import { formatTanzaniaPhoneDisplay } from '../lib/phoneFormat'
 
 export const Route = createFileRoute('/list-a-project')({
   head: () => ({ meta: [{ title: 'List a project — MineConnect' }] }),
@@ -402,10 +403,19 @@ function ListProject() {
                 value={v('ownerKind')}
                 onChange={(x) => set('ownerKind', x)}
               />
-              {v('ownerKind') === 'Company' && <In label={t('list.companyName')} k="company" {...{ v, set, errors }} />}
-              <In label={t('list.fullName')} k="name" {...{ v, set, errors }} />
-              <In label={t('list.email')} k="email" type="email" {...{ v, set, errors }} />
-              <In label={t('list.phone')} k="phone" placeholder="+255 …" {...{ v, set, errors }} />
+              {v('ownerKind') === 'Company' && <In label={t('list.companyName')} k="company" autoComplete="organization" placeholder="e.g. Geita Goldfields Ltd" {...{ v, set, errors }} />}
+              <In label={t('list.fullName')} k="name" autoComplete="name" placeholder="e.g. Salmin Mwenesi" {...{ v, set, errors }} />
+              <In label={t('list.email')} k="email" type="email" inputMode="email" autoComplete="email" placeholder="name@company.co.tz" {...{ v, set, errors }} />
+              <In
+                label={t('list.phone')}
+                k="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="0712 345 678 or 255712345678"
+                formatOnBlur={formatTanzaniaPhoneDisplay}
+                {...{ v, set, errors }}
+              />
               <Sel
                 label={t('list.yourRole')}
                 k="ownerRole"
@@ -488,7 +498,7 @@ function ListProject() {
                 renderOption={tv}
                 {...{ v, set, errors }}
               />
-              <In label={t('list.areaHa')} k="area" type="number" {...{ v, set, errors }} />
+              <In label={t('list.areaHa')} k="area" type="number" inputMode="decimal" placeholder="e.g. 9.8" {...{ v, set, errors }} />
               <In label={t('list.issueDate')} k="issued" type="date" {...{ v, set, errors }} />
               <In label={t('list.expiryDate')} k="expires" type="date" {...{ v, set, errors }} />
               <Note className="sm:col-span-2">{t('list.licenceNote')}</Note>
@@ -509,12 +519,16 @@ function ListProject() {
                 label={t('list.investmentRequired')}
                 k="investment"
                 type="number"
+                inputMode="decimal"
                 placeholder={t('list.investmentPlaceholder')}
                 {...{ v, set, errors }}
               />
-              <label className="block sm:col-span-2">
-                <span className="label">{t('list.projectSummary')}</span>
+              <div className="block sm:col-span-2">
+                <label htmlFor="list-field-summary" className="label">
+                  {t('list.projectSummary')}
+                </label>
                 <textarea
+                  id="list-field-summary"
                   rows={4}
                   value={v('summary')}
                   onChange={(e) => set('summary', e.target.value)}
@@ -522,7 +536,7 @@ function ListProject() {
                   placeholder={t('list.summaryPlaceholder')}
                 />
                 {errors.summary && <Err>{errors.summary}</Err>}
-              </label>
+              </div>
               <div className="sm:col-span-2">
                 <span className="label">{t('list.evidenceAvailable')}</span>
                 <div className="flex flex-wrap gap-2">
@@ -767,20 +781,52 @@ type FieldProps = {
   className?: string
 }
 
-function In({ label, k, v, set, errors, type = 'text', placeholder, className = '' }: FieldProps & { type?: string; placeholder?: string }) {
+function In({
+  label,
+  k,
+  v,
+  set,
+  errors,
+  type = 'text',
+  inputMode,
+  autoComplete,
+  placeholder,
+  formatOnBlur,
+  className = '',
+}: FieldProps & {
+  type?: string
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
+  autoComplete?: string
+  placeholder?: string
+  formatOnBlur?: (raw: string) => string
+}) {
+  const fieldId = `list-field-${k}`
   return (
-    <label className={`block ${className}`}>
-      <span className="label">{label}</span>
+    <div className={`block ${className}`}>
+      <label htmlFor={fieldId} className="label">
+        {label}
+      </label>
       <input
+        id={fieldId}
         type={type}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
         value={v(k)}
         placeholder={placeholder}
         onChange={(e) => set(k, e.target.value)}
+        onBlur={
+          formatOnBlur
+            ? (e) => {
+                const formatted = formatOnBlur(e.target.value)
+                if (formatted !== e.target.value) set(k, formatted)
+              }
+            : undefined
+        }
         className={`field ${errors[k] ? '!border-danger' : ''}`}
         aria-invalid={!!errors[k]}
       />
       {errors[k] && <Err>{errors[k]}</Err>}
-    </label>
+    </div>
   )
 }
 
@@ -795,10 +841,19 @@ function Sel({
   renderOption,
   className = '',
 }: FieldProps & { options: readonly string[]; selectPlaceholder: string; renderOption?: (o: string) => string }) {
+  const fieldId = `list-select-${k}`
   return (
-    <label className={`block ${className}`}>
-      <span className="label">{label}</span>
-      <select value={v(k)} onChange={(e) => set(k, e.target.value)} className={`field ${errors[k] ? '!border-danger' : ''}`}>
+    <div className={`block ${className}`}>
+      <label htmlFor={fieldId} className="label">
+        {label}
+      </label>
+      <select
+        id={fieldId}
+        value={v(k)}
+        onChange={(e) => set(k, e.target.value)}
+        className={`field ${errors[k] ? '!border-danger' : ''}`}
+        aria-invalid={!!errors[k]}
+      >
         <option value="">{selectPlaceholder}</option>
         {options.map((o) => (
           <option key={o} value={o}>
@@ -807,7 +862,7 @@ function Sel({
         ))}
       </select>
       {errors[k] && <Err>{errors[k]}</Err>}
-    </label>
+    </div>
   )
 }
 
@@ -827,17 +882,26 @@ function Seg({
   return (
     <div>
       <span className="label">{label}</span>
-      <div className="inline-flex flex-wrap rounded-md border border-sand bg-white/60 p-0.5">
-        {options.map((o) => (
-          <button
-            key={o}
-            type="button"
-            onClick={() => onChange(o)}
-            className={`rounded px-4 py-2 text-sm font-medium transition ${value === o ? 'bg-ink text-paper' : 'text-stone hover:text-ink'}`}
-          >
-            {renderOption ? renderOption(o) : o}
-          </button>
-        ))}
+      <div className="inline-flex flex-wrap gap-1 rounded-lg border border-sand bg-[#FCFBF8] p-1">
+        {options.map((o) => {
+          const active = value === o
+          return (
+            <button
+              key={o}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(o)}
+              className={`inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? 'border-ink bg-ink text-paper font-semibold shadow-xs'
+                  : 'border-transparent text-stone hover:text-ink'
+              }`}
+            >
+              {active && <Check size={13} className="shrink-0 text-gold" />}
+              {renderOption ? renderOption(o) : o}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -849,11 +913,13 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       type="button"
       onClick={onClick}
       aria-pressed={on}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition ${
-        on ? 'border-ink bg-ink text-paper' : 'border-sand bg-white/60 hover:border-ink/40'
+      className={`inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors ${
+        on
+          ? 'border-ochre bg-ink text-paper font-semibold shadow-xs ring-1 ring-ochre/35'
+          : 'border-sand bg-[#FCFBF8] text-ink-3 hover:border-ink/40'
       }`}
     >
-      {on && <Check size={13} />} {children}
+      {on && <Check size={13} className="shrink-0 text-gold" />} {children}
     </button>
   )
 }
