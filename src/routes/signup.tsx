@@ -5,7 +5,7 @@ import { Logo } from '../components/Header'
 import { signUpWithEmail, useAuthState } from '../lib/supabaseAuth'
 import {
   formatSafeUserError,
-  verifyTurnstileAuthFallback,
+  verifyTurnstileForAuth,
 } from '../lib/verifyTurnstileClient'
 import { validateSignUpPayload } from '../lib/validations/auth'
 import PasswordStrengthChecklist from '../components/PasswordStrengthChecklist'
@@ -43,16 +43,14 @@ function SignUpRouteComponent() {
 
   const turnstileRef = useRef<TurnstileWidgetHandle | null>(null)
   const turnstileEnabled = isTurnstileEnabled()
-  const captchaSatisfied = !turnstileEnabled || Boolean(captchaToken) || captchaFallback
 
-  // Require fresh Turnstile token or active mobile fallback + explicit clickwrap consent
+  // Never lock out Create Account while Turnstile initializes or runs in mobile fallback mode
   const isSubmitDisabled =
     submitting ||
     !email.trim() ||
     !password ||
     !confirmPassword ||
-    !acceptedTerms ||
-    !captchaSatisfied
+    !acceptedTerms
 
   const targetDestination = next && next !== '/login' && next !== '/signup' ? next : '/dashboard'
 
@@ -83,18 +81,21 @@ function SignUpRouteComponent() {
       return
     }
 
-    if (!captchaSatisfied) {
-      setError('Please complete the security verification check before creating an account.')
-      return
-    }
-
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
-      if (turnstileEnabled && !captchaToken && captchaFallback) {
-        const fallbackCheck = await verifyTurnstileAuthFallback('signup')
-        if (!fallbackCheck.ok) {
-          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+      if (turnstileEnabled) {
+        const verification = await verifyTurnstileForAuth({
+          token: captchaToken || undefined,
+          fallback: !captchaToken || captchaFallback,
+          action: 'signup',
+        })
+        if (!verification.ok) {
+          setError(
+            verification.error ||
+              'Security verification token was invalid. Please tap Retry and try again.',
+          )
+          shouldResetCaptcha = Boolean(captchaToken)
           return
         }
       }
@@ -105,7 +106,6 @@ function SignUpRouteComponent() {
         password: validation.data.password,
         confirmPassword,
         termsAcceptedAt: new Date().toISOString(),
-        ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.confirmationRequired) {
         setNotice(

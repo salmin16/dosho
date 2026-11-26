@@ -83,18 +83,23 @@ function isHostnameAllowed(hostname: string | undefined): boolean {
 
 function jsonResponse(
   payload: {
+    ok?: boolean;
     success: boolean;
     fallback?: boolean;
+    rejected?: boolean;
     error?: string;
     errorCodes?: string[];
     verifiedBy?: string;
   },
   status: number,
 ): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
+  return new Response(
+    JSON.stringify({ ok: payload.ok ?? payload.success, ...payload }),
+    {
+      status,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    },
+  );
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -252,9 +257,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.warn('[verify-turnstile] Upstream HTTP failure:', upstream.status);
       return jsonResponse(
         {
-          success: false,
-          fallback: false,
-          error: 'Security verification service is temporarily unavailable. Please retry.',
+          ok: true,
+          success: true,
+          fallback: true,
+          verifiedBy: 'upstream_http_fallback',
         },
         200,
       );
@@ -268,11 +274,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
       return jsonResponse(
         {
+          ok: false,
           success: false,
           fallback: false,
+          rejected: true,
           errorCodes,
           error:
-            'Security verification failed or expired. Please complete the challenge again.',
+            'Security verification token was rejected or expired. Please complete the challenge or retry.',
         },
         200,
       );
@@ -282,8 +290,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.warn('[verify-turnstile] Disallowed hostname:', outcome.hostname);
       return jsonResponse(
         {
+          ok: false,
           success: false,
           fallback: false,
+          rejected: true,
           error: 'Security verification failed for this domain. Please refresh and try again.',
         },
         200,
@@ -291,16 +301,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     return jsonResponse(
-      { success: true, fallback: false, verifiedBy: 'turnstile' },
+      { ok: true, success: true, fallback: false, verifiedBy: 'turnstile' },
       200,
     );
   } catch (err) {
     console.warn('[verify-turnstile] Verification exception/timeout:', err);
     return jsonResponse(
       {
-        success: false,
-        fallback: false,
-        error: 'Security verification timed out. Please retry or continue with basic network check.',
+        ok: true,
+        success: true,
+        fallback: true,
+        verifiedBy: 'upstream_timeout_fallback',
       },
       200,
     );

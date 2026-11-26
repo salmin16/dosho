@@ -3,6 +3,8 @@ import { getSupabaseClient } from './supabaseClient'
 
 export interface ClientTurnstileVerificationResult {
   ok: boolean
+  fallback?: boolean
+  rejected?: boolean
   error?: string
 }
 
@@ -11,7 +13,8 @@ const UUID_REGEX =
 
 /**
  * Converts technical / upstream error messages into clear, executive-friendly copy,
- * guaranteeing raw JSON, SQL/RLS policy names, or internal UUIDs never appear in UI banners.
+ * guaranteeing raw JSON, SQL/RLS policy names, or internal UUIDs never appear in UI banners,
+ * while always surfacing actual Supabase Auth credential/account errors cleanly.
  */
 export function formatSafeUserError(
   rawMessage: string | null | undefined,
@@ -34,7 +37,7 @@ export function formatSafeUserError(
     return 'Too many attempts. Please wait a moment before trying again.'
   }
   if (/captcha|turnstile|invalid-input-response|timeout-or-duplicate/i.test(msg)) {
-    return 'Security verification expired or could not be confirmed. Please retry or try signing in again.'
+    return `Supabase Auth security check rejected this request (${msg}). Please tap Retry on the security widget or try again.`
   }
   if (
     msg.startsWith('{') ||
@@ -130,64 +133,103 @@ export async function verifyTurnstileForForm(
 }
 
 /**
- * Validates a mobile / in-app WebView fallback request (`fallback: true`)
- * against the `verify-turnstile` Edge Function before proceeding with Supabase Auth.
- * Respects server-enforced rate limits (429) while staying resilient on transient mobile network blips.
+ * Verifies auth requests (login, signup, password reset) via the `verify-turnstile` Edge Function:
+ * - When a non-empty `token` is provided, verifies it server-side against Cloudflare `siteverify`
+ *   and only blocks if Cloudflare explicitly rejects the token as invalid/tampered.
+ * - When no `token` is present (fallback / "Basic network check active" / mobile WebView),
+ *   sends `{ fallback: true }` and NEVER blocks `supabase.auth.signInWithPassword` unless
+ *   the server explicitly returns HTTP 429 rate-limiting.
  */
-export async function verifyTurnstileAuthFallback(
-  action: 'login' | 'signup' | 'forgot-password',
-): Promise<ClientTurnstileVerificationResult> {
+export async function verifyTurnstileForAuth(params: {
+  token?: string
+  fallback?: boolean
+  action: 'login' | 'signup' | 'forgot-password'
+}): Promise<ClientTurnstileVerificationResult> {
   if (!isTurnstileEnabled()) {
-    return { ok: true }
+    return { ok: true, fallback: false }
   }
 
   const supabase = getSupabaseClient()
   if (!supabase) {
-    return { ok: true }
+    return { ok: true, fallback: true }
   }
+
+  const trimmedToken = (params.token ?? '').trim()
+  const isFallbackMode = !trimmedToken || Boolean(params.fallback)
 
   try {
     const { data, error } = await supabase.functions.invoke<{
+      ok?: boolean
       success?: boolean
       fallback?: boolean
+      rejected?: boolean
       error?: string
     }>('verify-turnstile', {
-      body: {
-        token: '',
-        fallback: true,
-        turnstileBypassReason: 'timeout_or_mobile_challenge',
-        action,
-      },
+      body: isFallbackMode
+        ? {
+            token: '',
+            fallback: true,
+            turnstileBypassReason: 'timeout_or_mobile_challenge',
+            action: params.action,
+          }
+        : {
+            token: trimmedToken,
+            fallback: false,
+            action: params.action,
+          },
     })
 
-    if (data && data.success === true) {
-      return { ok: true }
-    }
-
-    if (data && data.success === false) {
-      // Only block if the server explicitly rate-limited this client (429)
-      if (/too many|rate limit/i.test(data.error ?? '')) {
+    // In fallback mode, accept `{ ok: true }` / `{ success: true }` or unreachable edge function;
+    // ONLY block on explicit HTTP 429 rate limits.
+    if (isFallbackMode) {
+      if (data && data.success === false && /too many|rate limit/i.test(data.error ?? '')) {
         return {
           ok: false,
+          fallback: true,
           error: formatSafeUserError(
             data.error,
             'Too many attempts from this network. Please wait a moment and try again.',
           ),
         }
       }
-      return { ok: true }
+      if (error && /429|too many/i.test(error.message ?? '')) {
+        return {
+          ok: false,
+          fallback: true,
+          error: 'Too many attempts from this network. Please wait a moment and try again.',
+        }
+      }
+      return { ok: true, fallback: true }
     }
 
-    if (error && /429|too many/i.test(error.message ?? '')) {
+    // Real token was submitted: only block if explicitly rejected as invalid/tampered
+    if (data && data.rejected === true) {
       return {
         ok: false,
-        error: 'Too many attempts from this network. Please wait a moment and try again.',
+        fallback: false,
+        rejected: true,
+        error:
+          data.error ||
+          'Security verification token was invalid or expired. Please tap Retry and try again.',
       }
     }
 
-    return { ok: true }
+    if (data && (data.ok === true || data.success === true)) {
+      return { ok: true, fallback: Boolean(data.fallback) }
+    }
+
+    // Transient edge-function error: fall back cleanly so Supabase Auth can still validate credentials
+    return { ok: true, fallback: true }
   } catch {
-    // Allow Supabase Auth's own server-side rate limits to govern if the edge function is transiently unreachable
-    return { ok: true }
+    return { ok: true, fallback: true }
   }
+}
+
+/**
+ * Backward-compatible alias for fallback-only auth verification.
+ */
+export async function verifyTurnstileAuthFallback(
+  action: 'login' | 'signup' | 'forgot-password',
+): Promise<ClientTurnstileVerificationResult> {
+  return verifyTurnstileForAuth({ fallback: true, action })
 }

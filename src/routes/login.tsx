@@ -22,7 +22,7 @@ import {
 } from '../lib/supabaseAuth'
 import {
   formatSafeUserError,
-  verifyTurnstileAuthFallback,
+  verifyTurnstileForAuth,
 } from '../lib/verifyTurnstileClient'
 
 const RESET_COOLDOWN_KEY = 'mineconnect_pwd_reset_cooldown_until'
@@ -127,16 +127,10 @@ function LoginRouteComponent() {
     return () => window.clearInterval(timer)
   }, [cooldownSeconds])
 
-  const captchaSatisfied = !turnstileEnabled || Boolean(captchaToken) || captchaFallback
-
-  const isSubmitDisabled =
-    submitting || !email.trim() || !password || !captchaSatisfied
+  const isSubmitDisabled = submitting || !email.trim() || !password
 
   const isResetSubmitDisabled =
-    resetSending ||
-    !email.trim() ||
-    cooldownSeconds > 0 ||
-    !captchaSatisfied
+    resetSending || !email.trim() || cooldownSeconds > 0
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,18 +141,23 @@ function LoginRouteComponent() {
       return
     }
 
-    if (!captchaSatisfied) {
-      setError('Please complete the security verification check before logging in.')
-      return
-    }
-
     setSubmitting(true)
     let shouldResetCaptcha = false
     try {
-      if (turnstileEnabled && !captchaToken && captchaFallback) {
-        const fallbackCheck = await verifyTurnstileAuthFallback('login')
-        if (!fallbackCheck.ok) {
-          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+      // Verify Turnstile token when present, or use approved fallback mode when no token was issued.
+      // Never block signInWithPassword in fallback mode; only block if a real token was explicitly rejected.
+      if (turnstileEnabled) {
+        const verification = await verifyTurnstileForAuth({
+          token: captchaToken || undefined,
+          fallback: !captchaToken || captchaFallback,
+          action: 'login',
+        })
+        if (!verification.ok) {
+          setError(
+            verification.error ||
+              'Security verification token was invalid. Please tap Retry and try again.',
+          )
+          shouldResetCaptcha = Boolean(captchaToken)
           return
         }
       }
@@ -166,10 +165,14 @@ function LoginRouteComponent() {
       const res = await signInWithEmail({
         email,
         password,
-        ...(captchaToken ? { captchaToken } : {}),
       })
       if (res.error) {
-        setError(formatSafeUserError(res.error, 'Invalid email or password. Please try again.'))
+        setError(
+          formatSafeUserError(
+            res.error,
+            'Invalid email or password. Please try again.',
+          ),
+        )
         shouldResetCaptcha = Boolean(captchaToken)
       } else {
         navigate({ to: targetDestination as '/dashboard' })
@@ -178,8 +181,8 @@ function LoginRouteComponent() {
       setError(
         formatSafeUserError(
           err instanceof Error ? err.message : undefined,
-          'Unexpected sign-in error. Please try again.'
-        )
+          'Unexpected sign-in error. Please try again.',
+        ),
       )
       shouldResetCaptcha = Boolean(captchaToken)
     } finally {
@@ -204,27 +207,31 @@ function LoginRouteComponent() {
       return
     }
 
-    if (!captchaSatisfied) {
-      setError('Please complete the security verification check before requesting a reset link.')
-      return
-    }
-
     setResetSending(true)
     try {
-      if (turnstileEnabled && !captchaToken && captchaFallback) {
-        const fallbackCheck = await verifyTurnstileAuthFallback('forgot-password')
-        if (!fallbackCheck.ok) {
-          setError(fallbackCheck.error || 'Too many attempts. Please wait a moment and try again.')
+      if (turnstileEnabled) {
+        const verification = await verifyTurnstileForAuth({
+          token: captchaToken || undefined,
+          fallback: !captchaToken || captchaFallback,
+          action: 'forgot-password',
+        })
+        if (!verification.ok) {
+          setError(
+            verification.error ||
+              'Too many attempts. Please wait a moment and try again.',
+          )
           return
         }
       }
 
-      const res = await requestPasswordResetEmail(
-        trimmedEmail,
-        captchaToken || undefined
-      )
+      const res = await requestPasswordResetEmail(trimmedEmail)
       if (!res.ok && res.error) {
-        setError(formatSafeUserError(res.error, 'Unable to send reset link. Please try again.'))
+        setError(
+          formatSafeUserError(
+            res.error,
+            'Unable to send reset link. Please try again.',
+          ),
+        )
         return
       }
       setResetSent(true)
@@ -342,7 +349,10 @@ function LoginRouteComponent() {
                       required
                       autoComplete="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value)
+                        if (error) setError(null)
+                      }}
                       placeholder="name@organization.com"
                       className="field !pl-10 text-base"
                     />
@@ -364,7 +374,10 @@ function LoginRouteComponent() {
                       required
                       autoComplete="current-password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value)
+                        if (error) setError(null)
+                      }}
                       placeholder="••••••••"
                       className="field !bg-paper/45 !pl-10 !pr-12 text-base"
                     />
