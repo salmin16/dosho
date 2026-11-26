@@ -5,7 +5,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Calendar,
-  Clock,
   RotateCcw,
   TrendingUp,
 } from 'lucide-react'
@@ -17,12 +16,10 @@ import {
   computeNiceAxisTicks,
   computeNiceTimeTicks,
   computeTapeCounter,
-  convertToChartUnitUsd,
   createContinuousMineralModel,
   detectTimelineScale,
   formatChartAxisDateByScale,
   formatChartTooltipDateByScale,
-  formatSpanCompact,
   formatVisibleDateWindow,
   getEatYear,
   type ChartPricingMode,
@@ -123,25 +120,15 @@ export default function MineralTrendChart({
   const [viewport, setViewport] = useState<ViewportRange | null>(null)
   const [inspectIndex, setInspectIndex] = useState<number | null>(null)
   const [isDragging, setIsDragging] = useState<boolean>(false)
-  const [isStreamPaused, setIsStreamPaused] = useState<boolean>(() =>
-    typeof document !== 'undefined' ? document.hidden : false,
-  )
   const prevHistoryEndMsRef = useRef<number | null>(null)
 
   const activeSymbol = controlledSymbol ?? internalSymbol
 
-  // Ensure the shared 2-second real-time stream is active while the chart is visible
+  // Ensure the shared real-time stream is active while the chart is visible
   useEffect(() => {
     const release = acquireLiveMarketStream()
-    const syncVisibility = () => {
-      setIsStreamPaused(typeof document !== 'undefined' ? document.hidden : false)
-    }
-    document.addEventListener('visibilitychange', syncVisibility)
-    window.addEventListener('focus', syncVisibility)
     return () => {
       release()
-      document.removeEventListener('visibilitychange', syncVisibility)
-      window.removeEventListener('focus', syncVisibility)
     }
   }, [])
 
@@ -306,7 +293,6 @@ export default function MineralTrendChart({
       endMs: activeViewport.endMs,
       spanMs,
       scale,
-      spanCompact: formatSpanCompact(spanMs),
       startUnitUsd: startPt.unitUsd,
       endUnitUsd: endPt.unitUsd,
       minUnitUsd: minUsd,
@@ -470,7 +456,7 @@ export default function MineralTrendChart({
   const chartGeometry = useMemo(() => {
     if (!visibleStats || visiblePoints.length < 2) return null
 
-    const height = isCompact ? 460 : 560
+    const height = isCompact ? 440 : 540
     const convertedValues = visiblePoints.map((p) => p.unitUsd * rateForSelected)
     const minConverted = Math.min(...convertedValues)
     const maxConverted = Math.max(...convertedValues)
@@ -866,17 +852,6 @@ export default function MineralTrendChart({
   const axisBadgeFill = '#0284c7'
   const fillTopOpacity = 0.30
 
-  const sokoTier = convertToChartUnitUsd(
-    activeMineral.local_market_price_usd,
-    activeMineral.unit,
-    unitBasis,
-  )
-  const buyingTier = convertToChartUnitUsd(
-    activeMineral.buying_centre_price_usd,
-    activeMineral.unit,
-    unitBasis,
-  )
-
   const visibleDateWindowLabel = formatVisibleDateWindow(
     visibleStats.startMs,
     visibleStats.endMs,
@@ -922,17 +897,6 @@ export default function MineralTrendChart({
   const tooltipAlignRight =
     activeCoord.x > chartGeometry.padLeft + chartGeometry.plotWidth * 0.56
 
-  let liveClockLabel = ''
-  try {
-    liveClockLabel = new Date(activeMineral.updated_at).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  } catch {
-    liveClockLabel = new Date().toLocaleTimeString()
-  }
-
   return (
     <section
       aria-label={ui(
@@ -943,10 +907,10 @@ export default function MineralTrendChart({
       data-currency={currency}
       data-language={language}
       data-unit-basis={unitBasis}
-      className="overflow-hidden rounded-xl border border-ink/15 bg-paper text-ink shadow-sm"
+      className="overflow-hidden rounded-xl border border-ink/15 bg-[#FAF8F5] text-ink shadow-sm"
     >
-      {/* Slim Masthead Bar With Live 2s Pulse Indicator & Real-Time Timestamp */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-paper-2 px-4 py-2.5 sm:px-5 lg:px-6">
+      {/* Clean Masthead Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-[#F5F1EA] px-4 py-2.5 sm:px-5 lg:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-ochre">
             <TrendingUp size={13} />
@@ -956,33 +920,9 @@ export default function MineralTrendChart({
               'Tendencia Mineral Interactiva',
             )}
           </span>
-          <span
-            aria-live="off"
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
-              isStreamPaused
-                ? 'border-ink/15 bg-paper text-stone'
-                : 'border-moss/35 bg-moss-light text-moss'
-            }`}
-          >
-            <span className="relative flex h-2 w-2" aria-hidden="true">
-              {!isStreamPaused && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-moss opacity-65" />
-              )}
-              <span
-                className={`relative inline-flex h-2 w-2 rounded-full ${
-                  isStreamPaused ? 'bg-stone' : 'bg-moss'
-                }`}
-              />
-            </span>
-            {isStreamPaused ? ui('PAUSED', 'IMESIMAMA', 'PAUSA') : 'LIVE · 2s'}
-          </span>
-          <span className="inline-flex items-center gap-1 font-mono text-[10px] text-stone tabular-nums">
-            <Clock size={10} className="text-ochre" />
-            {liveClockLabel}
-          </span>
         </div>
 
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-semibold text-ink tabular-nums">
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-ink/15 bg-[#FAF8F5] px-2.5 py-1 font-mono text-[11px] font-semibold text-ink tabular-nums">
           <span
             className="h-2 w-2 rounded-full"
             style={{ backgroundColor: strokeColor }}
@@ -1119,11 +1059,11 @@ export default function MineralTrendChart({
         </div>
       </div>
 
-      {/* Tall Institutional Direct-Manipulation Trading Canvas (1D Default -> Full 2000–2026 History) */}
-      <div className="relative px-2 pb-2 sm:px-5 sm:pb-3 lg:px-6">
+      {/* Tall Institutional Direct-Manipulation Trading Canvas (15m Default -> Full 2000–2026 History) */}
+      <div className="relative px-2 pb-4 sm:px-5 sm:pb-5 lg:px-6">
         <div
           ref={chartContainerRef}
-          className="relative min-h-[460px] w-full select-none sm:min-h-[560px]"
+          className="relative min-h-[440px] w-full select-none sm:min-h-[540px]"
         >
           <svg
             ref={svgRef}
@@ -1132,8 +1072,8 @@ export default function MineralTrendChart({
             viewBox={`0 0 ${chartGeometry.width} ${chartGeometry.height}`}
             role="img"
             tabIndex={0}
-            aria-label={`${activeMineral.mineral_name} 24-hour & historical World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
-            className={`block h-[460px] w-full touch-none rounded-lg border border-ink/8 bg-[#fbf8f2] outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 sm:h-[560px] ${
+            aria-label={`${activeMineral.mineral_name} 15-minute & historical World Spot Parity ${ui('interactive trading chart', 'chati ya biashara', 'gráfico interactivo')} (${currency}${model.unitSuffix})`}
+            className={`block h-[440px] w-full touch-none rounded-lg border border-ink/8 bg-[#fbf8f2] outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 sm:h-[540px] ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
             onPointerDown={handlePointerDown}
@@ -1462,146 +1402,14 @@ export default function MineralTrendChart({
           )}
         </div>
 
-        {/* Explicit Interactive Chart Gesture Hint */}
-        <p className="mt-2 text-center font-mono text-[10.5px] text-stone">
+        {/* Concise Interactive Chart Gesture Hint */}
+        <p className="mt-2.5 text-center font-mono text-[10.5px] text-stone">
           {ui(
-            'Drag left/right to pan history. Pinch or scroll to zoom',
-            'Buruta kushoto/kulia kuona historia. Bana au zungusha kukuza',
-            'Arrastra izquierda/derecha para ver el historial. Pellizca o haz scroll para zoom',
+            'Drag left/right to pan history. Pinch or scroll to zoom (15m → 2026)',
+            'Buruta kushoto/kulia kuona historia. Bana au zungusha kukuza (15m → 2026)',
+            'Arrastra izquierda/derecha para ver el historial. Pellizca o haz scroll para zoom (15m → 2026)',
           )}
         </p>
-      </div>
-
-      {/* Drag-Detected Active Year Summary Card (Updates Live for Any Year 2000 -> Present) */}
-      <div className="mx-4 mb-3.5 rounded-xl border border-ink/12 bg-white px-3.5 py-3 shadow-xs sm:mx-5 sm:px-4 lg:mx-6">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/8 pb-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-bold text-gold tabular-nums">
-              {inspectedYearSummary.year}
-            </span>
-            <span className="truncate font-display text-sm font-medium text-ink">
-              {inspectedYearSummary.isYtd
-                ? ui(
-                    `${inspectedYearSummary.year} Year-to-Date Readout`,
-                    `Muhtasari wa Mwaka ${inspectedYearSummary.year} (Hadi Sasa)`,
-                    `Resumen Acumulado ${inspectedYearSummary.year}`,
-                  )
-                : ui(
-                    `${inspectedYearSummary.year} Historical Year Readout`,
-                    `Muhtasari wa Mwaka ${inspectedYearSummary.year}`,
-                    `Resumen del Año ${inspectedYearSummary.year}`,
-                  )}
-            </span>
-          </div>
-
-          <span
-            className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-2 py-0.5 font-mono text-[10.5px] font-bold tabular-nums ${
-              inspectedYearSummary.changeUsd >= 0
-                ? 'border-moss/30 bg-moss-light text-moss'
-                : 'border-danger/30 bg-danger/10 text-danger'
-            }`}
-          >
-            {inspectedYearSummary.changeUsd >= 0 ? '+' : ''}
-            {inspectedYearSummary.changePct.toFixed(2)}%
-          </span>
-        </div>
-
-        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2.5 sm:grid-cols-4">
-          <div className="min-w-0">
-            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-              {ui('Year Open', 'Kufungua', 'Apertura')}
-            </span>
-            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-              {formatPrice(inspectedYearSummary.openUnitUsd)}
-              <span className="font-normal text-stone">{model.unitSuffix}</span>
-            </span>
-          </div>
-
-          <div className="min-w-0">
-            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-              {inspectedYearSummary.year} {ui('High', 'Juu', 'Máx')}
-            </span>
-            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-              {formatPrice(inspectedYearSummary.highUnitUsd)}
-              <span className="font-normal text-stone">{model.unitSuffix}</span>
-            </span>
-          </div>
-
-          <div className="min-w-0">
-            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-              {inspectedYearSummary.year} {ui('Low', 'Chini', 'Mín')}
-            </span>
-            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-              {formatPrice(inspectedYearSummary.lowUnitUsd)}
-              <span className="font-normal text-stone">{model.unitSuffix}</span>
-            </span>
-          </div>
-
-          <div className="min-w-0">
-            <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone">
-              {inspectedYearSummary.isYtd
-                ? ui('Latest Spot', 'Ya Sasa', 'Actual')
-                : ui('Year-End', 'Mwisho wa Mwaka', 'Cierre')}
-            </span>
-            <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-              {formatPrice(inspectedYearSummary.closeUnitUsd)}
-              <span className="font-normal text-stone">{model.unitSuffix}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Mode-Matched Window & Statutory Benchmark Summary Strip */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-ink/10 bg-paper-2/70 px-4 py-3.5 sm:grid-cols-4 sm:px-5 lg:px-6">
-        <div className="min-w-0">
-          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {visibleStats.spanCompact} {ui('High', 'Juu Zaidi', 'Máximo')} (
-            {model.unitSuffix})
-          </span>
-          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-            {formatPrice(visibleStats.maxUnitUsd)}
-            <span className="font-normal text-stone">{model.unitSuffix}</span>
-          </span>
-        </div>
-
-        <div className="min-w-0">
-          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">
-            {visibleStats.spanCompact} {ui('Low', 'Chini Zaidi', 'Mínimo')} (
-            {model.unitSuffix})
-          </span>
-          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-            {formatPrice(visibleStats.minUnitUsd)}
-            <span className="font-normal text-stone">{model.unitSuffix}</span>
-          </span>
-        </div>
-
-        <div className="min-w-0">
-          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-moss sm:text-[10px]">
-            {ui(
-              'Statutory Soko la Madini',
-              'Soko la Madini (Rasmi)',
-              'Soko la Madini Oficial',
-            )}{' '}
-            ({sokoTier.unitSuffix})
-          </span>
-          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-moss tabular-nums sm:text-xs">
-            {formatPrice(sokoTier.unitUsd)}
-            <span className="font-normal text-stone">{sokoTier.unitSuffix}</span>
-          </span>
-        </div>
-
-        <div className="min-w-0">
-          <span className="block truncate font-mono text-[9.5px] uppercase tracking-wider text-ochre sm:text-[10px]">
-            {ui('Buying Centre Floor', 'Kituo cha Ununuzi', 'Centro de Compra')}{' '}
-            ({buyingTier.unitSuffix})
-          </span>
-          <span className="mt-0.5 block whitespace-nowrap font-mono text-[12px] font-bold text-ink tabular-nums sm:text-xs">
-            {formatPrice(buyingTier.unitUsd)}
-            <span className="font-normal text-stone">
-              {buyingTier.unitSuffix}
-            </span>
-          </span>
-        </div>
       </div>
     </section>
   )

@@ -43,7 +43,7 @@ function MarketsPageComponent() {
     <div
       data-currency={currency}
       data-language={language}
-      className="min-h-screen bg-paper pt-[72px] text-ink"
+      className="min-h-[100dvh] bg-paper pt-[72px] text-ink"
     >
       <IndicativeMineralPrices
         showHeaderCta={false}
