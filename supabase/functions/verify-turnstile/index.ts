@@ -18,14 +18,15 @@ const DEFAULT_ALLOWED_HOSTNAMES = [
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+    'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 // Sliding-window in-memory rate limits for mobile/WebView fallback requests
 const FALLBACK_WINDOW_MS = 10 * 60 * 1000;
-const FALLBACK_MAX_REQUESTS = 10;
-const NETWORK_FALLBACK_MAX_REQUESTS = 15;
+const FALLBACK_MAX_REQUESTS = 20;
+const NETWORK_FALLBACK_MAX_REQUESTS = 25;
+const SITEVERIFY_TIMEOUT_MS = 4500;
 const userFallbackAttempts = new Map<string, number[]>();
 
 function checkFallbackRateLimit(key: string, maxRequests: number): boolean {
@@ -81,7 +82,13 @@ function isHostnameAllowed(hostname: string | undefined): boolean {
 }
 
 function jsonResponse(
-  payload: { success: boolean; error?: string; verifiedBy?: string },
+  payload: {
+    success: boolean;
+    fallback?: boolean;
+    error?: string;
+    errorCodes?: string[];
+    verifiedBy?: string;
+  },
   status: number,
 ): Response {
   return new Response(JSON.stringify(payload), {
@@ -92,30 +99,21 @@ function jsonResponse(
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS_HEADERS });
+    return new Response('ok', { status: 200, headers: CORS_HEADERS });
   }
 
   if (req.method !== 'POST') {
     return jsonResponse({ success: false, error: 'Method not allowed.' }, 405);
   }
 
-  const secretKey = Deno.env
-    .get('TURNSTILE_SECRET_KEY')
-    ?.trim()
-    .replace(/^["']|["']$/g, '');
-
-  if (!secretKey) {
-    return jsonResponse(
-      { success: false, error: 'Server security verification is not configured.' },
-      500,
-    );
-  }
-
-  let body: VerifyRequestBody;
+  let body: VerifyRequestBody = {};
   try {
-    body = (await req.json()) as VerifyRequestBody;
+    const parsed = await req.json();
+    if (parsed && typeof parsed === 'object') {
+      body = parsed as VerifyRequestBody;
+    }
   } catch {
-    return jsonResponse({ success: false, error: 'Invalid request payload.' }, 400);
+    body = {};
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
@@ -133,11 +131,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     sanitizeIp(req.headers.get('cf-connecting-ip')) ??
     sanitizeIp(req.headers.get('x-forwarded-for'));
 
-  // Graceful mobile / in-app WebView fallback:
-  // When Turnstile timed out or was blocked on mobile Safari / WhatsApp WebView,
-  // validate authenticated sessions (if Bearer JWT is provided) OR allow pre-auth
-  // login/signup fallback requests under strict origin + IP rate limiting alongside Supabase Auth rate limits.
-  if (!token && (isFallbackRequested || bypassReason === 'timeout_or_mobile_challenge')) {
+  // Graceful fallback path: when `fallback === true`, bypass reason is set, or no Turnstile
+  // token was issued by the client (e.g. mobile Safari / WhatsApp in-app WebView),
+  // NEVER call Cloudflare siteverify with an empty token and NEVER return a 400/403 block.
+  if (isFallbackRequested || !token || bypassReason === 'timeout_or_mobile_challenge') {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
     const jwt = (req.headers.get('Authorization') ?? '')
@@ -145,44 +142,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .trim();
 
     if (jwt && supabaseUrl && serviceRoleKey) {
-      const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(jwt);
-      if (!authErr && userData?.user) {
-        if (!checkFallbackRateLimit(`user:${userData.user.id}`, FALLBACK_MAX_REQUESTS)) {
-          return jsonResponse(
-            {
-              success: false,
-              error: 'Too many verification attempts. Please wait a few minutes and try again.',
-            },
-            429,
-          );
-        }
-
-        return jsonResponse(
-          { success: true, verifiedBy: 'authenticated_session_fallback' },
-          200,
-        );
-      }
-    }
-
-    // Pre-auth mobile/WebView fallback (login, signup, forgot-password, or explicit fallback: true)
-    const originHeader = req.headers.get('origin') ?? req.headers.get('referer') ?? '';
-    if (originHeader) {
       try {
-        const parsedOrigin = new URL(originHeader);
-        if (!isHostnameAllowed(parsedOrigin.hostname)) {
+        const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+        const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(jwt);
+        if (!authErr && userData?.user) {
+          if (!checkFallbackRateLimit(`user:${userData.user.id}`, FALLBACK_MAX_REQUESTS)) {
+            return jsonResponse(
+              {
+                success: false,
+                fallback: true,
+                error: 'Too many verification attempts. Please wait a few minutes and try again.',
+              },
+              429,
+            );
+          }
+
           return jsonResponse(
             {
-              success: false,
-              error: 'Security verification failed for this domain. Please refresh and try again.',
+              success: true,
+              fallback: true,
+              verifiedBy: 'authenticated_session_fallback',
             },
-            403,
+            200,
           );
         }
-      } catch {
-        // Ignore malformed referer header on in-app WebViews
+      } catch (err) {
+        console.warn('[verify-turnstile] Session fallback lookup warning:', err);
       }
     }
 
@@ -191,6 +178,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           success: false,
+          fallback: true,
           error: 'Too many attempts from this network. Please wait a few minutes and try again.',
         },
         429,
@@ -198,15 +186,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     return jsonResponse(
-      { success: true, verifiedBy: 'network_fallback' },
+      {
+        success: true,
+        fallback: true,
+        verifiedBy: 'network_fallback',
+      },
       200,
     );
   }
 
-  if (!token) {
+  // Non-empty Turnstile token provided: validate against Cloudflare siteverify
+  const secretKey = Deno.env
+    .get('TURNSTILE_SECRET_KEY')
+    ?.trim()
+    .replace(/^["']|["']$/g, '');
+
+  if (!secretKey) {
+    console.warn('[verify-turnstile] TURNSTILE_SECRET_KEY missing; falling back cleanly.');
     return jsonResponse(
-      { success: false, error: 'Missing security verification token.' },
-      403,
+      {
+        success: true,
+        fallback: true,
+        verifiedBy: 'server_fallback',
+      },
+      200,
     );
   }
 
@@ -219,14 +222,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
       verifyPayload.remoteip = remoteIp;
     }
 
-    const upstream = await fetch(TURNSTILE_SITEVERIFY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(verifyPayload),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SITEVERIFY_TIMEOUT_MS);
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(TURNSTILE_SITEVERIFY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(verifyPayload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const rawText = await upstream.text();
     let outcome: TurnstileSiteverifyOutcome | null = null;
@@ -241,24 +253,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           success: false,
+          fallback: false,
           error: 'Security verification service is temporarily unavailable. Please retry.',
         },
-        403,
+        200,
       );
     }
 
     if (outcome?.success !== true) {
+      const errorCodes = outcome?.['error-codes'] ?? [];
       console.warn('[verify-turnstile] Cloudflare rejected token:', {
-        action: body.action ?? 'unspecified',
-        errorCodes: outcome?.['error-codes'] ?? [],
+        action,
+        errorCodes,
       });
       return jsonResponse(
         {
           success: false,
+          fallback: false,
+          errorCodes,
           error:
             'Security verification failed or expired. Please complete the challenge again.',
         },
-        403,
+        200,
       );
     }
 
@@ -267,21 +283,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(
         {
           success: false,
+          fallback: false,
           error: 'Security verification failed for this domain. Please refresh and try again.',
         },
-        403,
+        200,
       );
     }
 
-    return jsonResponse({ success: true }, 200);
+    return jsonResponse(
+      { success: true, fallback: false, verifiedBy: 'turnstile' },
+      200,
+    );
   } catch (err) {
-    console.warn('[verify-turnstile] Verification exception:', err);
+    console.warn('[verify-turnstile] Verification exception/timeout:', err);
     return jsonResponse(
       {
         success: false,
-        error: 'Unable to complete security verification. Please retry.',
+        fallback: false,
+        error: 'Security verification timed out. Please retry or continue with basic network check.',
       },
-      403,
+      200,
     );
   }
 });

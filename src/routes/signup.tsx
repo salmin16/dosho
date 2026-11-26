@@ -334,7 +334,11 @@ function SignUpRouteComponent() {
                   }}
                   onExpire={() => {
                     setCaptchaToken('')
-                    setCaptchaFallback(false)
+                  }}
+                  onRetry={() => {
+                    setCaptchaToken('')
+                    setCaptchaFallback(true)
+                    setError(null)
                   }}
                   onFallbackReady={() => {
                     setCaptchaToken('')

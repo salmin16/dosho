@@ -20,9 +20,7 @@ export function formatSafeUserError(
   const msg = (rawMessage ?? '').trim()
   if (!msg) return fallback
 
-  if (/captcha|turnstile|invalid-input-response|timeout-or-duplicate/i.test(msg)) {
-    return 'Security verification expired or could not be confirmed. Please complete the check and try again.'
-  }
+  // Always surface actual Supabase Auth credential/account errors first
   if (/invalid login credentials/i.test(msg)) {
     return 'Invalid email or password. Please check your credentials and try again.'
   }
@@ -34,6 +32,9 @@ export function formatSafeUserError(
   }
   if (/rate limit|too many requests|for security purposes/i.test(msg)) {
     return 'Too many attempts. Please wait a moment before trying again.'
+  }
+  if (/captcha|turnstile|invalid-input-response|timeout-or-duplicate/i.test(msg)) {
+    return 'Security verification expired or could not be confirmed. Please retry or try signing in again.'
   }
   if (
     msg.startsWith('{') ||
@@ -148,23 +149,33 @@ export async function verifyTurnstileAuthFallback(
   try {
     const { data, error } = await supabase.functions.invoke<{
       success?: boolean
+      fallback?: boolean
       error?: string
     }>('verify-turnstile', {
       body: {
+        token: '',
         fallback: true,
         turnstileBypassReason: 'timeout_or_mobile_challenge',
         action,
       },
     })
 
+    if (data && data.success === true) {
+      return { ok: true }
+    }
+
     if (data && data.success === false) {
-      return {
-        ok: false,
-        error: formatSafeUserError(
-          data.error,
-          'Too many attempts from this network. Please wait a moment and try again.',
-        ),
+      // Only block if the server explicitly rate-limited this client (429)
+      if (/too many|rate limit/i.test(data.error ?? '')) {
+        return {
+          ok: false,
+          error: formatSafeUserError(
+            data.error,
+            'Too many attempts from this network. Please wait a moment and try again.',
+          ),
+        }
       }
+      return { ok: true }
     }
 
     if (error && /429|too many/i.test(error.message ?? '')) {

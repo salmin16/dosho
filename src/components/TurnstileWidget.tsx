@@ -201,6 +201,8 @@ export interface TurnstileWidgetProps {
   onTimeout?: () => void;
   /** Called if mobile/cellular Turnstile stalls past timeoutMs or fails so authenticated flows stay non-blocking */
   onFallbackReady?: (reason: 'timeout_or_mobile_challenge') => void;
+  /** Called when the user explicitly clicks Retry so parent forms can keep submit enabled while re-verifying */
+  onRetry?: () => void;
   /** Enables non-blocking fallback UX when widget stalls on mobile/in-app browsers */
   allowMobileFallback?: boolean;
   /** Label displayed in the non-blocking fallback pill */
@@ -252,6 +254,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       onError,
       onTimeout,
       onFallbackReady,
+      onRetry,
       allowMobileFallback = false,
       fallbackLabel = 'Basic network check active',
       resetKey,
@@ -270,17 +273,20 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
     const forceReloadNextRef = useRef<boolean>(false);
     const prevResetKeyRef = useRef<number | undefined>(resetKey);
     const autoRetriedRef = useRef<boolean>(false);
+    const isManualRetryRef = useRef<boolean>(false);
 
     const onVerifyRef = useRef(onVerify);
     const onExpireRef = useRef(onExpire);
     const onErrorRef = useRef(onError);
     const onTimeoutRef = useRef(onTimeout);
     const onFallbackReadyRef = useRef(onFallbackReady);
+    const onRetryRef = useRef(onRetry);
     onVerifyRef.current = onVerify;
     onExpireRef.current = onExpire;
     onErrorRef.current = onError;
     onTimeoutRef.current = onTimeout;
     onFallbackReadyRef.current = onFallbackReady;
+    onRetryRef.current = onRetry;
 
     const [widgetState, setWidgetState] = useState<
       'loading' | 'ready' | 'verified' | 'expired' | 'error' | 'fallback'
@@ -294,6 +300,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
     const activateFallbackOrError = useCallback(
       (fallbackMsg: string, hint?: string | null) => {
         if (widgetStateRef.current === 'verified') return;
+        isManualRetryRef.current = false;
         if (allowMobileFallback) {
           if (widgetIdRef.current && typeof window.turnstile?.remove === 'function') {
             try {
@@ -318,9 +325,14 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       [allowMobileFallback, fallbackLabel],
     );
 
-    const hardRemountWidget = useCallback(() => {
+    const hardRemountWidget = useCallback((isManualRetry = false) => {
       autoRetriedRef.current = false;
-      onExpireRef.current?.();
+      isManualRetryRef.current = isManualRetry;
+      if (isManualRetry && onRetryRef.current) {
+        onRetryRef.current();
+      } else if (!isManualRetry) {
+        onExpireRef.current?.();
+      }
       setStatusMessage(null);
       setDiagnosticHint(null);
 
@@ -341,6 +353,10 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       setWidgetState('loading');
       setRenderGeneration((g) => g + 1);
     }, []);
+
+    const handleManualRetry = useCallback(() => {
+      hardRemountWidget(true);
+    }, [hardRemountWidget]);
 
     const resetWidget = useCallback(() => {
       const currentState = widgetStateRef.current;
@@ -607,7 +623,11 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
               className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 font-mono text-[11px] text-stone"
             >
               <Loader2 size={13} className="animate-spin text-ochre" />
-              <span>Verifying security…</span>
+              <span>
+                {isManualRetryRef.current
+                  ? 'Retrying security check…'
+                  : 'Verifying security…'}
+              </span>
             </div>
           )}
 
@@ -626,7 +646,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
               </span>
               <button
                 type="button"
-                onClick={hardRemountWidget}
+                onClick={handleManualRetry}
                 className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-md border border-moss/30 bg-white px-2.5 py-1 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
               >
                 <RefreshCw size={10} />
@@ -650,7 +670,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
               </div>
               <button
                 type="button"
-                onClick={hardRemountWidget}
+                onClick={handleManualRetry}
                 className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre active:scale-[0.99]"
               >
                 <RefreshCw size={11} />

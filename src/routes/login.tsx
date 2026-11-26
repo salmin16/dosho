@@ -405,7 +405,11 @@ function LoginRouteComponent() {
                     }}
                     onExpire={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(false)
+                    }}
+                    onRetry={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(true)
+                      setError(null)
                     }}
                     onFallbackReady={() => {
                       setCaptchaToken('')
@@ -518,7 +522,11 @@ function LoginRouteComponent() {
                     }}
                     onExpire={() => {
                       setCaptchaToken('')
-                      setCaptchaFallback(false)
+                    }}
+                    onRetry={() => {
+                      setCaptchaToken('')
+                      setCaptchaFallback(true)
+                      setError(null)
                     }}
                     onFallbackReady={() => {
                       setCaptchaToken('')
