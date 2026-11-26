@@ -32,6 +32,8 @@ import type {
   OpportunitySubmissionCategory,
   QuoteRequestRecord,
   ServiceExpertiseArea,
+  SubmissionAttachmentMetadata,
+  SubmissionAttachmentPreview,
   SupportedCurrency,
   UnifiedContentRecord,
   UnifiedContentType,
@@ -2122,6 +2124,103 @@ export async function deleteGroundedDocument(
   return {}
 }
 
+async function uploadGuidedWizardAttachments(
+  userId: string,
+  folder: 'opportunities' | 'services',
+  items: Array<{
+    slotKey: string
+    label: string
+    required: boolean
+    prepared: PreparedVerificationFile
+  }>,
+): Promise<{ uploaded: SubmissionAttachmentMetadata[]; failedLabels: string[] }> {
+  if (items.length === 0) {
+    return { uploaded: [], failedLabels: [] }
+  }
+  const supabase = requireSupabaseClient()
+  const batchTs = Date.now()
+  const uploaded: SubmissionAttachmentMetadata[] = []
+  const failedLabels: string[] = []
+
+  const results = await Promise.all(
+    items.map(async (item, idx) => {
+      const safeSlot = item.slotKey.replace(/[^a-zA-Z0-9_-]/g, '_')
+      const objectPath = `${userId}/${folder}/${batchTs}-${idx}-${safeSlot}-${item.prepared.fileName}`
+      const { error: uploadErr } = await supabase.storage
+        .from(VERIFICATION_STORAGE_BUCKET)
+        .upload(objectPath, item.prepared.blob, {
+          contentType: item.prepared.mimeType,
+          cacheControl: '3600',
+          upsert: false,
+        })
+      if (uploadErr) {
+        console.warn(
+          `[MineConnect Guided ${folder}] Storage upload failed for ${item.label}:`,
+          uploadErr.message,
+        )
+        return { ok: false as const, label: item.label }
+      }
+      return {
+        ok: true as const,
+        meta: {
+          slotKey: item.slotKey,
+          label: item.label,
+          required: item.required,
+          fileName: item.prepared.fileName,
+          mimeType: item.prepared.mimeType,
+          size: item.prepared.compressedBytes,
+          path: objectPath,
+          url: null,
+        } satisfies SubmissionAttachmentMetadata,
+      }
+    }),
+  )
+
+  for (const r of results) {
+    if (r.ok) uploaded.push(r.meta)
+    else failedLabels.push(r.label)
+  }
+
+  return { uploaded, failedLabels }
+}
+
+export async function fetchSignedAttachmentPreviews(
+  attachments: SubmissionAttachmentMetadata[],
+): Promise<{ previews: SubmissionAttachmentPreview[]; error?: string }> {
+  const adminCheck = await verifyActiveAdmin()
+  if (!adminCheck.authorized) {
+    return { previews: [], error: adminCheck.error }
+  }
+  const supabase = requireSupabaseClient()
+  const previews = await Promise.all(
+    attachments.map(async (att) => {
+      if (!att.path) {
+        return {
+          ...att,
+          signedUrl: att.url ?? null,
+          warning: att.url ? null : 'Storage path missing for this attachment.',
+        }
+      }
+      const { data, error } = await supabase.storage
+        .from(VERIFICATION_STORAGE_BUCKET)
+        .createSignedUrl(att.path, 300)
+      if (error) {
+        return {
+          ...att,
+          signedUrl: null,
+          warning: `Preview unavailable: ${error.message}`,
+        }
+      }
+      return {
+        ...att,
+        signedUrl: data?.signedUrl ?? null,
+        warning: null,
+      }
+    }),
+  )
+  return { previews }
+}
+
 export async function createGuidedOpportunitySubmission(input: {
   title: string
   organization: string
@@ -2131,7 +2230,14 @@ export async function createGuidedOpportunitySubmission(input: {
   compensationUsd: number
   description: string
   requirements: string[]
-}): Promise<{ opportunity?: UserOpportunityRecord; error?: string }> {
+  structuredDetails?: Record<string, unknown>
+  preparedAttachments?: Array<{
+    slotKey: string
+    label: string
+    required: boolean
+    prepared: PreparedVerificationFile
+  }>
+}): Promise<{ opportunity?: UserOpportunityRecord; warning?: string; error?: string }> {
   const session = await waitForAuthReady()
   if (!session) {
     return {
@@ -2157,28 +2263,62 @@ export async function createGuidedOpportunitySubmission(input: {
     requirements,
   } = parsed.data
 
+  const { uploaded, failedLabels } = await uploadGuidedWizardAttachments(
+    session.user.id,
+    'opportunities',
+    input.preparedAttachments ?? [],
+  )
+
   const catPrefix = input.category.slice(0, 3).toUpperCase()
   const refCode = `OPP-${catPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
 
   const supabase = requireSupabaseClient()
-  const { data, error } = await supabase
+  const fullPayload = {
+    user_id: session.user.id,
+    title,
+    organization,
+    category: input.category,
+    location,
+    deadline,
+    compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
+    description,
+    requirements,
+    structured_details: (input.structuredDetails ?? {}) as unknown as Json,
+    attachments: uploaded as unknown as Json,
+    reference_code: refCode,
+    status: 'pending' as const,
+    approved: false,
+  }
+
+  let { data, error } = await supabase
     .from('opportunities')
-    .insert({
-      user_id: session.user.id,
-      title,
-      organization,
-      category: input.category,
-      location,
-      deadline,
-      compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
-      description,
-      requirements,
-      reference_code: refCode,
-      status: 'pending',
-      approved: false,
-    })
+    .insert(fullPayload)
     .select('*')
     .single()
+
+  // Graceful fallback if migration 20261126000003 is still propagating
+  if (error && /structured_details|attachments|column|schema cache/i.test(error.message ?? '')) {
+    const legacyRes = await supabase
+      .from('opportunities')
+      .insert({
+        user_id: session.user.id,
+        title,
+        organization,
+        category: input.category,
+        location,
+        deadline,
+        compensation_usd: Math.max(0, Number(input.compensationUsd) || 0),
+        description,
+        requirements,
+        reference_code: refCode,
+        status: 'pending' as const,
+        approved: false,
+      })
+      .select('*')
+      .single()
+    data = legacyRes.data
+    error = legacyRes.error
+  }
 
   if (error || !data) {
     return { error: error?.message || 'Failed to publish opportunity.' }
@@ -2197,11 +2337,17 @@ export async function createGuidedOpportunitySubmission(input: {
       title: data.title,
       category: data.category,
       location: data.location,
+      attachmentCount: uploaded.length,
       status: 'pending',
     },
   })
 
-  return { opportunity: data }
+  const warning =
+    failedLabels.length > 0
+      ? `Opportunity submitted, but ${failedLabels.length} attachment(s) (${failedLabels.join(', ')}) failed to upload.`
+      : undefined
+
+  return { opportunity: data, warning }
 }
 
 export async function createGuidedServiceSubmission(input: {
@@ -2214,7 +2360,14 @@ export async function createGuidedServiceSubmission(input: {
   scopeDescription: string
   portfolioLinks: string
   certifications: string
-}): Promise<{ service?: UserServiceRecord; error?: string }> {
+  structuredDetails?: Record<string, unknown>
+  preparedAttachments?: Array<{
+    slotKey: string
+    label: string
+    required: boolean
+    prepared: PreparedVerificationFile
+  }>
+}): Promise<{ service?: UserServiceRecord; warning?: string; error?: string }> {
   const session = await waitForAuthReady()
   if (!session) {
     return {
@@ -2242,29 +2395,63 @@ export async function createGuidedServiceSubmission(input: {
     certifications,
   } = parsed.data
 
+  const { uploaded, failedLabels } = await uploadGuidedWizardAttachments(
+    session.user.id,
+    'services',
+    input.preparedAttachments ?? [],
+  )
+
   const expPrefix = input.expertiseArea.slice(0, 3).toUpperCase()
   const refCode = `SRV-${expPrefix}-${Math.floor(1000 + Math.random() * 9000)}`
 
   const supabase = requireSupabaseClient()
-  const { data, error } = await supabase
+  const fullPayload = {
+    user_id: session.user.id,
+    service_name: serviceName,
+    provider_organization: providerOrganization,
+    expertise_area: input.expertiseArea,
+    regional_coverage: regionalCoverage,
+    rate_or_pricing_model: rateOrPricingModel,
+    estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
+    scope_description: scopeDescription,
+    portfolio_links: sanitizeString(portfolioLinks, 500),
+    certifications: sanitizeString(certifications, 500),
+    structured_details: (input.structuredDetails ?? {}) as unknown as Json,
+    attachments: uploaded as unknown as Json,
+    reference_code: refCode,
+    status: 'pending' as const,
+    approved: false,
+  }
+
+  let { data, error } = await supabase
     .from('services')
-    .insert({
-      user_id: session.user.id,
-      service_name: serviceName,
-      provider_organization: providerOrganization,
-      expertise_area: input.expertiseArea,
-      regional_coverage: regionalCoverage,
-      rate_or_pricing_model: rateOrPricingModel,
-      estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
-      scope_description: scopeDescription,
-      portfolio_links: sanitizeString(portfolioLinks, 500),
-      certifications: sanitizeString(certifications, 500),
-      reference_code: refCode,
-      status: 'pending',
-      approved: false,
-    })
+    .insert(fullPayload)
     .select('*')
     .single()
+
+  if (error && /structured_details|attachments|column|schema cache/i.test(error.message ?? '')) {
+    const legacyRes = await supabase
+      .from('services')
+      .insert({
+        user_id: session.user.id,
+        service_name: serviceName,
+        provider_organization: providerOrganization,
+        expertise_area: input.expertiseArea,
+        regional_coverage: regionalCoverage,
+        rate_or_pricing_model: rateOrPricingModel,
+        estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
+        scope_description: scopeDescription,
+        portfolio_links: sanitizeString(portfolioLinks, 500),
+        certifications: sanitizeString(certifications, 500),
+        reference_code: refCode,
+        status: 'pending' as const,
+        approved: false,
+      })
+      .select('*')
+      .single()
+    data = legacyRes.data
+    error = legacyRes.error
+  }
 
   if (error || !data) {
     return { error: error?.message || 'Failed to publish service.' }
@@ -2282,11 +2469,17 @@ export async function createGuidedServiceSubmission(input: {
       referenceCode: data.reference_code,
       serviceName: data.service_name,
       expertiseArea: data.expertise_area,
+      attachmentCount: uploaded.length,
       status: 'pending',
     },
   })
 
-  return { service: data }
+  const warning =
+    failedLabels.length > 0
+      ? `Service submitted, but ${failedLabels.length} attachment(s) (${failedLabels.join(', ')}) failed to upload.`
+      : undefined
+
+  return { service: data, warning }
 }
 
 /**

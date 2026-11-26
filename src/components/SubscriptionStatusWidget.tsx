@@ -1,24 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
+  ArrowUpRight,
   CalendarClock,
-  Check,
   CheckCircle2,
   Clock,
   Crown,
   Download,
   Lock,
   ShieldCheck,
-  Sparkles,
   Zap,
 } from 'lucide-react';
 import { useLocalization } from '../context/LocalizationContext';
-import {
-  resolveForcedTzsAmountForPlan,
-  useSubscription,
-} from '../lib/subscriptions';
-import AzamPayCheckoutModal from './AzamPayCheckoutModal';
+import { useSubscription } from '../lib/subscriptions';
 import type { SubscriptionPlanId } from '../types/database';
 
 export interface SubscriptionStatusWidgetProps {
@@ -35,7 +30,6 @@ export default function SubscriptionStatusWidget({
 }: SubscriptionStatusWidgetProps) {
   const { currency, formatPrice, ui } = useLocalization();
   const {
-    plans,
     plan,
     planId,
     entitlements,
@@ -45,11 +39,6 @@ export default function SubscriptionStatusWidget({
     isPaidActive,
     isExpired,
   } = useSubscription();
-
-  const [checkoutPlanId, setCheckoutPlanId] = useState<
-    Exclude<SubscriptionPlanId, 'free'> | null
-  >(null);
-  const [showAllPlans, setShowAllPlans] = useState(true);
 
   const listingsUsed = Math.max(projectsUsed, entitlements.active_listings_count);
   const listingsLimit = entitlements.max_active_listings;
@@ -78,17 +67,12 @@ export default function SubscriptionStatusWidget({
         ? Math.min(100, Math.round((rfqsUsed / 30) * 100))
         : Math.min(100, Math.round((rfqsUsed / Math.max(1, rfqsLimit)) * 100));
 
-  const formatTierPrice = (priceTzs: number, priceUsd: number) => {
-    if (priceTzs === 0 && priceUsd === 0) {
-      return ui('Free', 'Bure', 'Gratis');
-    }
-    if (currency === 'TZS') {
-      return `TSh ${priceTzs.toLocaleString('en-US')}`;
-    }
-    return formatPrice(priceUsd);
-  };
-
-  const formattedPlanPrice = formatTierPrice(plan.price_tzs, plan.price_usd);
+  const formattedPlanPrice =
+    plan.price_tzs === 0
+      ? ui('Free', 'Bure', 'Gratis')
+      : currency === 'TZS'
+        ? `TSh ${plan.price_tzs.toLocaleString('en-US')}`
+        : formatPrice(plan.price_usd);
 
   const expiryDateObj = entitlements.expires_at
     ? new Date(entitlements.expires_at)
@@ -114,15 +98,6 @@ export default function SubscriptionStatusWidget({
   const nextRecommendedPlan: Exclude<SubscriptionPlanId, 'free'> =
     planId === 'pro' ? 'enterprise' : 'pro';
 
-  const orderedPlans = [...plans].sort((a, b) => {
-    const order: Record<SubscriptionPlanId, number> = {
-      free: 0,
-      pro: 1,
-      enterprise: 2,
-    };
-    return (order[a.id] ?? 9) - (order[b.id] ?? 9);
-  });
-
   return (
     <section
       aria-label="Active Subscription & Quota Governance"
@@ -130,7 +105,7 @@ export default function SubscriptionStatusWidget({
     >
       <div className="contours absolute inset-0 -z-10" aria-hidden="true" />
 
-      {/* Top Row: Plan Status, Expiry & Direct AzamPay Actions */}
+      {/* Top Row: Compact Active Plan Status, Expiry & Pricing Page Links */}
       <div className="flex flex-col justify-between gap-5 border-b border-paper/12 pb-6 lg:flex-row lg:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -211,214 +186,27 @@ export default function SubscriptionStatusWidget({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() =>
-              setCheckoutPlanId(
-                planId === 'enterprise' ? 'enterprise' : nextRecommendedPlan,
-              )
-            }
-            className="btn-primary !py-2.5 !px-4 text-xs"
-          >
-            <Zap size={14} />
-            {planId === 'enterprise'
-              ? ui('Renew Institutional via AzamPay', 'Huisha Institutional · AzamPay', 'Renovar Institucional')
-              : planId === 'pro'
+          {planId !== 'enterprise' && (
+            <Link
+              to="/pricing"
+              search={{ plan: nextRecommendedPlan, checkout: '1' } as unknown as undefined}
+              className="btn-primary !py-2.5 !px-4 text-xs"
+            >
+              <Zap size={14} />
+              {planId === 'pro'
                 ? ui('Upgrade to Institutional', 'Pandisha hadi Institutional', 'Mejorar a Institucional')
                 : ui('Upgrade to Operator Pro', 'Pandisha hadi Operator Pro', 'Mejorar a Operator Pro')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAllPlans((v) => !v)}
-            aria-expanded={showAllPlans}
-            className="inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 rounded-md border border-paper/25 bg-paper/10 px-4 py-2 text-xs font-semibold text-paper transition hover:bg-paper/20"
+              <ArrowUpRight size={14} />
+            </Link>
+          )}
+          <Link
+            to="/pricing"
+            className="inline-flex min-h-[44px] sm:min-h-[38px] items-center gap-1.5 rounded-md border border-paper/20 bg-paper/10 px-4 py-2 text-xs font-semibold text-paper transition hover:bg-paper/20"
           >
-            <Sparkles size={13} className="text-gold" />
-            {showAllPlans
-              ? ui('Hide Plan Selector', 'Ficha Mipango', 'Ocultar Planes')
-              : ui('Manage Billing & Plans', 'Simamia Malipo na Mipango', 'Gestionar Planes')}
-          </button>
+            {ui('Manage Billing & Plans', 'Simamia Malipo na Mipango', 'Gestionar Planes')}
+          </Link>
         </div>
       </div>
-
-      {/* Inline Subscription Tier Selector (Explorer, Operator Pro, Institutional) */}
-      {showAllPlans && orderedPlans.length > 0 && (
-        <div className="mt-6 border-b border-paper/12 pb-6">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="font-mono text-[10.5px] font-semibold uppercase tracking-widest text-gold">
-                {ui('Inline Plan Selector · Instant AzamPay Activation', 'Chagua Mpango · Malipo ya AzamPay', 'Selector de Planes · AzamPay')}
-              </p>
-              <p className="mt-0.5 text-xs text-paper/70">
-                {ui(
-                  `Compare tiers in ${currency} and activate or renew directly via AzamPay Mobile Money or Bank Transfer.`,
-                  `Linganisha mipango kwa ${currency} na uwashe au huisha moja kwa moja kupitia AzamPay.`,
-                  `Compara planes en ${currency} y activa o renueva directamente con AzamPay.`,
-                )}
-              </p>
-            </div>
-            <span className="rounded-full border border-paper/15 bg-paper/10 px-2.5 py-1 font-mono text-[10px] font-semibold text-paper/80 tabular-nums">
-              {ui('Display Currency:', 'Sarafu:', 'Moneda:')} {currency}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {orderedPlans.map((tier) => {
-              const isCurrent = tier.id === planId;
-              const isPaidTier = tier.id !== 'free';
-              const forcedTzs = isPaidTier
-                ? resolveForcedTzsAmountForPlan(
-                    tier.id as Exclude<SubscriptionPlanId, 'free'>,
-                    tier.price_tzs,
-                    tier.price_usd,
-                  )
-                : 0;
-              const tierListingsUnlimited =
-                tier.max_active_listings < 0 || tier.max_active_listings >= 999;
-              const tierRfqsUnlimited =
-                tier.max_monthly_rfqs < 0 || tier.max_monthly_rfqs >= 999;
-
-              return (
-                <div
-                  key={tier.id}
-                  className={`flex flex-col justify-between rounded-xl border p-4 transition ${
-                    isCurrent
-                      ? 'border-gold/70 bg-paper/10 shadow-md ring-1 ring-gold/40'
-                      : tier.id === 'pro'
-                        ? 'border-ochre/45 bg-ink-2/95 hover:border-gold/60'
-                        : 'border-paper/15 bg-ink-2/85 hover:border-paper/35'
-                  }`}
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-display text-xl font-medium text-paper">
-                        {tier.name}
-                      </h3>
-                      {isCurrent ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-gold/60 bg-gold/20 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-gold">
-                          <Check size={11} />
-                          {isExpired && isPaidTier
-                            ? ui('Expired', 'Imeisha', 'Expirado')
-                            : ui('Active Plan', 'Mpango Hai', 'Plan Activo')}
-                        </span>
-                      ) : tier.id === 'pro' ? (
-                        <span className="rounded-full border border-ochre/45 bg-ochre/20 px-2 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-gold">
-                          {ui('Recommended', 'Inapendekezwa', 'Recomendado')}
-                        </span>
-                      ) : tier.id === 'enterprise' ? (
-                        <span className="rounded-full border border-paper/20 bg-paper/10 px-2 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-paper/80">
-                          {ui('Full Desk', 'Taasisi', 'Institucional')}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <p className="mt-1 text-[11.5px] leading-relaxed text-paper/70">
-                      {tier.tagline}
-                    </p>
-
-                    <div className="mt-3 flex items-baseline gap-1.5 border-y border-paper/10 py-2.5">
-                      <span className="font-display text-2xl font-semibold text-paper tabular-nums">
-                        {formatTierPrice(forcedTzs || tier.price_tzs, tier.price_usd)}
-                      </span>
-                      {isPaidTier && (
-                        <span className="font-mono text-[11px] text-paper/65">
-                          {ui('/ 30 days', '/ siku 30', '/ 30 días')}
-                        </span>
-                      )}
-                    </div>
-
-                    {isPaidTier && currency !== 'TZS' && (
-                      <p className="mt-1.5 font-mono text-[10px] text-paper/55 tabular-nums">
-                        AzamPay settlement: TSh {forcedTzs.toLocaleString('en-US')}
-                      </p>
-                    )}
-
-                    <ul className="mt-3 space-y-1.5 text-[11.5px] text-paper/85">
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-paper/65">
-                          {ui('Active Listings', 'Miradi Hai', 'Listados Activos')}
-                        </span>
-                        <span className="font-mono font-semibold text-paper tabular-nums">
-                          {tierListingsUnlimited
-                            ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                            : tier.max_active_listings}
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-paper/65">
-                          {ui('Monthly RFQs', 'Maombi / Mwezi', 'RFQs / Mes')}
-                        </span>
-                        <span className="font-mono font-semibold text-paper tabular-nums">
-                          {tierRfqsUnlimited
-                            ? ui('Unlimited', 'Bila Kikomo', 'Ilimitado')
-                            : `${tier.max_monthly_rfqs}/mo`}
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-paper/65">
-                          {ui('NDA Data Room', 'Nyaraka za NDA', 'Sala NDA')}
-                        </span>
-                        <span
-                          className={`font-mono text-[10.5px] font-semibold ${
-                            tier.can_access_data_room ? 'text-[#9de4b4]' : 'text-paper/45'
-                          }`}
-                        >
-                          {tier.can_access_data_room
-                            ? ui('Included', 'Imejumuishwa', 'Incluido')
-                            : '—'}
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-paper/65">
-                          {ui('Markets CSV Export', 'Pakua CSV', 'Exportar CSV')}
-                        </span>
-                        <span
-                          className={`font-mono text-[10.5px] font-semibold ${
-                            tier.can_export_markets ? 'text-[#9de4b4]' : 'text-paper/45'
-                          }`}
-                        >
-                          {tier.can_export_markets
-                            ? ui('Included', 'Imejumuishwa', 'Incluido')
-                            : '—'}
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="mt-4 pt-2">
-                    {isPaidTier ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCheckoutPlanId(
-                            tier.id as Exclude<SubscriptionPlanId, 'free'>,
-                          )
-                        }
-                        className={`inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-xs font-semibold transition ${
-                          isCurrent
-                            ? 'border border-gold/60 bg-gold/20 text-gold hover:bg-gold/30'
-                            : 'bg-ochre text-paper shadow-sm hover:bg-ochre-dark'
-                        }`}
-                      >
-                        <Zap size={13} />
-                        {isCurrent
-                          ? ui('Renew via AzamPay', 'Huisha kupitia AzamPay', 'Renovar vía AzamPay')
-                          : ui('Select / Renew via AzamPay', 'Chagua · Lipa AzamPay', 'Seleccionar vía AzamPay')}
-                      </button>
-                    ) : (
-                      <div className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg border border-paper/15 bg-paper/5 px-3.5 py-2 font-mono text-[11px] font-medium text-paper/65">
-                        {isCurrent
-                          ? ui('Current Free Tier', 'Mpango wa Bure wa Sasa', 'Plan Gratuito Actual')
-                          : ui('Included Base Tier', 'Mpango Msingi wa Bure', 'Nivel Base Incluido')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Middle Row: Remaining Active Listings Quota, Monthly RFQ Quota & Entitlements */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -581,7 +369,7 @@ export default function SubscriptionStatusWidget({
         </div>
       </div>
 
-      {/* Recent Payment Verification Log (when user has submitted transfers/payments) */}
+      {/* Recent Payment Verification Log */}
       {payments.length > 0 && (
         <div className="mt-5 border-t border-paper/10 pt-4">
           <div className="font-mono text-[10px] uppercase tracking-wider text-paper/55">
@@ -614,11 +402,6 @@ export default function SubscriptionStatusWidget({
           </div>
         </div>
       )}
-
-      <AzamPayCheckoutModal
-        planId={checkoutPlanId}
-        onClose={() => setCheckoutPlanId(null)}
-      />
     </section>
   );
 }

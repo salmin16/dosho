@@ -316,6 +316,22 @@ export type OpportunitySubmissionCategory =
   | 'Joint Venture'
   | 'Equipment Supply';
 
+export interface SubmissionAttachmentMetadata {
+  slotKey: string;
+  label: string;
+  required?: boolean;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  path: string;
+  url?: string | null;
+}
+
+export interface SubmissionAttachmentPreview extends SubmissionAttachmentMetadata {
+  signedUrl: string | null;
+  warning?: string | null;
+}
+
 export interface UserOpportunityRecord {
   id: string;
   user_id: string;
@@ -327,6 +343,8 @@ export interface UserOpportunityRecord {
   compensation_usd: number;
   description: string;
   requirements: string[];
+  structured_details?: Record<string, unknown> | null;
+  attachments?: SubmissionAttachmentMetadata[] | null;
   reference_code: string;
   status: ContentStatus;
   approved: boolean;
@@ -359,6 +377,8 @@ export interface UserServiceRecord {
   scope_description: string;
   portfolio_links: string;
   certifications: string;
+  structured_details?: Record<string, unknown> | null;
+  attachments?: SubmissionAttachmentMetadata[] | null;
   reference_code: string;
   status: ContentStatus;
   approved: boolean;
@@ -930,6 +950,8 @@ export type Database = {
           compensation_usd?: number;
           description: string;
           requirements?: string[];
+          structured_details?: Json;
+          attachments?: Json;
           reference_code: string;
           status?: ContentStatus;
           approved?: boolean;
@@ -948,6 +970,8 @@ export type Database = {
           compensation_usd?: number;
           description?: string;
           requirements?: string[];
+          structured_details?: Json;
+          attachments?: Json;
           status?: ContentStatus;
           approved?: boolean;
           is_featured?: boolean;
@@ -973,6 +997,8 @@ export type Database = {
           scope_description: string;
           portfolio_links?: string;
           certifications?: string;
+          structured_details?: Json;
+          attachments?: Json;
           reference_code: string;
           status?: ContentStatus;
           approved?: boolean;
@@ -992,6 +1018,8 @@ export type Database = {
           scope_description?: string;
           portfolio_links?: string;
           certifications?: string;
+          structured_details?: Json;
+          attachments?: Json;
           status?: ContentStatus;
           approved?: boolean;
           is_featured?: boolean;

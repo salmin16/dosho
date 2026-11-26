@@ -38,6 +38,7 @@ import {
   adminVerifyUserProfile,
   fetchAdminComplianceComplaints,
   fetchAdminGovernanceData,
+  fetchSignedAttachmentPreviews,
   fetchVerificationSubmissionPreview,
   useAuthState,
 } from '../lib/supabaseAuth'
@@ -71,6 +72,8 @@ import type {
   ComplianceComplaintStatus,
   MineralPriceRecord,
   QuoteRequestRecord,
+  SubmissionAttachmentMetadata,
+  SubmissionAttachmentPreview,
   SubscriptionPlanRecord,
   UserListedProject,
   UserOpportunityRecord,
@@ -217,6 +220,11 @@ export function MasterAdminDashboard({
     Record<string, VerificationSubmissionPreview>
   >({})
   const [loadingPreviewId, setLoadingPreviewId] = useState<string | null>(null)
+  const [expandedAttachmentItemId, setExpandedAttachmentItemId] = useState<string | null>(null)
+  const [attachmentPreviewCache, setAttachmentPreviewCache] = useState<
+    Record<string, SubmissionAttachmentPreview[]>
+  >({})
+  const [loadingAttachmentItemId, setLoadingAttachmentItemId] = useState<string | null>(null)
   const [levelDraftMap, setLevelDraftMap] = useState<
     Record<string, VerificationLevelCode>
   >({})
@@ -423,6 +431,28 @@ export function MasterAdminDashboard({
     })
   }, [services, serviceSearch, serviceStatusFilter, profileMap])
 
+  const handleToggleItemAttachments = async (
+    itemKey: string,
+    attachments: SubmissionAttachmentMetadata[],
+  ) => {
+    if (expandedAttachmentItemId === itemKey) {
+      setExpandedAttachmentItemId(null)
+      return
+    }
+    setExpandedAttachmentItemId(itemKey)
+    if (attachmentPreviewCache[itemKey] || attachments.length === 0) return
+    setLoadingAttachmentItemId(itemKey)
+    try {
+      const res = await fetchSignedAttachmentPreviews(attachments)
+      setAttachmentPreviewCache((prev) => ({
+        ...prev,
+        [itemKey]: res.previews,
+      }))
+    } finally {
+      setLoadingAttachmentItemId(null)
+    }
+  }
+
   const combinedOppAndProjects = useMemo(() => {
     const q = oppSearch.trim().toLowerCase()
     const rows = [
@@ -440,6 +470,8 @@ export function MasterAdminDashboard({
         rejectionReason: o.rejection_reason || o.moderation_notes || null,
         referenceCode: o.reference_code,
         createdAt: o.created_at,
+        structuredDetails: (o.structured_details ?? null) as Record<string, unknown> | null,
+        attachments: (Array.isArray(o.attachments) ? o.attachments : []) as SubmissionAttachmentMetadata[],
       })),
       ...projects.map((p) => ({
         kind: 'PROJECT' as const,
@@ -455,6 +487,8 @@ export function MasterAdminDashboard({
         rejectionReason: p.rejection_reason || p.moderation_notes || null,
         referenceCode: p.licence_reference,
         createdAt: p.created_at,
+        structuredDetails: null as Record<string, unknown> | null,
+        attachments: [] as SubmissionAttachmentMetadata[],
       })),
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
@@ -1553,10 +1587,17 @@ export function MasterAdminDashboard({
                 {filteredServices.map((s) => {
                   const owner = profileMap.get(s.user_id)
                   const norm = normalizeDisplayStatus(s.status, s.approved)
+                  const srvAttachments: SubmissionAttachmentMetadata[] = Array.isArray(s.attachments)
+                    ? s.attachments
+                    : []
+                  const srvDetails = (s.structured_details ?? null) as Record<string, unknown> | null
+                  const srvAttKey = `service:${s.id}`
+                  const isSrvAttOpen = expandedAttachmentItemId === srvAttKey
+                  const srvPreviews = attachmentPreviewCache[srvAttKey]
                   return (
                     <article key={s.id} className="rounded-xl border border-ink/12 bg-paper/60 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${statusPillClasses(norm)}`}>
                               {norm}
@@ -1569,11 +1610,24 @@ export function MasterAdminDashboard({
                             <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">
                               {s.reference_code}
                             </span>
-                            <span className="font-mono text-[11px] text-ochre">{s.expertise_area}</span>
+                            <span className="font-mono text-[11px] text-ochre">
+                              {typeof srvDetails?.disciplineLabel === 'string'
+                                ? srvDetails.disciplineLabel
+                                : s.expertise_area}
+                            </span>
+                            {srvAttachments.length > 0 && (
+                              <span className="rounded border border-moss/35 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">
+                                {srvAttachments.length}{' '}
+                                {srvAttachments.length === 1 ? 'attachment' : 'attachments'}
+                              </span>
+                            )}
                           </div>
                           <h3 className="mt-2 font-display text-lg font-semibold">{s.service_name}</h3>
                           <p className="text-xs text-stone">
                             Provider: <strong>{s.provider_organization}</strong> · Rate: {s.rate_or_pricing_model} (<PriceDisplay amountInUSD={s.estimated_rate_usd} />)
+                            {typeof srvDetails?.leadTime === 'string' && srvDetails.leadTime
+                              ? ` · Lead Time: ${srvDetails.leadTime}`
+                              : ''}
                           </p>
                           <p className="mt-1 font-mono text-[11px] text-stone">
                             Submitted by: {owner?.full_name || 'Member'} ({owner?.email || s.user_id.slice(0, 8)})
@@ -1582,8 +1636,78 @@ export function MasterAdminDashboard({
                                 · ✓ Verified User
                               </span>
                             )}
+                            {s.regional_coverage ? ` · Coverage: ${s.regional_coverage}` : ''}
                           </p>
+                          {s.certifications && (
+                            <p className="mt-1 font-mono text-[11px] text-moss">
+                              Accreditations: {s.certifications}
+                            </p>
+                          )}
+                          {typeof srvDetails?.equipmentStandards === 'string' && srvDetails.equipmentStandards && (
+                            <p className="mt-1 text-[11px] text-ink/75">
+                              <strong>Equipment / Lab Standards:</strong> {srvDetails.equipmentStandards}
+                            </p>
+                          )}
                           <p className="mt-2 text-xs text-ink/80">{s.scope_description}</p>
+
+                          {srvAttachments.length > 0 && (
+                            <div className="mt-2.5 rounded-lg border border-ink/10 bg-white/80 p-2.5 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono text-[11px] font-semibold text-ink">
+                                  Submitted Credentials &amp; Attachments ({srvAttachments.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleToggleItemAttachments(srvAttKey, srvAttachments)}
+                                  className="inline-flex min-h-[30px] items-center gap-1 rounded border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[10px] font-semibold text-ink hover:border-ochre hover:text-ochre"
+                                >
+                                  <Eye size={12} />
+                                  {isSrvAttOpen ? 'Hide Files' : 'Inspect Files'}
+                                  {isSrvAttOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </button>
+                              </div>
+                              {isSrvAttOpen && (
+                                <div className="mt-2.5 border-t border-ink/10 pt-2.5">
+                                  {loadingAttachmentItemId === srvAttKey ? (
+                                    <p className="font-mono text-[11px] text-stone">
+                                      Loading signed attachment previews...
+                                    </p>
+                                  ) : (
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                      {(srvPreviews ?? srvAttachments.map((a) => ({ ...a, signedUrl: null }))).map((doc) => (
+                                        <div
+                                          key={`${srvAttKey}-${doc.slotKey}-${doc.fileName}`}
+                                          className="rounded-md border border-ink/12 bg-paper/75 p-2.5"
+                                        >
+                                          <p className="text-[11px] font-semibold text-ink">{doc.label}</p>
+                                          <p className="truncate font-mono text-[10px] text-stone tabular-nums">
+                                            {doc.fileName}
+                                            {doc.size > 0 ? ` · ${formatBytesCompact(doc.size)}` : ''}
+                                          </p>
+                                          {doc.signedUrl ? (
+                                            <a
+                                              href={doc.signedUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="mt-1.5 inline-flex items-center gap-1 rounded border border-ochre/40 bg-ochre/10 px-2 py-1 font-mono text-[10px] font-semibold text-ochre hover:bg-ochre/20"
+                                            >
+                                              <ExternalLink size={11} />
+                                              Open File (Signed 5m Link)
+                                            </a>
+                                          ) : (
+                                            <p className="mt-1 font-mono text-[10px] text-stone">
+                                              {doc.warning || 'Preview unavailable.'}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {(s.rejection_reason || s.moderation_notes) && (
                             <p className="mt-2 rounded border border-ink/10 bg-white px-2.5 py-1 text-[11px] text-stone">
                               Note: {s.rejection_reason || s.moderation_notes}
@@ -1728,10 +1852,14 @@ export function MasterAdminDashboard({
               <div className="space-y-4">
                 {combinedOppAndProjects.map((item) => {
                   const owner = profileMap.get(item.user_id)
+                  const oppAttKey = `${item.kind}:${item.id}`
+                  const isOppAttOpen = expandedAttachmentItemId === oppAttKey
+                  const oppPreviews = attachmentPreviewCache[oppAttKey]
+                  const oppDetails = item.structuredDetails
                   return (
                     <article key={`${item.kind}-${item.id}`} className="rounded-xl border border-ink/12 bg-paper/60 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="max-w-2xl">
+                        <div className="max-w-2xl min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] font-semibold text-gold">
                               {item.kind}
@@ -1744,12 +1872,34 @@ export function MasterAdminDashboard({
                                 <Star size={11} className="fill-gold text-gold" /> Featured
                               </span>
                             )}
+                            {item.attachments.length > 0 && (
+                              <span className="rounded border border-moss/35 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">
+                                {item.attachments.length}{' '}
+                                {item.attachments.length === 1 ? 'attachment' : 'attachments'}
+                              </span>
+                            )}
                             <span className="font-mono text-[11px] text-stone">
                               {new Date(item.createdAt).toLocaleString()}
                             </span>
                           </div>
                           <h3 className="mt-2 font-display text-lg font-semibold">{item.title}</h3>
                           <p className="text-xs text-ochre">{item.subtitle}</p>
+                          {oppDetails && (
+                            <p className="mt-1 font-mono text-[11px] text-ink/80">
+                              {typeof oppDetails.primaryCommodity === 'string' && (
+                                <span>Commodity: <strong>{oppDetails.primaryCommodity}</strong></span>
+                              )}
+                              {typeof oppDetails.mineralRightType === 'string' && (
+                                <span> · Right: <strong>{oppDetails.mineralRightType}</strong></span>
+                              )}
+                              {typeof oppDetails.licenceReference === 'string' && oppDetails.licenceReference && (
+                                <span> ({oppDetails.licenceReference})</span>
+                              )}
+                              {typeof oppDetails.dealStructure === 'string' && (
+                                <span> · Terms: {oppDetails.dealStructure}</span>
+                              )}
+                            </p>
+                          )}
                           <p className="mt-1 font-mono text-[11px] text-stone">
                             Submitted by: {owner?.full_name || 'Member'} ({owner?.email || item.user_id.slice(0, 8)})
                             {owner?.verification_status === 'verified' && (
@@ -1760,6 +1910,67 @@ export function MasterAdminDashboard({
                             )}
                           </p>
                           <p className="mt-2 text-xs text-ink/80">{item.description}</p>
+
+                          {item.attachments.length > 0 && (
+                            <div className="mt-2.5 rounded-lg border border-ink/10 bg-white/80 p-2.5 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono text-[11px] font-semibold text-ink">
+                                  Submitted Attachments ({item.attachments.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleToggleItemAttachments(oppAttKey, item.attachments)
+                                  }
+                                  className="inline-flex min-h-[30px] items-center gap-1 rounded border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[10px] font-semibold text-ink hover:border-ochre hover:text-ochre"
+                                >
+                                  <Eye size={12} />
+                                  {isOppAttOpen ? 'Hide Files' : 'Inspect Files'}
+                                  {isOppAttOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </button>
+                              </div>
+                              {isOppAttOpen && (
+                                <div className="mt-2.5 border-t border-ink/10 pt-2.5">
+                                  {loadingAttachmentItemId === oppAttKey ? (
+                                    <p className="font-mono text-[11px] text-stone">
+                                      Loading signed attachment previews...
+                                    </p>
+                                  ) : (
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                      {(oppPreviews ?? item.attachments.map((a) => ({ ...a, signedUrl: null }))).map((doc) => (
+                                        <div
+                                          key={`${oppAttKey}-${doc.slotKey}-${doc.fileName}`}
+                                          className="rounded-md border border-ink/12 bg-paper/75 p-2.5"
+                                        >
+                                          <p className="text-[11px] font-semibold text-ink">{doc.label}</p>
+                                          <p className="truncate font-mono text-[10px] text-stone tabular-nums">
+                                            {doc.fileName}
+                                            {doc.size > 0 ? ` · ${formatBytesCompact(doc.size)}` : ''}
+                                          </p>
+                                          {doc.signedUrl ? (
+                                            <a
+                                              href={doc.signedUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="mt-1.5 inline-flex items-center gap-1 rounded border border-ochre/40 bg-ochre/10 px-2 py-1 font-mono text-[10px] font-semibold text-ochre hover:bg-ochre/20"
+                                            >
+                                              <ExternalLink size={11} />
+                                              Open File (Signed 5m Link)
+                                            </a>
+                                          ) : (
+                                            <p className="mt-1 font-mono text-[10px] text-stone">
+                                              {doc.warning || 'Preview unavailable.'}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {item.rejectionReason && (
                             <p className="mt-2 rounded border border-ink/10 bg-white px-2.5 py-1 text-[11px] text-stone">
                               Note: {item.rejectionReason}
