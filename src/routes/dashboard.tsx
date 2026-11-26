@@ -341,7 +341,7 @@ export function DashboardRouteComponent() {
                     autoComplete="organization"
                     value={verifCompany}
                     onChange={(e) => setVerifCompany(e.target.value)}
-                    placeholder="e.g. Geita Goldfields Ltd"
+                    placeholder="Enter your company or organization"
                     className="field"
                   />
                 </div>

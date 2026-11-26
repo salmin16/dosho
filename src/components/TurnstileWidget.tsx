@@ -253,7 +253,7 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       onFallbackReady,
       allowMobileFallback = false,
       resetKey,
-      timeoutMs = 8000,
+      timeoutMs = 20000,
       appearance = 'interaction-only',
       execution = 'render',
       action,
@@ -283,12 +283,15 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
     const [widgetState, setWidgetState] = useState<
       'loading' | 'ready' | 'verified' | 'expired' | 'error' | 'fallback'
     >('loading');
+    const widgetStateRef = useRef(widgetState);
+    widgetStateRef.current = widgetState;
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [diagnosticHint, setDiagnosticHint] = useState<string | null>(null);
     const [renderGeneration, setRenderGeneration] = useState(0);
 
     const activateFallbackOrError = useCallback(
       (fallbackMsg: string, hint?: string | null) => {
+        if (widgetStateRef.current === 'verified') return;
         if (allowMobileFallback) {
           setWidgetState('fallback');
           setStatusMessage(
@@ -307,28 +310,55 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       [allowMobileFallback],
     );
 
-    const resetWidget = useCallback(() => {
+    const hardRemountWidget = useCallback(() => {
       autoRetriedRef.current = false;
       onExpireRef.current?.();
       setStatusMessage(null);
       setDiagnosticHint(null);
 
-      if (widgetIdRef.current && typeof window.turnstile?.reset === 'function') {
+      if (widgetIdRef.current && typeof window.turnstile?.remove === 'function') {
         try {
-          setWidgetState('ready');
-          window.turnstile.reset(widgetIdRef.current);
-          return;
+          window.turnstile.remove(widgetIdRef.current);
         } catch {
-          // Fall through to clean re-render if instance was detached
+          // ignore cleanup errors
         }
       }
-
+      widgetIdRef.current = null;
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
       if (typeof window.turnstile?.render !== 'function') {
         forceReloadNextRef.current = true;
       }
       setWidgetState('loading');
       setRenderGeneration((g) => g + 1);
     }, []);
+
+    const resetWidget = useCallback(() => {
+      const currentState = widgetStateRef.current;
+      if (
+        currentState === 'error' ||
+        currentState === 'expired' ||
+        currentState === 'fallback' ||
+        !widgetIdRef.current ||
+        typeof window.turnstile?.reset !== 'function'
+      ) {
+        hardRemountWidget();
+        return;
+      }
+
+      autoRetriedRef.current = false;
+      onExpireRef.current?.();
+      setStatusMessage(null);
+      setDiagnosticHint(null);
+
+      try {
+        setWidgetState('ready');
+        window.turnstile.reset(widgetIdRef.current);
+      } catch {
+        hardRemountWidget();
+      }
+    }, [hardRemountWidget]);
 
     useImperativeHandle(
       ref,
@@ -347,14 +377,16 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       prevResetKeyRef.current = resetKey;
     }, [resetKey, resetWidget]);
 
-    // 8-second watchdog: auto-retry once around halfway, then trigger non-blocking fallback/retry UI
+    // Watchdog (default 20s): auto-retry once past halfway, then show non-blocking fallback/retry UI
     useEffect(() => {
       if (!siteKey) return;
       if (widgetState !== 'loading' && widgetState !== 'ready') return;
 
-      const halfDelay = Math.max(3000, Math.round(timeoutMs * 0.55));
+      const halfDelay = Math.max(8000, Math.round(timeoutMs * 0.55));
+      const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
       const retryTimer = window.setTimeout(() => {
         if (
+          widgetStateRef.current !== 'verified' &&
           !autoRetriedRef.current &&
           widgetIdRef.current &&
           typeof window.turnstile?.reset === 'function'
@@ -369,9 +401,10 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
       }, halfDelay);
 
       const fallbackTimer = window.setTimeout(() => {
+        if (widgetStateRef.current === 'verified') return;
         activateFallbackOrError(
           'Security verification timed out on this network. Please retry.',
-          'Challenge timeout (8s)',
+          `Challenge timeout (${timeoutSeconds}s)`,
         );
       }, timeoutMs);
 
@@ -584,8 +617,8 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
               </span>
               <button
                 type="button"
-                onClick={resetWidget}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-moss/30 bg-white px-2 py-1 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+                onClick={hardRemountWidget}
+                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-md border border-moss/30 bg-white px-2.5 py-1 font-mono text-[10px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
               >
                 <RefreshCw size={10} />
                 Retry
@@ -608,8 +641,8 @@ const TurnstileWidgetInner = forwardRef<TurnstileWidgetHandle, TurnstileWidgetPr
               </div>
               <button
                 type="button"
-                onClick={resetWidget}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre"
+                onClick={hardRemountWidget}
+                className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[11px] font-semibold text-ink transition hover:border-ochre hover:text-ochre active:scale-[0.99]"
               >
                 <RefreshCw size={11} />
                 Retry Verification

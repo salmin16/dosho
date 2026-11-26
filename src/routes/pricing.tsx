@@ -1238,7 +1238,7 @@ function Pricing() {
                         action="subscription-payment"
                         appearance="interaction-only"
                         execution="render"
-                        timeoutMs={8000}
+                        timeoutMs={20000}
                         allowMobileFallback
                         onVerify={handleTurnstileVerify}
                         onExpire={handleTurnstileExpire}

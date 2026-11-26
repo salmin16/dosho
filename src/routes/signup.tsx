@@ -84,6 +84,7 @@ function SignUpRouteComponent() {
     }
 
     setSubmitting(true)
+    let shouldResetCaptcha = false
     try {
       const res = await signUpWithEmail({
         fullName: validation.data.fullName,
@@ -100,8 +101,10 @@ function SignUpRouteComponent() {
         )
         setPassword('')
         setConfirmPassword('')
+        shouldResetCaptcha = true
       } else if (res.error) {
         setError(formatSafeUserError(res.error, 'Unable to create your account. Please try again.'))
+        shouldResetCaptcha = true
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -112,11 +115,17 @@ function SignUpRouteComponent() {
           'Unexpected sign-up error. Please try again.'
         )
       )
+      shouldResetCaptcha = true
     } finally {
       setSubmitting(false)
-      setCaptchaToken('')
-      setTurnstileResetKey((k) => k + 1)
-      turnstileRef.current?.reset()
+      if (shouldResetCaptcha) {
+        setCaptchaToken('')
+        if (turnstileRef.current) {
+          turnstileRef.current.reset()
+        } else {
+          setTurnstileResetKey((k) => k + 1)
+        }
+      }
     }
   }
 
@@ -197,8 +206,8 @@ function SignUpRouteComponent() {
                   autoComplete="name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Salmin Mwenesi — Geita Holdings"
-                  className="field !bg-paper/45 !pl-10"
+                  placeholder="Enter your full name or registered organization"
+                  className="field !bg-paper/45 !pl-10 text-base"
                 />
               </div>
             </div>
@@ -220,8 +229,8 @@ function SignUpRouteComponent() {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@miningcorp.co.tz"
-                  className="field !pl-10"
+                  placeholder="name@organization.com"
+                  className="field !pl-10 text-base"
                 />
               </div>
             </div>
@@ -242,8 +251,8 @@ function SignUpRouteComponent() {
                   autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="8–64 chars (A-Z, a-z, 0-9, !@#$)"
-                  className="field !bg-paper/45 !pl-10 !pr-12"
+                  placeholder="Create a strong password (8–64 chars)"
+                  className="field !bg-paper/45 !pl-10 !pr-12 text-base"
                 />
                 <button
                   type="button"
@@ -276,8 +285,8 @@ function SignUpRouteComponent() {
                   autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your strong password"
-                  className="field !bg-paper/45 !pl-10 !pr-12"
+                  placeholder="Re-enter your password"
+                  className="field !bg-paper/45 !pl-10 !pr-12 text-base"
                 />
                 <button
                   type="button"
@@ -299,6 +308,7 @@ function SignUpRouteComponent() {
                 <TurnstileWidget
                   ref={turnstileRef}
                   resetKey={turnstileResetKey}
+                  timeoutMs={20000}
                   theme="light"
                   action="signup"
                   onVerify={(token) => {

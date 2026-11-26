@@ -95,8 +95,12 @@ export type MasterAdminSection =
   | 'billing'
   | 'minerals'
 
+function AdminOverviewRouteComponent() {
+  return <MasterAdminDashboard initialSection="overview" />
+}
+
 export const Route = createFileRoute('/admin')({
-  component: () => <MasterAdminDashboard initialSection="overview" />,
+  component: AdminOverviewRouteComponent,
 })
 
 function mapInitialTab(
@@ -197,6 +201,9 @@ export function MasterAdminDashboard({
   const [isRefreshing, setIsRefreshing] = useState(false)
   const refreshInFlightRef = useRef(false)
   const hasLoadedOnceRef = useRef(false)
+  const loadedUserIdRef = useRef<string | null>(null)
+  const prevInitialSectionRef = useRef<MasterAdminSection>(initialSection)
+  const currentUserId = session?.user.id ?? null
   const [activeTab, setActiveTab] = useState<
     'overview' | 'users' | 'services' | 'opportunities' | 'quotes_audit' | 'complaints' | 'billing' | 'minerals'
   >(() => mapInitialTab(initialSection))
@@ -264,7 +271,10 @@ export function MasterAdminDashboard({
   const [billingWarning, setBillingWarning] = useState<string | null>(null)
 
   useEffect(() => {
-    setActiveTab(mapInitialTab(initialSection))
+    if (prevInitialSectionRef.current !== initialSection) {
+      prevInitialSectionRef.current = initialSection
+      setActiveTab(mapInitialTab(initialSection))
+    }
   }, [initialSection])
 
   // Memoized zero-CLS governance refresh: preserves existing UI state during background refreshes
@@ -321,20 +331,28 @@ export function MasterAdminDashboard({
   }, [])
 
   useEffect(() => {
-    if (authLoading || profileLoading) return
-    if (!session) {
+    if (authLoading || (profileLoading && !hasLoadedOnceRef.current)) return
+    if (!currentUserId) {
+      loadedUserIdRef.current = null
+      hasLoadedOnceRef.current = false
       setAuthorized(false)
       setInitialLoading(false)
       return
     }
     if (!isAdmin) {
+      loadedUserIdRef.current = null
+      hasLoadedOnceRef.current = false
       setAuthorized(false)
       setInitialLoading(false)
       navigate({ to: '/dashboard' })
       return
     }
+    if (loadedUserIdRef.current === currentUserId) {
+      return
+    }
+    loadedUserIdRef.current = currentUserId
     void loadGovernanceTelemetry()
-  }, [authLoading, profileLoading, session, isAdmin, navigate, loadGovernanceTelemetry])
+  }, [authLoading, profileLoading, currentUserId, isAdmin, navigate, loadGovernanceTelemetry])
 
   useEffect(() => {
     setMineralBenchmarks(getStoredMineralPrices())
@@ -825,7 +843,7 @@ export function MasterAdminDashboard({
     }
   }
 
-  if (authLoading || profileLoading || initialLoading) {
+  if (!hasLoadedOnceRef.current && (authLoading || profileLoading || initialLoading)) {
     return <AdminGovernanceSkeleton />
   }
 

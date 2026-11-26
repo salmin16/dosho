@@ -83,8 +83,11 @@ function LoginRouteComponent() {
 
   const triggerTurnstileReset = () => {
     setCaptchaToken('')
-    setTurnstileResetKey((k) => k + 1)
-    turnstileRef.current?.reset()
+    if (turnstileRef.current) {
+      turnstileRef.current.reset()
+    } else {
+      setTurnstileResetKey((k) => k + 1)
+    }
   }
 
   // Forgot-password state + 60s anti-abuse cooldown
@@ -143,6 +146,7 @@ function LoginRouteComponent() {
     }
 
     setSubmitting(true)
+    let shouldResetCaptcha = false
     try {
       const res = await signInWithEmail({
         email,
@@ -151,6 +155,7 @@ function LoginRouteComponent() {
       })
       if (res.error) {
         setError(formatSafeUserError(res.error, 'Invalid email or password. Please try again.'))
+        shouldResetCaptcha = true
       } else {
         navigate({ to: targetDestination as '/dashboard' })
       }
@@ -161,9 +166,12 @@ function LoginRouteComponent() {
           'Unexpected sign-in error. Please try again.'
         )
       )
+      shouldResetCaptcha = true
     } finally {
       setSubmitting(false)
-      triggerTurnstileReset()
+      if (shouldResetCaptcha) {
+        triggerTurnstileReset()
+      }
     }
   }
 
@@ -310,8 +318,8 @@ function LoginRouteComponent() {
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="operator@miningcorp.co.tz"
-                      className="field !pl-10"
+                      placeholder="name@organization.com"
+                      className="field !pl-10 text-base"
                     />
                   </div>
                 </div>
@@ -333,7 +341,7 @@ function LoginRouteComponent() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="field !bg-paper/45 !pl-10 !pr-12"
+                      className="field !bg-paper/45 !pl-10 !pr-12 text-base"
                     />
                     <button
                       type="button"
@@ -360,6 +368,7 @@ function LoginRouteComponent() {
                     key="turnstile-login"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
+                    timeoutMs={20000}
                     theme="light"
                     action="login"
                     onVerify={(token) => {
@@ -449,8 +458,8 @@ function LoginRouteComponent() {
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="operator@miningcorp.co.tz"
-                      className="field !pl-10"
+                      placeholder="name@organization.com"
+                      className="field !pl-10 text-base"
                     />
                   </div>
                 </div>
@@ -460,6 +469,7 @@ function LoginRouteComponent() {
                     key="turnstile-forgot"
                     ref={turnstileRef}
                     resetKey={turnstileResetKey}
+                    timeoutMs={20000}
                     theme="light"
                     action="forgot-password"
                     onVerify={(token) => {

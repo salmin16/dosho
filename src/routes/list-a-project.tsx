@@ -403,9 +403,9 @@ function ListProject() {
                 value={v('ownerKind')}
                 onChange={(x) => set('ownerKind', x)}
               />
-              {v('ownerKind') === 'Company' && <In label={t('list.companyName')} k="company" autoComplete="organization" placeholder="e.g. Geita Goldfields Ltd" {...{ v, set, errors }} />}
-              <In label={t('list.fullName')} k="name" autoComplete="name" placeholder="e.g. Salmin Mwenesi" {...{ v, set, errors }} />
-              <In label={t('list.email')} k="email" type="email" inputMode="email" autoComplete="email" placeholder="name@company.co.tz" {...{ v, set, errors }} />
+              {v('ownerKind') === 'Company' && <In label={t('list.companyName')} k="company" autoComplete="organization" placeholder="Enter registered company name" {...{ v, set, errors }} />}
+              <In label={t('list.fullName')} k="name" autoComplete="name" placeholder="Enter your full name" {...{ v, set, errors }} />
+              <In label={t('list.email')} k="email" type="email" inputMode="email" autoComplete="email" placeholder="name@organization.com" {...{ v, set, errors }} />
               <In
                 label={t('list.phone')}
                 k="phone"

@@ -356,7 +356,8 @@ async function fetchProfileRecord(
 }
 
 async function hydrateFromSupabaseSession(
-  sdkSession: SupabaseSdkSession | null
+  sdkSession: SupabaseSdkSession | null,
+  options?: { silent?: boolean }
 ): Promise<AuthSession | null> {
   if (!sdkSession?.user) {
     profileLoading = false
@@ -365,8 +366,16 @@ async function hydrateFromSupabaseSession(
     return null
   }
 
-  profileLoading = true
-  notifyAuthListeners()
+  const silent = Boolean(
+    options?.silent &&
+      currentSession?.user.id === sdkSession.user.id &&
+      currentProfile?.id === sdkSession.user.id
+  )
+
+  if (!silent) {
+    profileLoading = true
+    notifyAuthListeners()
+  }
 
   try {
     const profile = await fetchProfileRecord(sdkSession.user.id)
@@ -412,8 +421,10 @@ async function hydrateFromSupabaseSession(
     setCurrentSession(hydrated, profile)
     return hydrated
   } finally {
-    profileLoading = false
-    notifyAuthListeners()
+    if (profileLoading) {
+      profileLoading = false
+      notifyAuthListeners()
+    }
   }
 }
 
@@ -459,14 +470,36 @@ function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
         return
       }
 
-      profileLoading = true
-      notifyAuthListeners()
+      const sameActiveUser =
+        currentSession?.user.id === nextSdkSession.user.id &&
+        currentProfile?.id === nextSdkSession.user.id
+
+      // Silent token refresh for the already-hydrated user: keep UI mounted & preserve active tabs/selections
+      if (event === 'TOKEN_REFRESHED' && sameActiveUser && currentSession) {
+        if (currentSession.accessToken !== nextSdkSession.access_token) {
+          currentSession = {
+            ...currentSession,
+            accessToken: nextSdkSession.access_token,
+          }
+        }
+        return
+      }
+
+      if (!sameActiveUser) {
+        profileLoading = true
+        notifyAuthListeners()
+      }
 
       window.setTimeout(() => {
-        void hydrateFromSupabaseSession(nextSdkSession).finally(() => {
+        void hydrateFromSupabaseSession(nextSdkSession, {
+          silent: sameActiveUser,
+        }).finally(() => {
+          const hadLoadingFlags = authLoading || profileLoading
           authLoading = false
           profileLoading = false
-          notifyAuthListeners()
+          if (hadLoadingFlags) {
+            notifyAuthListeners()
+          }
         })
       }, 0)
     })
