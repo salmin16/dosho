@@ -1,37 +1,6 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  acquireLiveMarketStream,
-  getMarketFeedFreshness,
-  getMineralIntradayTicks,
-  getStoredMineralPrices,
-  subscribeMineralPrices,
-} from '../data/mineralPrices'
-import {
-  FALLBACK_RATES_PER_USD,
-  type FxRatesSource,
-} from '../lib/currency'
-import {
-  FIRST_MARKET_YEAR,
-  buildCanonicalMineralSeries,
-  buildTimeZoneOptions,
-  buildTimezoneAwareXTicks,
-  detectLocalTimeZone,
-  formatEpochReadout,
-  getTimeZoneAbbreviation,
-  getYearInTimeZone,
-  getYearStartEpochMs,
-  isValidIanaTimeZone,
-  type CanonicalSeriesPoint,
-  type SeriesPointKind,
-} from '../lib/marketSeries'
-import type { ChartPricingMode } from '../lib/mineralHistory'
-import type {
-  MarketFeedSource,
-  MarketSyncTelemetry,
-  MineralPriceRecord,
-} from '../types/database'
 
 export type CurrencyCode = 'TZS' | 'USD' | 'EUR'
 export type PresetRangeKey = '15m' | '1D' | '5D' | '1M' | '3M' | '6M' | '1Y'
@@ -53,38 +22,79 @@ export interface CustomDisplayCurrency {
   zeroDecimal?: boolean
 }
 
-export interface FxFreshnessMetadata {
-  source: FxRatesSource
-  provider: string
-  fetchedAtMs: number | null
-}
-
 export interface MarketTrendChartProps {
-  /** Authoritative live MineralPriceRecord list from MineConnect / Supabase store */
-  records?: MineralPriceRecord[]
-  /** Master pricing unit basis ('metric_local' /g,/kg,/ct vs 'standard' /toz,/lb,/t) */
-  unitBasis?: ChartPricingMode
-  /** Optional live sync telemetry from MineralPricesBoard / market-sync */
-  telemetry?: MarketSyncTelemetry | null
-  /** Optional custom asset overrides (only used when records are not provided) */
   minerals?: MineralAssetConfig[]
   initialMineralId?: string
   selectedMineralId?: string
   onMineralChange?: (mineralId: string) => void
   currency?: CurrencyCode
   fxRatesFromUsd?: Record<CurrencyCode, number>
-  fxFreshness?: FxFreshnessMetadata | null
   onCurrencyChange?: (currency: CurrencyCode) => void
   /** Optional non-TZS/USD/EUR currency synchronized from global app localization */
   customCurrency?: CustomDisplayCurrency | null
-  /** Optional controlled IANA time zone (e.g. 'Africa/Dar_es_Salaam', 'UTC', 'Europe/London', 'America/New_York') */
-  timeZone?: string
-  onTimeZoneChange?: (timeZone: string) => void
   /** When embedded inside an existing page container (e.g. /markets), omits outer section padding */
   embedded?: boolean
 }
 
-const MIN_SPAN_MS = 5 * 60 * 1000 // 5 minutes minimum zoom span
+interface DataPoint {
+  ts: number
+  priceUsd: number
+}
+
+interface XTick {
+  ts: number
+  label: string
+  highlight?: boolean
+}
+
+const DEFAULT_MINERALS: MineralAssetConfig[] = [
+  {
+    id: 'gold',
+    symbol: 'XAU',
+    name: 'Gold Bullion (Dhahabu)',
+    unitLabel: '/g',
+    spotUsd: 114.25,
+    prevCloseUsd: 112.62,
+    seed: 101,
+  },
+  {
+    id: 'copper',
+    symbol: 'HG',
+    name: 'Copper Cathode (Shaba)',
+    unitLabel: '/kg',
+    spotUsd: 11.85,
+    prevCloseUsd: 11.74,
+    seed: 202,
+  },
+  {
+    id: 'graphite',
+    symbol: 'GRF',
+    name: 'Flake Graphite (Kinywe 97%)',
+    unitLabel: '/kg',
+    spotUsd: 1.18,
+    prevCloseUsd: 1.19,
+    seed: 303,
+  },
+  {
+    id: 'lithium',
+    symbol: 'LI',
+    name: 'Lithium Spodumene (SC6)',
+    unitLabel: '/kg',
+    spotUsd: 1.1,
+    prevCloseUsd: 1.09,
+    seed: 404,
+  },
+]
+
+const DEFAULT_FX: Record<CurrencyCode, number> = {
+  TZS: 2683.79,
+  USD: 1,
+  EUR: 0.92,
+}
+
+const CURRENT_YEAR = 2026
+const FIRST_MARKET_YEAR = 1968
+const MIN_SPAN_MS = 5 * 60 * 1000
 
 const PRESET_DURATIONS_MS: Record<PresetRangeKey, number> = {
   '15m': 15 * 60 * 1000,
@@ -96,10 +106,13 @@ const PRESET_DURATIONS_MS: Record<PresetRangeKey, number> = {
   '1Y': 365 * 24 * 60 * 60 * 1000,
 }
 
-const DEFAULT_FX_FALLBACK: Record<CurrencyCode, number> = {
-  TZS: FALLBACK_RATES_PER_USD.TZS,
-  USD: 1,
-  EUR: FALLBACK_RATES_PER_USD.EUR,
+function createRng(seed: number) {
+  let s = seed % 2147483647
+  if (s <= 0) s += 2147483646
+  return () => {
+    s = (s * 16807) % 2147483647
+    return (s - 1) / 2147483646
+  }
 }
 
 function drawRoundedRect(
@@ -121,6 +134,79 @@ function drawRoundedRect(
   ctx.arcTo(x, y + height, x, y, r)
   ctx.arcTo(x, y, x + width, y, r)
   ctx.closePath()
+}
+
+function buildMultiResolutionSeries(
+  asset: MineralAssetConfig,
+  anchorNowTs: number,
+): DataPoint[] {
+  const rng = createRng(asset.seed)
+  const points: DataPoint[] = []
+
+  const start1968 = Date.UTC(FIRST_MARKET_YEAR, 0, 1)
+  const cutoff400d = anchorNowTs - 400 * 24 * 60 * 60 * 1000
+  const monthStep = 30 * 24 * 60 * 60 * 1000
+
+  let t = start1968
+  const totalHistSpan = Math.max(1, cutoff400d - start1968)
+  while (t < cutoff400d) {
+    const progress = (t - start1968) / totalHistSpan
+    const baseRatio = 0.045 + 0.72 * Math.pow(progress, 1.55)
+    const wave =
+      0.06 * Math.sin(progress * Math.PI * 7) +
+      0.035 * Math.cos(progress * Math.PI * 15)
+    const jitter = (rng() - 0.5) * 0.025
+    const ratio = Math.max(0.025, baseRatio + wave + jitter)
+    points.push({ ts: t, priceUsd: asset.spotUsd * ratio })
+    t += monthStep
+  }
+
+  const cutoff7d = anchorNowTs - 7 * 24 * 60 * 60 * 1000
+  const dayStep = 24 * 60 * 60 * 1000
+  let lastPrice =
+    points.length > 0 ? points[points.length - 1].priceUsd : asset.spotUsd * 0.78
+  const target7d = asset.spotUsd * 0.975
+  const daysCount = Math.max(1, Math.floor((cutoff7d - cutoff400d) / dayStep))
+
+  for (let i = 0; i < daysCount; i++) {
+    const ts = cutoff400d + i * dayStep
+    const pull = (target7d - lastPrice) / Math.max(1, daysCount - i)
+    const shock = asset.spotUsd * 0.0085 * (rng() - 0.49)
+    lastPrice = Math.max(asset.spotUsd * 0.2, lastPrice + pull + shock)
+    points.push({ ts, priceUsd: lastPrice })
+  }
+
+  const cutoff2h = anchorNowTs - 2 * 60 * 60 * 1000
+  const step15m = 15 * 60 * 1000
+  const bars15m = Math.max(1, Math.floor((cutoff2h - cutoff7d) / step15m))
+
+  for (let i = 0; i < bars15m; i++) {
+    const ts = cutoff7d + i * step15m
+    const target =
+      ts >= anchorNowTs - 24 * 60 * 60 * 1000
+        ? asset.prevCloseUsd
+        : asset.spotUsd * 0.992
+    const pull = (target - lastPrice) / Math.max(1, bars15m - i)
+    const shock = asset.spotUsd * 0.0022 * (rng() - 0.5)
+    lastPrice = Math.max(asset.spotUsd * 0.2, lastPrice + pull + shock)
+    points.push({ ts, priceUsd: lastPrice })
+  }
+
+  const step1m = 60 * 1000
+  const mins = Math.floor((anchorNowTs - cutoff2h) / step1m)
+  for (let i = 0; i <= mins; i++) {
+    const ts = cutoff2h + i * step1m
+    if (i === mins) {
+      points.push({ ts: anchorNowTs, priceUsd: asset.spotUsd })
+    } else {
+      const pull = (asset.spotUsd - lastPrice) / Math.max(1, mins - i)
+      const shock = asset.spotUsd * 0.0011 * (rng() - 0.49)
+      lastPrice = Math.max(asset.spotUsd * 0.2, lastPrice + pull + shock)
+      points.push({ ts, priceUsd: lastPrice })
+    }
+  }
+
+  return points
 }
 
 function computeNiceYScale(minVal: number, maxVal: number, targetTicks = 6) {
@@ -198,233 +284,152 @@ function formatPrice(
   })}`
 }
 
-/** Binary-search exact interpolated price at an arbitrary UTC epoch timestamp */
-function samplePriceAtEpoch(
-  series: readonly CanonicalSeriesPoint[],
-  targetTs: number,
-): CanonicalSeriesPoint {
-  if (series.length === 0) {
-    return { ts: targetTs, priceUsd: 0, kind: 'historical' }
-  }
-  if (targetTs <= series[0].ts) return series[0]
-  const last = series[series.length - 1]
-  if (targetTs >= last.ts) return last
-
-  let lo = 0
-  let hi = series.length - 1
-  while (lo + 1 < hi) {
-    const mid = (lo + hi) >> 1
-    if (series[mid].ts <= targetTs) lo = mid
-    else hi = mid
-  }
-
-  const a = series[lo]
-  const b = series[hi]
-  if (a.ts === targetTs) return a
-  if (b.ts === targetTs) return b
-
-  const frac = (targetTs - a.ts) / Math.max(1, b.ts - a.ts)
-  return {
-    ts: targetTs,
-    priceUsd: a.priceUsd + (b.priceUsd - a.priceUsd) * frac,
-    kind: b.kind === 'live' && a.kind === 'live' ? 'live' : a.kind,
-  }
+function formatTimeHM(ts: number): string {
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
-/** Slices series cleanly to [startTs, endTs] with exact boundary interpolation */
-function sliceSeriesWithBoundaries(
-  series: readonly CanonicalSeriesPoint[],
+function formatDateShort(ts: number): string {
+  return new Date(ts).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+  })
+}
+
+function formatMonthYear(ts: number): string {
+  return new Date(ts).toLocaleDateString('en-GB', {
+    month: 'short',
+    year: '2-digit',
+  })
+}
+
+function buildBalancedXTicks(
   startTs: number,
   endTs: number,
-): CanonicalSeriesPoint[] {
-  if (series.length === 0) return []
-  const inside = series.filter((p) => p.ts > startTs && p.ts < endTs)
-  const leftPt = samplePriceAtEpoch(series, startTs)
-  const rightPt = samplePriceAtEpoch(series, endTs)
+  selectedYear: number | null,
+  chartWidthPx: number,
+): XTick[] {
+  const spanMs = Math.max(1, endTs - startTs)
+  const minLabelGapPx = chartWidthPx < 480 ? 64 : 84
+  const maxLabels = Math.max(3, Math.floor(chartWidthPx / minLabelGapPx))
 
-  const result: CanonicalSeriesPoint[] = [{ ...leftPt, ts: startTs }]
-  for (const pt of inside) {
-    result.push(pt)
-  }
-  if (endTs > startTs) {
-    result.push({ ...rightPt, ts: endTs })
-  }
-  return result
-}
+  if (selectedYear !== null) {
+    const endYear = CURRENT_YEAR
+    const totalYears = Math.max(1, endYear - selectedYear)
+    const candidateSteps = [1, 2, 3, 5, 10, 15, 20]
+    const stepYears =
+      candidateSteps.find((s) => Math.ceil(totalYears / s) + 1 <= maxLabels) ?? 20
 
-function adaptAssetConfigToRecord(asset: MineralAssetConfig): MineralPriceRecord {
-  const pct =
-    asset.prevCloseUsd > 0
-      ? Number((((asset.spotUsd - asset.prevCloseUsd) / asset.prevCloseUsd) * 100).toFixed(2))
-      : 0
-  const cleanUnit = asset.unitLabel.replace(/^\//, '').trim() || 'g'
-  return {
-    id: asset.id,
-    mineral_name: asset.name,
-    symbol: asset.symbol,
-    category: 'Precious Metals',
-    unit: `USD/${cleanUnit}`,
-    purity_note: '',
-    world_market_price_usd: asset.spotUsd,
-    local_market_price_usd: asset.spotUsd * 0.93,
-    buying_centre_price_usd: asset.spotUsd * 0.89,
-    royalty_rate_pct: 6,
-    trend_percentage: pct,
-    day_open_usd: asset.prevCloseUsd,
-    feed_source: 'CACHED_BENCHMARK',
-    sparkline_points: [asset.prevCloseUsd, asset.spotUsd],
-    updated_at: new Date().toISOString(),
-  }
-}
+    const ticks: XTick[] = [
+      { ts: startTs, label: String(selectedYear), highlight: true },
+    ]
 
-function describePointKind(kind: SeriesPointKind): string {
-  if (kind === 'live') return 'Live point'
-  if (kind === 'cached') return 'Cached quote'
-  return 'Historical series'
+    const firstAligned = Math.ceil((selectedYear + 1) / stepYears) * stepYears
+    for (let y = firstAligned; y < endYear; y += stepYears) {
+      const yTs = Date.UTC(y, 0, 1)
+      const leftPx = ((yTs - startTs) / spanMs) * chartWidthPx
+      const rightPx = ((endTs - yTs) / spanMs) * chartWidthPx
+      if (leftPx >= minLabelGapPx * 0.85 && rightPx >= minLabelGapPx * 0.85) {
+        ticks.push({ ts: yTs, label: String(y) })
+      }
+    }
+
+    ticks.push({ ts: endTs, label: String(endYear), highlight: true })
+    return ticks
+  }
+
+  if (spanMs <= 35 * 60 * 1000) {
+    const step = 5 * 60 * 1000
+    const firstTick = Math.ceil(startTs / step) * step
+    const ticks: XTick[] = []
+    for (let t = firstTick; t <= endTs; t += step) {
+      ticks.push({ ts: t, label: formatTimeHM(t) })
+    }
+    return ticks
+  }
+
+  if (spanMs <= 36 * 60 * 60 * 1000) {
+    const steps = [
+      15 * 60 * 1000,
+      30 * 60 * 1000,
+      60 * 60 * 1000,
+      3 * 3600 * 1000,
+      6 * 3600 * 1000,
+    ]
+    const step = steps.find((s) => spanMs / s <= maxLabels) ?? 6 * 3600 * 1000
+    const firstTick = Math.ceil(startTs / step) * step
+    const ticks: XTick[] = []
+    for (let t = firstTick; t <= endTs; t += step) {
+      ticks.push({ ts: t, label: formatTimeHM(t) })
+    }
+    return ticks
+  }
+
+  if (spanMs <= 120 * 24 * 60 * 60 * 1000) {
+    const dayMs = 24 * 60 * 60 * 1000
+    const daySteps = [1, 2, 5, 7, 14, 21]
+    const dStep = daySteps.find((d) => spanMs / (d * dayMs) <= maxLabels) ?? 21
+    const step = dStep * dayMs
+    const firstTick = Math.ceil(startTs / step) * step
+    const ticks: XTick[] = []
+    for (let t = firstTick; t <= endTs; t += step) {
+      ticks.push({ ts: t, label: formatDateShort(t) })
+    }
+    return ticks
+  }
+
+  const count = Math.min(maxLabels, 6)
+  const step = spanMs / Math.max(1, count - 1)
+  const ticks: XTick[] = []
+  for (let i = 0; i < count; i++) {
+    const t = startTs + i * step
+    ticks.push({
+      ts: t,
+      label:
+        spanMs > 400 * 24 * 60 * 60 * 1000
+          ? String(new Date(t).getUTCFullYear())
+          : formatMonthYear(t),
+    })
+  }
+  return ticks
 }
 
 export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
-  records: controlledRecords,
-  unitBasis = 'metric_local',
-  telemetry: controlledTelemetry,
-  minerals: customAssets,
-  initialMineralId,
+  minerals = DEFAULT_MINERALS,
+  initialMineralId = 'gold',
   selectedMineralId: controlledMineralId,
   onMineralChange,
   currency: controlledCurrency,
-  fxRatesFromUsd = DEFAULT_FX_FALLBACK,
-  fxFreshness = null,
+  fxRatesFromUsd = DEFAULT_FX,
   onCurrencyChange,
   customCurrency = null,
-  timeZone: controlledTimeZone,
-  onTimeZoneChange,
   embedded = false,
 }) => {
-  // Single-source store subscription so standalone & embedded instances share the exact live feed
-  const [storeRecords, setStoreRecords] = useState<MineralPriceRecord[]>(() =>
-    controlledRecords && controlledRecords.length > 0
-      ? controlledRecords
-      : getStoredMineralPrices(),
-  )
-  const [storeFreshness, setStoreFreshness] = useState(() =>
-    getMarketFeedFreshness(),
-  )
-  const [tickRevision, setTickRevision] = useState(0)
-
-  useEffect(() => {
-    const release = acquireLiveMarketStream()
-    const syncFromStore = () => {
-      if (!controlledRecords || controlledRecords.length === 0) {
-        setStoreRecords(getStoredMineralPrices())
-      }
-      setStoreFreshness(getMarketFeedFreshness())
-      setTickRevision((n) => n + 1)
-    }
-    const unsub = subscribeMineralPrices(syncFromStore)
-    return () => {
-      unsub()
-      release()
-    }
-  }, [controlledRecords])
-
-  const activeRecords = useMemo<MineralPriceRecord[]>(() => {
-    if (controlledRecords && controlledRecords.length > 0) return controlledRecords
-    if (customAssets && customAssets.length > 0) {
-      return customAssets.map(adaptAssetConfigToRecord)
-    }
-    return storeRecords.length > 0 ? storeRecords : getStoredMineralPrices()
-  }, [controlledRecords, customAssets, storeRecords])
-
-  const effectiveUnitBasis: ChartPricingMode =
-    !controlledRecords && customAssets && customAssets.length > 0
-      ? 'standard'
-      : unitBasis
-
-  const activeTelemetry = controlledTelemetry ?? storeFreshness.telemetry
-
-  // Mineral selection state
-  const [internalMineralId, setInternalMineralId] = useState<string>(
-    () =>
-      controlledMineralId ??
-      initialMineralId ??
-      activeRecords[0]?.symbol ??
-      'XAU',
+  const safeMinerals = minerals.length > 0 ? minerals : DEFAULT_MINERALS
+  const [internalMineralId, setInternalMineralId] = useState(
+    controlledMineralId ?? initialMineralId,
   )
   const selectedMineralId = controlledMineralId ?? internalMineralId
 
-  // Currency state
   const [internalCurrency, setInternalCurrency] = useState<CurrencyCode>('TZS')
   const currency = controlledCurrency ?? internalCurrency
 
-  // Timezone state (defaults to browser local IANA timezone or Africa/Dar_es_Salaam)
-  const timeZoneOptions = useMemo(() => buildTimeZoneOptions(), [])
-  const [internalTimeZone, setInternalTimeZone] = useState<string>(() =>
-    detectLocalTimeZone(),
-  )
-  const timeZone =
-    controlledTimeZone && isValidIanaTimeZone(controlledTimeZone)
-      ? controlledTimeZone
-      : internalTimeZone
-
-  const activeRecord = useMemo(
-    () =>
-      activeRecords.find(
-        (r) =>
-          r.symbol.toUpperCase() === selectedMineralId.toUpperCase() ||
-          r.id === selectedMineralId,
-      ) ?? activeRecords[0],
-    [activeRecords, selectedMineralId],
-  )
-
-  // Canonical single-source multi-resolution series (strictly UTC epoch ms internally)
-  const canonicalSeries = useMemo(() => {
-    const ticks = activeRecord ? getMineralIntradayTicks(activeRecord.symbol) : []
-    return buildCanonicalMineralSeries(activeRecord, effectiveUnitBasis, ticks)
-    // tickRevision ensures newly recorded live ticks trigger immediate redraw
-  }, [activeRecord, effectiveUnitBasis, tickRevision])
-
-  const {
-    points: series,
-    latestPointTs,
-    spotUnitUsd,
-    dayOpenUnitUsd,
-    unitLabel,
-    feedSource,
-  } = canonicalSeries
-
-  const earliestTs = series[0]?.ts ?? Date.UTC(FIRST_MARKET_YEAR, 0, 1)
-  const currentYearInTz = useMemo(
-    () => getYearInTimeZone(latestPointTs, timeZone),
-    [latestPointTs, timeZone],
-  )
+  const [anchorNowTs] = useState<number>(() => {
+    const now = Date.now()
+    return Math.floor(now / 60000) * 60000
+  })
 
   const [activePreset, setActivePreset] = useState<PresetRangeKey | null>('15m')
   const [selectedStartYear, setSelectedStartYear] = useState<number | null>(null)
   const [yearMenuOpen, setYearMenuOpen] = useState(false)
   const [isFullChart, setIsFullChart] = useState(false)
 
-  // Active viewport [start, end] stored strictly in UTC epoch milliseconds
   const [viewRange, setViewRange] = useState<{ start: number; end: number }>(() => ({
-    start: latestPointTs - PRESET_DURATIONS_MS['15m'],
-    end: latestPointTs,
+    start: anchorNowTs - PRESET_DURATIONS_MS['15m'],
+    end: anchorNowTs,
   }))
-
-  // Keep live right-edge tracking smooth when new quotes arrive or time zone changes on a selected year
-  useEffect(() => {
-    if (selectedStartYear !== null) {
-      const yrStart = Math.max(
-        earliestTs,
-        getYearStartEpochMs(selectedStartYear, timeZone),
-      )
-      setViewRange({ start: yrStart, end: latestPointTs })
-    } else if (activePreset !== null) {
-      const span = PRESET_DURATIONS_MS[activePreset]
-      setViewRange({
-        start: Math.max(earliestTs, latestPointTs - span),
-        end: latestPointTs,
-      })
-    }
-  }, [latestPointTs, activePreset, selectedStartYear, timeZone, earliestTs])
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 720, height: 420 })
@@ -447,17 +452,34 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     centerRatio: number
   } | null>(null)
 
+  const activeAsset = useMemo(
+    () =>
+      safeMinerals.find(
+        (m) =>
+          m.id === selectedMineralId ||
+          m.symbol.toUpperCase() === selectedMineralId.toUpperCase(),
+      ) ?? safeMinerals[0],
+    [safeMinerals, selectedMineralId],
+  )
+
   const fx = customCurrency
     ? customCurrency.rateFromUsd
     : (fxRatesFromUsd[currency] ?? 1)
 
+  const series = useMemo(
+    () => buildMultiResolutionSeries(activeAsset, anchorNowTs),
+    [activeAsset, anchorNowTs],
+  )
+
+  const earliestTs = series[0]?.ts ?? Date.UTC(FIRST_MARKET_YEAR, 0, 1)
+
   const selectableYears = useMemo(() => {
     const list: number[] = []
-    for (let y = currentYearInTz - 1; y >= FIRST_MARKET_YEAR; y--) {
+    for (let y = CURRENT_YEAR - 1; y >= FIRST_MARKET_YEAR; y--) {
       list.push(y)
     }
     return list
-  }, [currentYearInTz])
+  }, [])
 
   useEffect(() => {
     if (!yearMenuOpen) return
@@ -502,21 +524,15 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     return () => observer.disconnect()
   }, [isFullChart])
 
-  const handleSelectMineral = (nextSymbol: string) => {
-    setInternalMineralId(nextSymbol)
+  const handleSelectMineral = (nextId: string) => {
+    setInternalMineralId(nextId)
     setHoverIndex(null)
-    onMineralChange?.(nextSymbol)
+    onMineralChange?.(nextId)
   }
 
   const handleSelectCurrency = (next: CurrencyCode) => {
     setInternalCurrency(next)
     onCurrencyChange?.(next)
-  }
-
-  const handleSelectTimeZone = (nextTz: string) => {
-    if (!isValidIanaTimeZone(nextTz)) return
-    setInternalTimeZone(nextTz)
-    onTimeZoneChange?.(nextTz)
   }
 
   const handleSelectPreset = (preset: PresetRangeKey) => {
@@ -525,75 +541,60 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     setYearMenuOpen(false)
     setHoverIndex(null)
     setViewRange({
-      start: Math.max(earliestTs, latestPointTs - PRESET_DURATIONS_MS[preset]),
-      end: latestPointTs,
+      start: Math.max(earliestTs, anchorNowTs - PRESET_DURATIONS_MS[preset]),
+      end: anchorNowTs,
     })
   }
 
   const handleSelectHistoricalYear = (year: number) => {
-    const startTs = Math.max(earliestTs, getYearStartEpochMs(year, timeZone))
+    const startTs = Math.max(earliestTs, Date.UTC(year, 0, 1))
     setSelectedStartYear(year)
     setActivePreset(null)
     setYearMenuOpen(false)
     setHoverIndex(null)
     setViewRange({
       start: startTs,
-      end: latestPointTs,
+      end: anchorNowTs,
     })
   }
 
-  const visiblePoints = useMemo(
-    () => sliceSeriesWithBoundaries(series, viewRange.start, viewRange.end),
-    [series, viewRange.start, viewRange.end],
-  )
+  const visiblePoints = useMemo(() => {
+    const { start, end } = viewRange
+    const inRange = series.filter((p) => p.ts >= start && p.ts <= end)
+    if (inRange.length >= 2) return inRange
+
+    const prev = [...series].reverse().find((p) => p.ts <= start) ?? series[0]
+    const next = series.find((p) => p.ts >= end) ?? series[series.length - 1]
+    return [
+      { ts: start, priceUsd: prev.priceUsd },
+      { ts: end, priceUsd: next.priceUsd },
+    ]
+  }, [series, viewRange])
 
   const periodStats = useMemo(() => {
-    const openUsd =
-      activePreset === '1D' && selectedStartYear === null
-        ? dayOpenUnitUsd
-        : (visiblePoints[0]?.priceUsd ?? dayOpenUnitUsd)
-    const endUsd =
-      activePreset !== null || selectedStartYear !== null
-        ? spotUnitUsd
-        : (visiblePoints[visiblePoints.length - 1]?.priceUsd ?? spotUnitUsd)
-    const diffUsd = endUsd - openUsd
+    const openUsd = visiblePoints[0]?.priceUsd ?? activeAsset.prevCloseUsd
+    const currentUsd = activeAsset.spotUsd
+    const diffUsd = currentUsd - openUsd
     const pct = openUsd > 0 ? (diffUsd / openUsd) * 100 : 0
     return {
-      openUsd,
       openLocal: openUsd * fx,
-      currentLocal: endUsd * fx,
+      currentLocal: currentUsd * fx,
       diffLocal: diffUsd * fx,
       pct,
       isPositive: diffUsd >= 0,
     }
-  }, [
-    activePreset,
-    selectedStartYear,
-    dayOpenUnitUsd,
-    visiblePoints,
-    spotUnitUsd,
-    fx,
-  ])
+  }, [visiblePoints, activeAsset, fx])
 
   const presetDeltas = useMemo(() => {
     const out = {} as Record<PresetRangeKey, number>
     ;(Object.keys(PRESET_DURATIONS_MS) as PresetRangeKey[]).forEach((key) => {
-      if (key === '1D') {
-        out[key] =
-          dayOpenUnitUsd > 0
-            ? ((spotUnitUsd - dayOpenUnitUsd) / dayOpenUnitUsd) * 100
-            : 0
-        return
-      }
-      const targetStart = Math.max(
-        earliestTs,
-        latestPointTs - PRESET_DURATIONS_MS[key],
-      )
-      const base = samplePriceAtEpoch(series, targetStart).priceUsd || spotUnitUsd
-      out[key] = base > 0 ? ((spotUnitUsd - base) / base) * 100 : 0
+      const targetStart = anchorNowTs - PRESET_DURATIONS_MS[key]
+      const startPt = series.find((p) => p.ts >= targetStart) ?? series[0]
+      const base = startPt?.priceUsd || activeAsset.spotUsd
+      out[key] = base > 0 ? ((activeAsset.spotUsd - base) / base) * 100 : 0
     })
     return out
-  }, [series, earliestTs, latestPointTs, spotUnitUsd, dayOpenUnitUsd])
+  }, [series, anchorNowTs, activeAsset.spotUsd])
 
   const zoomAroundRatio = useCallback(
     (scaleFactor: number, anchorRatio: number) => {
@@ -601,24 +602,24 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       setActivePreset(null)
       setViewRange((prev) => {
         const span = prev.end - prev.start
-        const maxSpan = latestPointTs - earliestTs
+        const maxSpan = anchorNowTs - earliestTs
         const nextSpan = Math.min(maxSpan, Math.max(MIN_SPAN_MS, span * scaleFactor))
         const anchorTs = prev.start + span * anchorRatio
         let nextStart = anchorTs - nextSpan * anchorRatio
         let nextEnd = nextStart + nextSpan
 
-        if (nextEnd > latestPointTs) {
-          nextEnd = latestPointTs
+        if (nextEnd > anchorNowTs) {
+          nextEnd = anchorNowTs
           nextStart = Math.max(earliestTs, nextEnd - nextSpan)
         }
         if (nextStart < earliestTs) {
           nextStart = earliestTs
-          nextEnd = Math.min(latestPointTs, nextStart + nextSpan)
+          nextEnd = Math.min(anchorNowTs, nextStart + nextSpan)
         }
         return { start: nextStart, end: nextEnd }
       })
     },
-    [latestPointTs, earliestTs],
+    [anchorNowTs, earliestTs],
   )
 
   useEffect(() => {
@@ -640,7 +641,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    if (visiblePoints.length < 2) return
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const { width, height } = canvasSize
@@ -705,12 +705,11 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       )
     }
 
-    const xTicks = buildTimezoneAwareXTicks(
+    const xTicks = buildBalancedXTicks(
       viewRange.start,
       viewRange.end,
       selectedStartYear,
       plotWidth,
-      timeZone,
     )
 
     ctx.textBaseline = 'top'
@@ -871,7 +870,6 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
     customCurrency,
     periodStats,
     selectedStartYear,
-    timeZone,
     hoverIndex,
   ])
 
@@ -902,8 +900,8 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
         let nextStart = dragStateRef.current.origStart + deltaTs
         let nextEnd = dragStateRef.current.origEnd + deltaTs
 
-        if (nextEnd > latestPointTs) {
-          nextEnd = latestPointTs
+        if (nextEnd > anchorNowTs) {
+          nextEnd = anchorNowTs
           nextStart = nextEnd - span
         }
         if (nextStart < earliestTs) {
@@ -962,19 +960,19 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
       setActivePreset(null)
 
       const origSpan = origEnd - origStart
-      const maxSpan = latestPointTs - earliestTs
+      const maxSpan = anchorNowTs - earliestTs
       const nextSpan = Math.min(maxSpan, Math.max(MIN_SPAN_MS, origSpan * scale))
       const anchorTs = origStart + origSpan * centerRatio
       let nextStart = anchorTs - nextSpan * centerRatio
       let nextEnd = nextStart + nextSpan
 
-      if (nextEnd > latestPointTs) {
-        nextEnd = latestPointTs
+      if (nextEnd > anchorNowTs) {
+        nextEnd = anchorNowTs
         nextStart = Math.max(earliestTs, nextEnd - nextSpan)
       }
       if (nextStart < earliestTs) {
         nextStart = earliestTs
-        nextEnd = Math.min(latestPointTs, nextStart + nextSpan)
+        nextEnd = Math.min(anchorNowTs, nextStart + nextSpan)
       }
       setViewRange({ start: nextStart, end: nextEnd })
     }
@@ -988,68 +986,20 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
   const activeDisplayPrice = hoveredPoint
     ? hoveredPoint.priceUsd * fx
     : periodStats.currentLocal
-  const activeDisplayPct = hoveredPoint
-    ? periodStats.openUsd > 0
-      ? ((hoveredPoint.priceUsd - periodStats.openUsd) / periodStats.openUsd) * 100
-      : 0
-    : periodStats.pct
-  const activeIsPositive = activeDisplayPct >= 0
 
-  const latestRefLabel = formatEpochReadout(latestPointTs, timeZone, true)
-  const activeTzAbbr = getTimeZoneAbbreviation(latestPointTs, timeZone)
-
-  const feedBadge = useMemo<{
-    label: string
-    tone: 'live' | 'desk' | 'cached'
-  }>(() => {
-    const src: MarketFeedSource = feedSource
-    if (src === 'LIVE_API') {
-      return { label: 'Live spot', tone: 'live' }
-    }
-    if (src === 'HYBRID_LIVE' && activeTelemetry.status === 'LIVE') {
-      return { label: 'Live desk', tone: 'desk' }
-    }
-    return { label: 'Cached benchmark', tone: 'cached' }
-  }, [feedSource, activeTelemetry.status])
-
-  const rangeDescriptor =
-    selectedStartYear !== null
-      ? `${selectedStartYear} – ${currentYearInTz}`
+  const activeTimestampLabel = hoveredPoint
+    ? new Date(hoveredPoint.ts).toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : selectedStartYear !== null
+      ? `${selectedStartYear} – ${CURRENT_YEAR}`
       : activePreset === '15m'
         ? '15m window · 5m intervals'
         : `${activePreset ?? 'Custom'} range`
-
-  const activeTimestampLabel = hoveredPoint
-    ? `Crosshair · ${formatEpochReadout(hoveredPoint.ts, timeZone, false)} · ${describePointKind(hoveredPoint.kind)}`
-    : `${rangeDescriptor} · Latest: ${latestRefLabel}`
-
-  const fxStatusLabel = useMemo(() => {
-    const activeCode = customCurrency?.code ?? currency
-    if (activeCode === 'USD') return 'Base USD'
-    if (!fxFreshness) return `${activeCode} FX synced`
-    if (fxFreshness.source === 'live') {
-      return `Live FX (${activeCode})`
-    }
-    if (fxFreshness.source === 'cached') {
-      return `Cached FX (${activeCode})`
-    }
-    return `Fallback FX (${activeCode})`
-  }, [currency, customCurrency?.code, fxFreshness])
-
-  const sourceLine = useMemo(() => {
-    const desk = activeRecord?.exchange_desk || activeTelemetry.provider
-    const storeTag = storeFreshness.supabaseHydrated
-      ? 'Supabase + '
-      : ''
-    return `${storeTag}${desk} · ${fxStatusLabel} · TZ: ${timeZone} (${activeTzAbbr})`
-  }, [
-    activeRecord?.exchange_desk,
-    activeTelemetry.provider,
-    storeFreshness.supabaseHydrated,
-    fxStatusLabel,
-    timeZone,
-    activeTzAbbr,
-  ])
 
   const sectionClassName = isFullChart
     ? 'fixed inset-0 z-50 flex flex-col bg-[#FAF8F5] text-[#18181B] p-2.5 sm:p-5'
@@ -1068,22 +1018,22 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
               : 'mx-auto max-w-6xl'
         }`}
       >
-        {/* Top Controls: Mineral Tabs, Timezone, Currency & Full Chart */}
+        {/* Top Controls */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[#18181B]/10 px-3 py-2.5 sm:px-4">
           <div
             role="tablist"
             aria-label="Mineral benchmarks"
             className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto"
           >
-            {activeRecords.map((m) => {
-              const selected = m.symbol === activeRecord?.symbol
+            {safeMinerals.map((m) => {
+              const selected = m.id === activeAsset.id
               return (
                 <button
-                  key={m.symbol}
+                  key={m.id}
                   type="button"
                   role="tab"
                   aria-selected={selected}
-                  onClick={() => handleSelectMineral(m.symbol)}
+                  onClick={() => handleSelectMineral(m.id)}
                   className={`min-h-[36px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
                     selected
                       ? 'bg-[#18181B] text-[#FAF8F5]'
@@ -1091,34 +1041,13 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
                   }`}
                 >
                   <span className="font-mono">{m.symbol}</span>
-                  <span className="hidden sm:inline">
-                    {' '}
-                    · {m.mineral_name.split(' (')[0]}
-                  </span>
+                  <span className="hidden sm:inline"> · {m.name.split(' (')[0]}</span>
                 </button>
               )
             })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            {/* IANA Timezone Selector */}
-            <label className="flex items-center">
-              <span className="sr-only">Chart time zone</span>
-              <select
-                aria-label="Chart time zone"
-                value={timeZone}
-                onChange={(e) => handleSelectTimeZone(e.target.value)}
-                className="min-h-[34px] rounded-lg border border-[#18181B]/12 bg-[#FAF8F5] px-2 text-xs font-semibold text-[#18181B] outline-none hover:bg-[#18181B]/5 focus:border-[#B85D19]"
-              >
-                {timeZoneOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.shortLabel} · {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {/* Currency Switcher */}
+          <div className="flex shrink-0 items-center gap-2">
             <div
               role="group"
               aria-label="Display currency"
@@ -1154,35 +1083,13 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
           </div>
         </div>
 
-        {/* Active Mineral Headline, Feed Freshness & Scrubbing Readout */}
+        {/* Active Mineral Headline & Price */}
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-3.5 pt-3 pb-1.5 sm:px-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold tracking-tight text-[#18181B] sm:text-lg">
-                {activeRecord?.mineral_name}
-              </h2>
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
-                  feedBadge.tone === 'live'
-                    ? 'bg-[#15803D]/12 text-[#15803D]'
-                    : feedBadge.tone === 'desk'
-                      ? 'bg-[#18181B]/8 text-[#18181B]'
-                      : 'bg-[#B85D19]/12 text-[#B85D19]'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    feedBadge.tone === 'live'
-                      ? 'bg-[#15803D]'
-                      : feedBadge.tone === 'desk'
-                        ? 'bg-[#15803D]/80'
-                        : 'bg-[#B85D19]'
-                  }`}
-                />
-                {feedBadge.label}
-              </span>
-            </div>
-            <p className="mt-0.5 text-[11px] font-medium text-[#52525B] tabular-nums">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[#18181B] sm:text-lg">
+              {activeAsset.name}
+            </h2>
+            <p className="text-[11px] font-medium text-[#52525B] tabular-nums">
               {activeTimestampLabel}
             </p>
           </div>
@@ -1191,18 +1098,18 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
             <span className="text-lg font-bold text-[#18181B] sm:text-2xl">
               {formatPrice(activeDisplayPrice, currency, false, customCurrency)}
               <span className="ml-0.5 text-xs font-medium text-[#52525B]">
-                {unitLabel}
+                {activeAsset.unitLabel}
               </span>
             </span>
             <span
               className={`rounded-md px-2 py-0.5 text-xs font-bold ${
-                activeIsPositive
+                periodStats.isPositive
                   ? 'bg-[#15803D]/12 text-[#15803D]'
                   : 'bg-[#C2410C]/12 text-[#C2410C]'
               }`}
             >
-              {activeIsPositive ? '+' : ''}
-              {activeDisplayPct.toFixed(2)}%
+              {periodStats.isPositive ? '+' : ''}
+              {periodStats.pct.toFixed(2)}%
             </span>
           </div>
         </div>
@@ -1285,9 +1192,7 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
                 }`}
               >
                 <span className="text-xs font-bold">
-                  {selectedStartYear !== null
-                    ? `${selectedStartYear}–${String(currentYearInTz).slice(-2)}`
-                    : '1Y +'}
+                  {selectedStartYear !== null ? `${selectedStartYear}–26` : '1Y +'}
                 </span>
                 <span className="text-[10px] font-semibold opacity-90">
                   {selectedStartYear !== null
@@ -1337,10 +1242,9 @@ export const MarketTrendChart: React.FC<MarketTrendChartProps> = ({
             </div>
           </div>
 
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 text-[11px] text-[#52525B]">
-            <span>Drag left/right to pan history. Pinch or scroll to zoom.</span>
-            <span className="tabular-nums">{sourceLine}</span>
-          </div>
+          <p className="mt-1 text-[11px] text-[#52525B]">
+            Drag left/right to pan history. Pinch or scroll to zoom.
+          </p>
         </div>
       </div>
     </section>
