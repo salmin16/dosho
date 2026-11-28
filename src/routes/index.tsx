@@ -14,10 +14,6 @@ import {
   Briefcase,
   HardHat,
   Compass,
-  FileSpreadsheet,
-  Wrench,
-  CheckCircle2,
-  ArrowUpRight,
 } from 'lucide-react'
 import {
   MINERALS,
@@ -26,13 +22,11 @@ import {
   REGIONS,
   SERVICE_CATEGORIES,
   SERVICE_PROVIDERS,
-  formatUsd,
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
 import BriefingReaderDrawer from '../components/BriefingReaderDrawer'
 import { useAuthState } from '../lib/supabaseAuth'
-import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
@@ -303,153 +297,25 @@ function SectionHead({
 }
 
 function OpportunityStreamsShowcase() {
-  const { t, tv, fixtures } = useI18n()
-
-  const streamIcons = {
-    tenders: FileSpreadsheet,
-    services: Wrench,
-    personnel: HardHat,
-  } as const
+  const { t } = useI18n()
 
   return (
-    <section className="border-b border-ink/10 bg-paper-2 px-5 py-24 lg:px-8 lg:py-28">
-      <div className="mx-auto w-full max-w-[1920px]">
-        <SectionHead
-          eyebrow={t('opp.streams.eyebrow')}
-          title={
-            <>
-              {t('opp.streams.titlePre')}
-              <em className="italic text-ochre">{t('opp.streams.titleEm')}</em>
-            </>
-          }
-          body={t('opp.streams.subtitle')}
-          action={
-            <Link to="/opportunities" className="btn-ghost shrink-0">
-              {t('home.featured.browseAll', { count: PROJECTS.length })} <ArrowRight size={16} />
-            </Link>
-          }
-        />
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          {fixtures.opportunityStreams.map((stream) => {
-            const Icon = streamIcons[stream.id]
-            const matchingProjects = PROJECTS.filter((p) => p.type === stream.type)
-            const totalPipelineUsd = matchingProjects.reduce((sum, p) => sum + p.investmentUsd, 0)
-
-            return (
-              <article
-                key={stream.id}
-                className="group flex min-w-0 max-w-full flex-col justify-between overflow-hidden rounded-2xl border border-ink/12 bg-white/85 p-5 transition duration-300 hover:-translate-y-1 hover:border-ochre/40 hover:bg-white hover:shadow-[0_24px_48px_-28px_rgba(21,18,15,0.4)] sm:p-7"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold">
-                      <span className="shrink-0">{stream.code}</span>
-                      <span className="text-paper/40" aria-hidden="true">·</span>
-                      <span className="break-words">{stream.badge}</span>
-                    </span>
-                    <span className="max-w-full rounded-full border border-moss/25 bg-moss-light px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-moss">
-                      {stream.complianceTag}
-                    </span>
-                  </div>
-
-                  <div className="mt-5 flex min-w-0 items-start gap-3 sm:gap-3.5">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-ochre/20 bg-ochre/10 text-ochre sm:h-12 sm:w-12">
-                      <Icon size={20} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-display break-words text-xl font-medium leading-snug text-ink sm:text-2xl">{stream.title}</h3>
-                      <p className="mt-1 break-words font-mono text-[11px] text-stone">{stream.contractModel}</p>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-sm leading-relaxed text-stone">{stream.summary}</p>
-
-                  {/* Analytical KPI strip — responsive 2-col on mobile so Typical Scope Value never clips */}
-                  <dl className="mt-5 grid grid-cols-2 gap-x-2 gap-y-2.5 rounded-xl border border-ink/10 bg-paper-2/70 p-3 text-center sm:grid-cols-3 sm:gap-y-0">
-                    <div className="min-w-0">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.activeListings')}</dt>
-                      <dd className="font-display mt-0.5 text-xl font-medium text-ink tabular-nums sm:text-2xl">{matchingProjects.length}</dd>
-                    </div>
-                    <div className="min-w-0 border-l border-ink/10 pl-2 sm:border-x sm:px-2">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.pipelineValue')}</dt>
-                      <dd className="font-display mt-0.5 truncate text-xl font-medium text-ochre tabular-nums sm:text-2xl">{formatUsd(totalPipelineUsd)}</dd>
-                    </div>
-                    <div className="col-span-2 min-w-0 border-t border-ink/10 pt-2.5 sm:col-span-1 sm:border-t-0 sm:pt-0 sm:pl-1">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.typicalTicket')}</dt>
-                      <dd className="mt-1 break-words font-mono text-[11px] font-semibold leading-snug text-ink tabular-nums">{convertInlineUsdText(stream.typicalValue)}</dd>
-                    </div>
-                  </dl>
-
-                  {/* Visual Demand Breakdown */}
-                  <div className="mt-5 min-w-0">
-                    <div className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-stone">
-                      {t('opp.streams.demandBreakdown')}
-                    </div>
-                    <ul className="space-y-2.5">
-                      {stream.subCategories.map((sub) => (
-                        <li key={sub.name} className="min-w-0 text-xs">
-                          <div className="flex min-w-0 items-center justify-between gap-2">
-                            <span className="min-w-0 flex-1 truncate font-medium text-ink/90">{sub.name}</span>
-                            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
-                              <span
-                                className={`rounded px-1.5 py-0.5 ${
-                                  sub.demand === 'High'
-                                    ? 'bg-ochre/15 font-semibold text-ochre'
-                                    : sub.demand === 'Active'
-                                      ? 'bg-moss-light text-moss'
-                                      : 'bg-paper-2 text-stone'
-                                }`}
-                              >
-                                {tv(sub.demand)}
-                              </span>
-                              <span className="w-7 text-right text-stone">{sub.share}%</span>
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink/10">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-ochre to-gold"
-                              style={{ width: `${Math.min(100, sub.share * 2.2)}%` }}
-                            />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Requirements */}
-                  <div className="mt-5 border-t border-ink/10 pt-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                      {t('opp.streams.keyRequirements')}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {stream.requirements.map((req) => (
-                        <span
-                          key={req}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-sand bg-paper/60 px-2 py-1 text-[11px] text-ink/85"
-                        >
-                          <CheckCircle2 size={11} className="shrink-0 text-moss" />
-                          <span className="break-words">{req}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  to="/opportunities"
-                  search={{ type: stream.type }}
-                  className="mt-6 flex w-full max-w-full items-center justify-between gap-3 rounded-xl bg-ink px-4 py-3 text-left text-sm font-semibold text-paper transition group-hover:bg-ochre"
-                >
-                  <span className="min-w-0 flex-1 truncate sm:whitespace-normal">{t('opp.streams.exploreStream')}</span>
-                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums opacity-90">
-                    {matchingProjects.length} <ArrowUpRight size={15} />
-                  </span>
-                </Link>
-              </article>
-            )
-          })}
+    <section className="border-b border-ink/10 bg-paper-2 px-4 py-16 sm:px-6 lg:px-8 lg:py-20 xl:px-10">
+      <div className="mx-auto flex w-full max-w-[1920px] flex-col items-start justify-between gap-6 md:flex-row md:items-end">
+        <div className="max-w-2xl">
+          <p className="eyebrow mb-4 text-ochre">{t('opp.streams.eyebrow')}</p>
+          <h2 className="font-display text-4xl font-light leading-[1.05] md:text-5xl">
+            {t('opp.streams.titlePre')}
+            <em className="italic text-ochre">{t('opp.streams.titleEm')}</em>
+          </h2>
+          <p className="mt-5 text-lg leading-relaxed text-stone">
+            {t('opp.streams.subtitle')}
+          </p>
         </div>
+        <Link to="/opportunities" className="btn-ghost shrink-0">
+          {t('home.featured.browseAll', { count: PROJECTS.length })}{' '}
+          <ArrowRight size={16} />
+        </Link>
       </div>
     </section>
   )
