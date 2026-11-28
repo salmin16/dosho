@@ -36,7 +36,6 @@ import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import TanzaniaMap, { MapLegend } from '../components/TanzaniaMap'
-import { levelTone } from '../components/VerificationBadge'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -555,40 +554,21 @@ function HowItWorks() {
 }
 
 function VerificationLadder() {
-  const { t, fixtures } = useI18n()
+  const { t } = useI18n()
   return (
-    <section className="px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto grid w-full max-w-[1920px] gap-14 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="lg:sticky lg:top-28 lg:self-start">
+    <section className="px-4 py-20 sm:px-6 lg:px-8 lg:py-24 xl:px-10">
+      <div className="mx-auto w-full max-w-[1920px]">
+        <div className="max-w-2xl">
           <p className="eyebrow mb-4 text-ochre">{t('home.ladder.eyebrow')}</p>
           <h2 className="font-display text-4xl font-light leading-[1.05] md:text-5xl">
             {t('home.ladder.title1')} <br />
             <em className="italic">{t('home.ladder.title2')}</em>
           </h2>
-          <p className="mt-5 max-w-md text-lg leading-relaxed text-stone">{t('home.ladder.body')}</p>
+          <p className="mt-5 text-lg leading-relaxed text-stone">{t('home.ladder.body')}</p>
           <Link to="/verification" className="btn-ghost mt-8">
             {t('home.ladder.cta')} <ArrowRight size={16} />
           </Link>
         </div>
-        <ol className="space-y-3">
-          {fixtures.verificationLevels.map((v) => (
-            <li
-              key={v.level}
-              className="group grid grid-cols-[64px_1fr] items-start gap-5 rounded-xl border border-ink/10 bg-white/50 p-5 transition hover:border-ink/25 hover:bg-white"
-            >
-              <span className={`grid h-16 w-16 place-items-center rounded-lg border font-display text-2xl ${levelTone(v.level)}`}>
-                L{v.level}
-              </span>
-              <div>
-                <h3 className="font-display text-xl">{v.name}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-stone">{v.description}</p>
-                <p className="mt-3 font-mono text-[11px] uppercase tracking-wider text-stone/80">
-                  {t('home.ladder.notCovered')} <span className="normal-case tracking-normal">{v.notCovered}</span>
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
       </div>
     </section>
   )
