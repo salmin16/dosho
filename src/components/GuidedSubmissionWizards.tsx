@@ -25,6 +25,11 @@ import {
 import { useCurrency } from '../lib/currency';
 import { TANZANIA_REGIONS_META } from '../data/tanzaniaRegionsGeoJson';
 import {
+  getDistrictsForRegion,
+  isValidDistrictForRegion,
+  TANZANIA_REGION_DISTRICTS,
+} from '../data/tanzaniaDistricts';
+import {
   formatBytesCompact,
   validateAndCompressVerificationFile,
   type PreparedVerificationFile,
@@ -43,7 +48,9 @@ import type {
 const OPPORTUNITY_DRAFT_KEY = 'mineconnect.draft.guided_opportunity.v2';
 const SERVICE_DRAFT_KEY = 'mineconnect.draft.guided_service.v2';
 
-const REGION_NAMES = Object.keys(TANZANIA_REGIONS_META).sort();
+const REGION_NAMES = Object.keys(TANZANIA_REGION_DISTRICTS).length > 0
+  ? Object.keys(TANZANIA_REGION_DISTRICTS).sort()
+  : Object.keys(TANZANIA_REGIONS_META).sort();
 
 // Approximate fallback TZS per 1 USD for clean USD normalization when user enters TZS
 const DEFAULT_TZS_PER_USD = 2500;
@@ -414,7 +421,7 @@ export function GuidedOpportunityWizard({
     OPPORTUNITY_CATEGORIES[0].label,
   );
   const [primaryCommodity, setPrimaryCommodity] = useState<string>('Gold');
-  const [region, setRegion] = useState<string>('Geita');
+  const [region, setRegion] = useState<string>('');
   const [district, setDistrict] = useState<string>('');
   const [coordinates, setCoordinates] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -458,8 +465,14 @@ export function GuidedOpportunityWizard({
         if (d.organization) setOrganization(d.organization);
         if (d.categoryLabel) setCategoryLabel(d.categoryLabel);
         if (d.primaryCommodity) setPrimaryCommodity(d.primaryCommodity);
-        if (d.region) setRegion(d.region);
-        if (d.district) setDistrict(d.district);
+        if (d.region && d.region in TANZANIA_REGION_DISTRICTS) {
+          setRegion(d.region);
+          if (d.district && isValidDistrictForRegion(d.region, d.district)) {
+            setDistrict(d.district);
+          } else {
+            setDistrict('');
+          }
+        }
         if (d.coordinates) setCoordinates(d.coordinates);
         if (d.description) setDescription(d.description);
         if (d.mineralRightType) setMineralRightType(d.mineralRightType);
@@ -525,6 +538,7 @@ export function GuidedOpportunityWizard({
       window.localStorage.removeItem(OPPORTUNITY_DRAFT_KEY);
     }
     setTitle('');
+    setRegion('');
     setDistrict('');
     setCoordinates('');
     setDescription('');
@@ -594,8 +608,8 @@ export function GuidedOpportunityWizard({
       setError('Step 1 Validation: Please select a Region (Mkoa) in Tanzania.');
       return false;
     }
-    if (district.trim().length < 2) {
-      setError('Step 1 Validation: Please enter the District (Wilaya) in Tanzania.');
+    if (!district || !isValidDistrictForRegion(region, district)) {
+      setError(`Step 1 Validation: Please select a valid District (Wilaya) within ${region}.`);
       return false;
     }
     if (description.trim().length < 20) {
@@ -978,10 +992,16 @@ export function GuidedOpportunityWizard({
                 </label>
                 <select
                   id="opp-region"
+                  required
                   value={region}
-                  onChange={(e) => setRegion(e.target.value)}
+                  onChange={(e) => {
+                    const nextRegion = e.target.value;
+                    setRegion(nextRegion);
+                    setDistrict('');
+                  }}
                   className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
                 >
+                  <option value="">Select region (Mkoa)</option>
                   {REGION_NAMES.map((r) => (
                     <option key={r} value={r}>
                       {r}
@@ -994,15 +1014,23 @@ export function GuidedOpportunityWizard({
                 <label htmlFor="opp-district" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
                   District (Wilaya) *
                 </label>
-                <input
+                <select
                   id="opp-district"
-                  type="text"
                   required
+                  disabled={!region}
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
-                  placeholder="e.g. Kahama, Geita, Tarime"
-                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3.5 py-2.5 text-base text-paper placeholder-paper/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
-                />
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25 disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  <option value="">
+                    {region ? `Select district in ${region}` : 'Select region first'}
+                  </option>
+                  {getDistrictsForRegion(region).map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="field-group">

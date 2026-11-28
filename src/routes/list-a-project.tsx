@@ -1,7 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Crown, UploadCloud, FileText, X } from 'lucide-react'
-import { MINERALS, OPPORTUNITY_TYPES, REGIONS, STAGES } from '../data/fixtures'
+import { MINERALS, OPPORTUNITY_TYPES, STAGES } from '../data/fixtures'
+import {
+  getDistrictsForRegion,
+  TANZANIA_REGION_LIST,
+} from '../data/tanzaniaDistricts'
 import { useI18n, type TranslationKey } from '../i18n'
 import { createGroundedProject, fetchGroundedUserData, getSession, useAuthState } from '../lib/supabaseAuth'
 import { useCurrency } from '../lib/currency'
@@ -459,10 +463,23 @@ function ListProject() {
                 label={t('list.region')}
                 k="region"
                 selectPlaceholder={selectPlaceholder}
-                options={[...REGIONS].sort()}
+                options={TANZANIA_REGION_LIST}
+                onValueChange={(nextRegion) => {
+                  set('region', nextRegion)
+                  set('district', '')
+                }}
                 {...{ v, set, errors }}
               />
-              <In label={t('list.district')} k="district" {...{ v, set, errors }} />
+              <Sel
+                label={t('list.district')}
+                k="district"
+                selectPlaceholder={
+                  v('region') ? selectPlaceholder : 'Select region first'
+                }
+                options={getDistrictsForRegion(v('region'))}
+                disabled={!v('region')}
+                {...{ v, set, errors }}
+              />
               <In label={t('list.ward')} k="ward" {...{ v, set, errors }} />
               <Seg
                 label={t('list.locationDisclosure')}
@@ -839,8 +856,16 @@ function Sel({
   options,
   selectPlaceholder,
   renderOption,
+  disabled = false,
+  onValueChange,
   className = '',
-}: FieldProps & { options: readonly string[]; selectPlaceholder: string; renderOption?: (o: string) => string }) {
+}: FieldProps & {
+  options: readonly string[]
+  selectPlaceholder: string
+  renderOption?: (o: string) => string
+  disabled?: boolean
+  onValueChange?: (val: string) => void
+}) {
   const fieldId = `list-select-${k}`
   return (
     <div className={`field-group ${className}`}>
@@ -850,8 +875,15 @@ function Sel({
       <select
         id={fieldId}
         value={v(k)}
-        onChange={(e) => set(k, e.target.value)}
-        className={`field ${errors[k] ? '!border-danger' : ''}`}
+        disabled={disabled}
+        onChange={(e) => {
+          if (onValueChange) {
+            onValueChange(e.target.value)
+          } else {
+            set(k, e.target.value)
+          }
+        }}
+        className={`field ${errors[k] ? '!border-danger' : ''} disabled:cursor-not-allowed disabled:opacity-55`}
         aria-invalid={!!errors[k]}
       >
         <option value="">{selectPlaceholder}</option>
