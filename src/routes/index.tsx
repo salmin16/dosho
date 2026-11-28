@@ -168,7 +168,7 @@ function GroundedAuthHeroBanner() {
         </div>
         <div>
           <div className="flex flex-col gap-0.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-paper/60">
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-[#E6DFD3] sm:text-[13px]">
               Verified Member Workspace
             </span>
             <h2 className="font-display text-base font-semibold text-paper">
@@ -177,7 +177,7 @@ function GroundedAuthHeroBanner() {
                 : 'Enterprise Due-Diligence Vault & Marketplace Portal'}
             </h2>
           </div>
-          <p className="mt-1 text-xs text-paper/70">
+          <p className="mt-1.5 text-sm font-normal leading-relaxed text-[#D6D2C9]">
             {session
               ? `Access your private due-diligence dossiers, membership plan, and listings${isAdmin ? ' or open the Admin Dashboard' : ''}.`
               : 'Sign in or create an account to access private geological dossiers, real-time multi-currency conversion, and verified marketplace listings.'}
