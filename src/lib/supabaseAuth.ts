@@ -2368,6 +2368,24 @@ export async function createGuidedOpportunitySubmission(input: {
     .select('*')
     .single()
 
+  // Graceful fallback if migration 20261128000001 ('Others' check constraint) is still propagating
+  if (
+    error &&
+    input.category === 'Others' &&
+    (error.code === '23514' || /category.*check|violates check constraint/i.test(error.message ?? ''))
+  ) {
+    const othersFallbackRes = await supabase
+      .from('opportunities')
+      .insert({
+        ...fullPayload,
+        category: 'Consultancy' as const,
+      })
+      .select('*')
+      .single()
+    data = othersFallbackRes.data
+    error = othersFallbackRes.error
+  }
+
   // Graceful fallback if migration 20261126000003 is still propagating
   if (error && /structured_details|attachments|column|schema cache/i.test(error.message ?? '')) {
     const legacyRes = await supabase

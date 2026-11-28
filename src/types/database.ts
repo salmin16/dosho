@@ -314,7 +314,8 @@ export type OpportunitySubmissionCategory =
   | 'Grant'
   | 'Internship'
   | 'Joint Venture'
-  | 'Equipment Supply';
+  | 'Equipment Supply'
+  | 'Others';
 
 export interface SubmissionAttachmentMetadata {
   slotKey: string;

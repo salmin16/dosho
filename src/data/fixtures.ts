@@ -29,6 +29,7 @@ export type OpportunityType =
   | 'Tenders opportunity in mine sites'
   | 'Service provision opportunities'
   | 'Technical personnel (Engineers & Technicians)'
+  | 'Others'
 
 export type ProjectStage =
   | 'Greenfield'
@@ -111,6 +112,7 @@ export const OPPORTUNITY_TYPES: OpportunityType[] = [
   'Equipment / project financing',
   'Processing opportunity',
   'Processing facility',
+  'Others',
 ]
 
 export const STAGES: ProjectStage[] = [

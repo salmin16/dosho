@@ -24,6 +24,7 @@ import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
 import { GuidedOpportunityWizard } from '../components/GuidedSubmissionWizards'
 import { useSubscription } from '../lib/subscriptions'
+import { formatOpportunityCategory } from '../lib/opportunityCategories'
 import { mergeRecordsById } from '../lib/mergeRecords'
 import type { UserOpportunityRecord } from '../types/database'
 
@@ -293,7 +294,7 @@ function DashboardOpportunitiesRouteComponent() {
                           {opp.reference_code}
                         </span>
                         <span className="rounded bg-ochre/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ochre">
-                          {opp.category}
+                          {formatOpportunityCategory(opp)}
                         </span>
                       </div>
                       <span

@@ -105,6 +105,12 @@ const OPPORTUNITY_CATEGORIES: ReadonlyArray<{
     badge: 'TALENT',
     desc: 'Graduate geologist, metallurgist, mine surveyor, or HSE field placements',
   },
+  {
+    label: 'Others',
+    dbCategory: 'Others',
+    badge: 'CUSTOM',
+    desc: 'Specify a custom mining opportunity category outside standard streams',
+  },
 ] as const;
 
 const OPPORTUNITY_COMMODITIES = [
@@ -417,6 +423,7 @@ export function GuidedOpportunityWizard({
   const [categoryLabel, setCategoryLabel] = useState<string>(
     OPPORTUNITY_CATEGORIES[0].label,
   );
+  const [customCategory, setCustomCategory] = useState<string>('');
   const [primaryCommodity, setPrimaryCommodity] = useState<string>('Gold');
   const [region, setRegion] = useState<string>('');
   const [district, setDistrict] = useState<string>('');
@@ -461,6 +468,7 @@ export function GuidedOpportunityWizard({
         if (d.title) setTitle(d.title);
         if (d.organization) setOrganization(d.organization);
         if (d.categoryLabel) setCategoryLabel(d.categoryLabel);
+        if (typeof d.customCategory === 'string') setCustomCategory(d.customCategory);
         if (d.primaryCommodity) setPrimaryCommodity(d.primaryCommodity);
         if (d.region && d.region in TANZANIA_REGION_DISTRICTS) {
           setRegion(d.region);
@@ -511,6 +519,7 @@ export function GuidedOpportunityWizard({
         title,
         organization,
         categoryLabel,
+        customCategory,
         primaryCommodity,
         region,
         district,
@@ -536,6 +545,7 @@ export function GuidedOpportunityWizard({
     }
     setTitle('');
     setOrganization('');
+    setCustomCategory('');
     setRegion('');
     setDistrict('');
     setCoordinates('');
@@ -600,6 +610,10 @@ export function GuidedOpportunityWizard({
     }
     if (organization.trim().length < 2) {
       setError('Step 1 Validation: Issuing organization, company, or individual name is required.');
+      return false;
+    }
+    if (categoryLabel === 'Others' && customCategory.trim().length < 2) {
+      setError('Step 1 Validation: Please specify the custom opportunity category when "Others" is selected.');
       return false;
     }
     if (!region) {
@@ -706,6 +720,7 @@ export function GuidedOpportunityWizard({
         requirements,
         structuredDetails: {
           categoryLabel: selectedCategorySpec.label,
+          customCategory: categoryLabel === 'Others' ? customCategory.trim() : null,
           primaryCommodity,
           region,
           district: district.trim(),
@@ -929,23 +944,48 @@ export function GuidedOpportunityWizard({
               </div>
             </div>
 
-            <div className="field-group">
-              <label htmlFor="opp-category" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
-                Opportunity Category *
-              </label>
-              <select
-                id="opp-category"
-                required
-                value={categoryLabel}
-                onChange={(e) => setCategoryLabel(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
-              >
-                {OPPORTUNITY_CATEGORIES.map((cat) => (
-                  <option key={cat.label} value={cat.label}>
-                    {cat.label}
-                  </option>
-                ))}
-              </select>
+            <div className={`grid grid-cols-1 gap-5 ${categoryLabel === 'Others' ? 'sm:grid-cols-2' : ''}`}>
+              <div className="field-group">
+                <label htmlFor="opp-category" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
+                  Opportunity Category *
+                </label>
+                <select
+                  id="opp-category"
+                  required
+                  value={categoryLabel}
+                  onChange={(e) => {
+                    const nextCategory = e.target.value;
+                    setCategoryLabel(nextCategory);
+                    if (nextCategory !== 'Others') {
+                      setCustomCategory('');
+                    }
+                  }}
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
+                >
+                  {OPPORTUNITY_CATEGORIES.map((cat) => (
+                    <option key={cat.label} value={cat.label}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {categoryLabel === 'Others' && (
+                <div className="field-group">
+                  <label htmlFor="opp-custom-category" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
+                    Specify Other Category *
+                  </label>
+                  <input
+                    id="opp-custom-category"
+                    type="text"
+                    required
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="e.g. Tailings Reprocessing, Off-Grid Solar, Logistics Fleet"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3.5 py-2.5 text-base text-paper placeholder-paper/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -1240,7 +1280,10 @@ export function GuidedOpportunityWizard({
                 <div>
                   <dt className="font-mono text-[10px] uppercase text-paper/50">Category &amp; Commodity</dt>
                   <dd className="mt-0.5 font-semibold text-gold">
-                    {selectedCategorySpec.label} · {primaryCommodity}
+                    {categoryLabel === 'Others' && customCategory.trim()
+                      ? `Others · ${customCategory.trim()}`
+                      : selectedCategorySpec.label}{' '}
+                    · {primaryCommodity}
                   </dd>
                 </div>
                 <div>

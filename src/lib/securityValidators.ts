@@ -317,6 +317,7 @@ export const OpportunitySubmissionSchema = z.object({
       'Internship',
       'Joint Venture',
       'Equipment Supply',
+      'Others',
     ] as const,
     'Opportunity category'
   ),

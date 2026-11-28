@@ -39,6 +39,10 @@ import {
   type CounterpartyDossierData,
 } from '../lib/counterpartyDossier'
 import { useSubscription } from '../lib/subscriptions'
+import {
+  formatOpportunityCategory,
+  isOthersOpportunity,
+} from '../lib/opportunityCategories'
 import type { UserListedProject, UserOpportunityRecord } from '../types/database'
 
 type Search = {
@@ -94,7 +98,13 @@ const STREAM_FILTER_PILLS: readonly StreamFilterPill[] = [
     id: 'exploration',
     label: 'Exploration',
     type: 'Exploration opportunity',
-    liveCategories: ['Exploration Grant'],
+    liveCategories: ['Exploration Grant', 'Grant'],
+  },
+  {
+    id: 'others',
+    label: 'Others',
+    type: 'Others',
+    liveCategories: ['Others'],
   },
 ]
 
@@ -209,7 +219,10 @@ function Opportunities() {
     const q = search.q?.toLowerCase().trim()
     const activePill = STREAM_FILTER_PILLS.find((p) => p.type && p.type === search.type)
     return liveOpportunities.filter((opp) => {
-      if (activePill?.liveCategories) {
+      if (search.type === 'Others') {
+        if (!isOthersOpportunity(opp)) return false
+      } else if (activePill?.liveCategories) {
+        if (isOthersOpportunity(opp)) return false
         const catLower = (opp.category || '').toLowerCase()
         const matched = activePill.liveCategories.some((c) =>
           catLower.includes(c.toLowerCase()),
@@ -219,7 +232,8 @@ function Opportunities() {
         return false
       }
       if (q) {
-        const hay = `${opp.title} ${opp.organization} ${opp.category} ${opp.location} ${opp.description}`.toLowerCase()
+        const displayCat = formatOpportunityCategory(opp)
+        const hay = `${opp.title} ${opp.organization} ${opp.category} ${displayCat} ${opp.location} ${opp.description}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       if (search.region && !opp.location.toLowerCase().includes(search.region.toLowerCase())) {
@@ -311,9 +325,13 @@ function Opportunities() {
           >
             {STREAM_FILTER_PILLS.map((pill) => {
               const isSelected = pill.type ? search.type === pill.type : !search.type
-              const count = pill.type
-                ? PROJECTS.filter((p) => p.type === pill.type).length
-                : PROJECTS.length
+              const count =
+                pill.type === 'Others'
+                  ? PROJECTS.filter((p) => p.type === 'Others').length +
+                    liveOpportunities.filter(isOthersOpportunity).length
+                  : pill.type
+                    ? PROJECTS.filter((p) => p.type === pill.type).length
+                    : PROJECTS.length + liveOpportunities.length
               return (
                 <button
                   key={pill.id}
@@ -375,7 +393,7 @@ function Opportunities() {
               {filteredLiveOpportunities.map((opp) => (
                 <article key={`opp-${opp.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
-                    <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{opp.category}</span>
+                    <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{formatOpportunityCategory(opp)}</span>
                     {opp.is_featured && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-gold/25 px-2 py-0.5 font-mono text-[10px] font-semibold text-ochre">
                         <Star size={10} className="fill-gold text-gold" /> Featured

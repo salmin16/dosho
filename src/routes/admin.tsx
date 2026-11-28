@@ -60,6 +60,7 @@ import AdminSubscriptionsTab, {
 } from '../components/AdminSubscriptionsTab'
 import { fetchAdminBillingData } from '../lib/subscriptions'
 import { useMarketPrices } from '../context/MarketDataContext'
+import { formatOpportunityCategory } from '../lib/opportunityCategories'
 import { mergeRecordsById } from '../lib/mergeRecords'
 import {
   adminSyncLiveMarketBenchmarks,
@@ -455,7 +456,7 @@ export function MasterAdminDashboard({
         id: o.id,
         user_id: o.user_id,
         title: o.title,
-        subtitle: `${o.organization} · ${o.category} · ${o.location}`,
+        subtitle: `${o.organization} · ${formatOpportunityCategory(o)} · ${o.location}`,
         description: o.description,
         valueUsd: o.compensation_usd,
         status: normalizeDisplayStatus(o.status, o.approved),

@@ -26,6 +26,10 @@ import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import { DashboardWorkspaceSkeleton } from '../components/Skeletons'
 import { normalizeVerificationLevel } from '../lib/verificationLevels'
+import {
+  formatOpportunityCategory,
+  isOthersOpportunity,
+} from '../lib/opportunityCategories'
 import { mergeRecordsById, mergeSingleRecord } from '../lib/mergeRecords'
 import type {
   DocumentClassification,
@@ -59,6 +63,7 @@ export function DashboardRouteComponent() {
   const [quoteRequests, setQuoteRequests] = useState<QuoteRequestRecord[]>([])
   const [userOpportunities, setUserOpportunities] = useState<UserOpportunityRecord[]>([])
   const [userServices, setUserServices] = useState<UserServiceRecord[]>([])
+  const [oppCategoryFilter, setOppCategoryFilter] = useState<string>('ALL')
 
   const [title, setTitle] = useState('')
   const [classification, setClassification] =
@@ -532,6 +537,45 @@ export function DashboardRouteComponent() {
                 </div>
               </div>
 
+              {/* Scoped Opportunity Category Filter (includes "Others") */}
+              {userOpportunities.length > 0 && (
+                <div
+                  role="group"
+                  aria-label="Filter submitted opportunities by category"
+                  className="mt-3 flex flex-wrap items-center gap-1.5"
+                >
+                  {(
+                    [
+                      ['ALL', 'All'],
+                      ['Joint Venture', 'Joint Venture'],
+                      ['Tender', 'Tender'],
+                      ['Consultancy', 'Consultancy'],
+                      ['Grant', 'Grant'],
+                      ['Equipment Supply', 'Offtake / Supply'],
+                      ['Internship', 'Internship'],
+                      ['Others', 'Others'],
+                    ] as const
+                  ).map(([val, label]) => {
+                    const active = oppCategoryFilter === val
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setOppCategoryFilter(val)}
+                        className={`rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold transition-colors ${
+                          active
+                            ? 'border-ink bg-ink text-paper'
+                            : 'border-ink/15 bg-paper text-stone hover:border-ochre hover:text-ochre'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
               {userOpportunities.length === 0 && userServices.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
                   {ui(
@@ -550,14 +594,20 @@ export function DashboardRouteComponent() {
                 </p>
               ) : (
                 <div className="mt-4 space-y-3">
-                  {userOpportunities.map((opp) => (
+                  {userOpportunities
+                    .filter((opp) => {
+                      if (oppCategoryFilter === 'ALL') return true
+                      if (oppCategoryFilter === 'Others') return isOthersOpportunity(opp)
+                      return !isOthersOpportunity(opp) && opp.category === oppCategoryFilter
+                    })
+                    .map((opp) => (
                     <div
                       key={opp.id}
                       className="rounded-lg border border-ink/10 bg-paper p-4"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
-                          OPPORTUNITY · {opp.category} · {opp.location} ({opp.reference_code})
+                          OPPORTUNITY · {formatOpportunityCategory(opp)} · {opp.location} ({opp.reference_code})
                         </span>
                         <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
                           {opp.status}
