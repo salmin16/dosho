@@ -12,7 +12,6 @@ import {
   Pickaxe,
   BadgeCheck,
   Briefcase,
-  HardHat,
   Compass,
 } from 'lucide-react'
 import {
@@ -20,8 +19,6 @@ import {
   OPPORTUNITY_TYPES,
   PROJECTS,
   REGIONS,
-  SERVICE_CATEGORIES,
-  SERVICE_PROVIDERS,
 } from '../data/fixtures'
 import { img, imgSrcSet } from '../lib/img'
 import { useSavedProjects } from '../lib/saved'
@@ -518,39 +515,22 @@ function Audiences() {
 }
 
 function Services() {
-  const { t, tv } = useI18n()
+  const { t } = useI18n()
   return (
-    <section className="border-t border-ink/10 px-5 py-24 lg:px-8 lg:py-32">
-      <div className="mx-auto w-full max-w-[1920px]">
-        <SectionHead
-          eyebrow={t('home.services.eyebrow')}
-          title={t('home.services.title')}
-          body={t('home.services.body')}
-          action={
-            <Link to="/services" className="btn-ghost shrink-0">
-              {t('home.services.cta')} <ArrowRight size={16} />
-            </Link>
-          }
-        />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {SERVICE_CATEGORIES.map((c) => {
-            const count = SERVICE_PROVIDERS.filter((s) => s.category === c).length
-            return (
-              <Link
-                key={c}
-                to="/services"
-                search={{ category: c }}
-                className="group flex items-center justify-between gap-2 rounded-xl border border-ink/10 bg-white/50 px-5 py-5 transition hover:border-ochre/40 hover:bg-white"
-              >
-                <span className="flex items-center gap-3">
-                  <HardHat size={18} className="shrink-0 text-ochre" />
-                  <span className="font-medium leading-tight">{tv(c)}</span>
-                </span>
-                <span className="shrink-0 font-mono text-xs text-stone group-hover:text-ochre">{count}</span>
-              </Link>
-            )
-          })}
+    <section className="border-t border-ink/10 px-4 py-16 sm:px-6 lg:px-8 lg:py-20 xl:px-10">
+      <div className="mx-auto flex w-full max-w-[1920px] flex-col items-start justify-between gap-6 md:flex-row md:items-end">
+        <div className="max-w-2xl">
+          <p className="eyebrow mb-4 text-ochre">{t('home.services.eyebrow')}</p>
+          <h2 className="font-display text-4xl font-light leading-[1.05] md:text-5xl">
+            {t('home.services.title')}
+          </h2>
+          <p className="mt-5 text-lg leading-relaxed text-stone">
+            {t('home.services.body')}
+          </p>
         </div>
+        <Link to="/services" className="btn-ghost shrink-0">
+          {t('home.services.cta')} <ArrowRight size={16} />
+        </Link>
       </div>
     </section>
   )
