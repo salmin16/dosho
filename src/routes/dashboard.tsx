@@ -10,6 +10,7 @@ import {
   PlusCircle,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Wrench,
   X,
@@ -28,10 +29,28 @@ import PriceDisplay from '../components/PriceDisplay'
 import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import { DashboardWorkspaceSkeleton } from '../components/Skeletons'
 import { normalizeVerificationLevel } from '../lib/verificationLevels'
+import { formatOpportunityCategory } from '../lib/opportunityCategories'
 import {
-  formatOpportunityCategory,
-  isOthersOpportunity,
-} from '../lib/opportunityCategories'
+  DEFAULT_OPPORTUNITIES_FILTER,
+  OPPORTUNITY_COMMODITIES,
+  OPPORTUNITY_DEAL_STRUCTURES,
+  OPPORTUNITY_FILTER_CATEGORIES,
+  OPPORTUNITY_REGIONS,
+  OPPORTUNITY_SORT_OPTIONS,
+  OPPORTUNITY_STATUS_OPTIONS,
+  OPPORTUNITY_TENEMENT_TYPES,
+  OPPORTUNITY_VERIFICATION_TIERS,
+  countSecondaryOpportunityFilters,
+  filterAndSortLiveOpportunities,
+  type OpportunitiesFilterState,
+  type OpportunityCategorySelection,
+  type OpportunityCommoditySelection,
+  type OpportunityDealStructureSelection,
+  type OpportunitySortSelection,
+  type OpportunityStatusSelection,
+  type OpportunityTenementSelection,
+  type OpportunityVerificationSelection,
+} from '../lib/opportunityFilters'
 import {
   DEFAULT_SERVICES_FILTER,
   SERVICE_FILTER_CATEGORIES,
@@ -72,10 +91,102 @@ export function DashboardRouteComponent() {
   const [quoteRequests, setQuoteRequests] = useState<QuoteRequestRecord[]>([])
   const [userOpportunities, setUserOpportunities] = useState<UserOpportunityRecord[]>([])
   const [userServices, setUserServices] = useState<UserServiceRecord[]>([])
-  const [oppCategoryFilter, setOppCategoryFilter] = useState<string>('ALL')
+  const [oppFilters, setOppFilters] = useState<OpportunitiesFilterState>(
+    DEFAULT_OPPORTUNITIES_FILTER,
+  )
+  const [oppMobileFiltersOpen, setOppMobileFiltersOpen] = useState(false)
   const [serviceCategoryFilter, setServiceCategoryFilter] =
     useState<ServiceCategorySelection>('ALL')
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('')
+
+  const filteredUserOpportunities = useMemo(
+    () => filterAndSortLiveOpportunities(userOpportunities, oppFilters),
+    [userOpportunities, oppFilters],
+  )
+
+  const oppSecondaryCount = useMemo(
+    () => countSecondaryOpportunityFilters(oppFilters),
+    [oppFilters],
+  )
+
+  const oppActiveChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = []
+    if (oppFilters.q.trim()) {
+      chips.push({
+        key: 'q',
+        label: `Search: "${oppFilters.q.trim()}"`,
+        clear: () => setOppFilters((prev) => ({ ...prev, q: '' })),
+      })
+    }
+    if (oppFilters.category !== 'ALL') {
+      chips.push({
+        key: 'category',
+        label: oppFilters.category,
+        clear: () => setOppFilters((prev) => ({ ...prev, category: 'ALL' })),
+      })
+    }
+    if (oppFilters.commodity !== 'ALL') {
+      chips.push({
+        key: 'commodity',
+        label: oppFilters.commodity,
+        clear: () => setOppFilters((prev) => ({ ...prev, commodity: 'ALL' })),
+      })
+    }
+    if (oppFilters.region !== 'ALL') {
+      chips.push({
+        key: 'region',
+        label: oppFilters.region,
+        clear: () => setOppFilters((prev) => ({ ...prev, region: 'ALL' })),
+      })
+    }
+    if (oppFilters.tenementType !== 'ALL') {
+      chips.push({
+        key: 'tenementType',
+        label: oppFilters.tenementType,
+        clear: () => setOppFilters((prev) => ({ ...prev, tenementType: 'ALL' })),
+      })
+    }
+    if (oppFilters.dealStructure !== 'ALL') {
+      chips.push({
+        key: 'dealStructure',
+        label: oppFilters.dealStructure,
+        clear: () => setOppFilters((prev) => ({ ...prev, dealStructure: 'ALL' })),
+      })
+    }
+    if (oppFilters.verification !== 'ALL') {
+      const label =
+        OPPORTUNITY_VERIFICATION_TIERS.find((v) => v.value === oppFilters.verification)?.label ??
+        oppFilters.verification
+      chips.push({
+        key: 'verification',
+        label,
+        clear: () => setOppFilters((prev) => ({ ...prev, verification: 'ALL' })),
+      })
+    }
+    if (oppFilters.status !== DEFAULT_OPPORTUNITIES_FILTER.status) {
+      const label =
+        OPPORTUNITY_STATUS_OPTIONS.find((s) => s.value === oppFilters.status)?.label ??
+        oppFilters.status
+      chips.push({
+        key: 'status',
+        label: `Status: ${label}`,
+        clear: () =>
+          setOppFilters((prev) => ({ ...prev, status: DEFAULT_OPPORTUNITIES_FILTER.status })),
+      })
+    }
+    if (oppFilters.sort !== DEFAULT_OPPORTUNITIES_FILTER.sort) {
+      const label =
+        OPPORTUNITY_SORT_OPTIONS.find((s) => s.value === oppFilters.sort)?.label ??
+        oppFilters.sort
+      chips.push({
+        key: 'sort',
+        label: `Sort: ${label}`,
+        clear: () =>
+          setOppFilters((prev) => ({ ...prev, sort: DEFAULT_OPPORTUNITIES_FILTER.sort })),
+      })
+    }
+    return chips
+  }, [oppFilters])
 
   const filteredUserServices = useMemo(
     () =>
@@ -561,45 +672,6 @@ export function DashboardRouteComponent() {
                 </div>
               </div>
 
-              {/* Scoped Opportunity Category Filter (includes "Others") */}
-              {userOpportunities.length > 0 && (
-                <div
-                  role="group"
-                  aria-label="Filter submitted opportunities by category"
-                  className="mt-3 flex flex-wrap items-center gap-1.5"
-                >
-                  {(
-                    [
-                      ['ALL', 'All'],
-                      ['Joint Venture', 'Joint Venture'],
-                      ['Tender', 'Tender'],
-                      ['Consultancy', 'Consultancy'],
-                      ['Grant', 'Grant'],
-                      ['Equipment Supply', 'Offtake / Supply'],
-                      ['Internship', 'Internship'],
-                      ['Others', 'Others'],
-                    ] as const
-                  ).map(([val, label]) => {
-                    const active = oppCategoryFilter === val
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setOppCategoryFilter(val)}
-                        className={`rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold transition-colors ${
-                          active
-                            ? 'border-ink bg-ink text-paper'
-                            : 'border-ink/15 bg-paper text-stone hover:border-ochre hover:text-ochre'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
               {userOpportunities.length === 0 && userServices.length === 0 ? (
                 <p className="mt-3 text-sm text-stone">
                   {ui(
@@ -617,42 +689,432 @@ export function DashboardRouteComponent() {
                   .
                 </p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {userOpportunities
-                    .filter((opp) => {
-                      if (oppCategoryFilter === 'ALL') return true
-                      if (oppCategoryFilter === 'Others') return isOthersOpportunity(opp)
-                      return !isOthersOpportunity(opp) && opp.category === oppCategoryFilter
-                    })
-                    .map((opp) => (
-                    <div
-                      key={opp.id}
-                      className="rounded-lg border border-ink/10 bg-paper p-4"
-                    >
+                <div className="mt-4 space-y-5">
+                  {userOpportunities.length > 0 && (
+                    <div className="space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
-                          OPPORTUNITY · {formatOpportunityCategory(opp)} · {opp.location} ({opp.reference_code})
+                        <span className="font-mono text-[10.5px] font-semibold uppercase tracking-wider text-stone tabular-nums">
+                          Showing {filteredUserOpportunities.length}{' '}
+                          {filteredUserOpportunities.length === 1 ? 'opportunity' : 'opportunities'}
                         </span>
-                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
-                          {opp.status}
-                        </span>
+                        {oppActiveChips.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setOppFilters(DEFAULT_OPPORTUNITIES_FILTER)}
+                            className="font-mono text-[10.5px] font-semibold text-ochre hover:underline"
+                          >
+                            Clear all
+                          </button>
+                        )}
                       </div>
-                      <h3 className="mt-1 font-display text-base font-semibold text-ink">
-                        {convertText(opp.title)}
-                      </h3>
-                      <p className="mt-1 text-xs text-stone">
-                        {opp.organization} · {ui('Deadline:', 'Mwisho:', 'Fecha límite:')} {opp.deadline} ·{' '}
-                        {ui('Budget', 'Bajeti', 'Presupuesto')} ({currency}):{' '}
-                        <strong className="font-mono text-ochre">
-                          {opp.compensation_usd > 0 ? (
-                            <PriceDisplay amountInUSD={opp.compensation_usd} />
-                          ) : (
-                            ui('Per Tender Schedule', 'Kulingana na Zabuni', 'Según Licitación')
-                          )}
-                        </strong>
-                      </p>
+
+                      {/* Custom Scoped Opportunities Filter Bar */}
+                      <div className="rounded-xl border border-ink/12 bg-paper p-3 space-y-2.5">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
+                          <div className="relative md:col-span-5">
+                            <Search
+                              size={14}
+                              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone"
+                            />
+                            <input
+                              id="dashboard-opp-search"
+                              type="text"
+                              aria-label="Search your submitted opportunities"
+                              value={oppFilters.q}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({ ...prev, q: e.target.value }))
+                              }
+                              placeholder="Search title, issuer, PML/PL ref, district, or scope..."
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white pl-8 pr-8 text-base text-ink placeholder-stone/70 focus:border-ochre focus:outline-none md:text-sm"
+                            />
+                            {oppFilters.q && (
+                              <button
+                                type="button"
+                                aria-label="Clear opportunity search"
+                                onClick={() => setOppFilters((prev) => ({ ...prev, q: '' }))}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-stone hover:text-ink"
+                              >
+                                <X size={13} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 md:col-span-7 md:grid md:grid-cols-3">
+                            <div className="min-w-0 flex-1">
+                              <label htmlFor="dashboard-opp-category" className="sr-only">
+                                Opportunity Category
+                              </label>
+                              <select
+                                id="dashboard-opp-category"
+                                value={oppFilters.category}
+                                onChange={(e) =>
+                                  setOppFilters((prev) => ({
+                                    ...prev,
+                                    category: e.target.value as OpportunityCategorySelection,
+                                  }))
+                                }
+                                className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink focus:border-ochre focus:outline-none md:text-sm"
+                              >
+                                <option value="ALL">All Categories</option>
+                                {OPPORTUNITY_FILTER_CATEGORIES.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <button
+                              type="button"
+                              aria-expanded={oppMobileFiltersOpen}
+                              aria-controls="dashboard-opp-mobile-filters"
+                              onClick={() => setOppMobileFiltersOpen((v) => !v)}
+                              className={`inline-flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition md:hidden ${
+                                oppMobileFiltersOpen || oppSecondaryCount > 0
+                                  ? 'border-ink bg-ink text-paper'
+                                  : 'border-ink/15 bg-white text-ink'
+                              }`}
+                            >
+                              <SlidersHorizontal size={13} />
+                              <span>
+                                Filters{oppSecondaryCount > 0 ? ` (${oppSecondaryCount})` : ''}
+                              </span>
+                            </button>
+
+                            <div className="hidden md:block">
+                              <label htmlFor="dashboard-opp-commodity" className="sr-only">
+                                Primary Commodity
+                              </label>
+                              <select
+                                id="dashboard-opp-commodity"
+                                value={oppFilters.commodity}
+                                onChange={(e) =>
+                                  setOppFilters((prev) => ({
+                                    ...prev,
+                                    commodity: e.target.value as OpportunityCommoditySelection,
+                                  }))
+                                }
+                                className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink focus:border-ochre focus:outline-none"
+                              >
+                                <option value="ALL">All Commodities</option>
+                                {OPPORTUNITY_COMMODITIES.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="hidden md:block">
+                              <label htmlFor="dashboard-opp-region" className="sr-only">
+                                Region (Mkoa)
+                              </label>
+                              <select
+                                id="dashboard-opp-region"
+                                value={oppFilters.region}
+                                onChange={(e) =>
+                                  setOppFilters((prev) => ({ ...prev, region: e.target.value }))
+                                }
+                                className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink focus:border-ochre focus:outline-none"
+                              >
+                                <option value="ALL">All Regions</option>
+                                {OPPORTUNITY_REGIONS.map((reg) => (
+                                  <option key={reg} value={reg}>
+                                    {reg}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Desktop Row 2: Tenement Type, Deal Structure, Verification, Status, Sort */}
+                        <div className="hidden grid-cols-5 gap-2 md:grid">
+                          <select
+                            aria-label="Mineral Right or Tenement Type"
+                            value={oppFilters.tenementType}
+                            onChange={(e) =>
+                              setOppFilters((prev) => ({
+                                ...prev,
+                                tenementType: e.target.value as OpportunityTenementSelection,
+                              }))
+                            }
+                            className="min-h-[38px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1 text-xs text-ink focus:border-ochre focus:outline-none"
+                          >
+                            <option value="ALL">All Right Types</option>
+                            {OPPORTUNITY_TENEMENT_TYPES.map((rt) => (
+                              <option key={rt} value={rt}>
+                                {rt}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            aria-label="Deal Structure"
+                            value={oppFilters.dealStructure}
+                            onChange={(e) =>
+                              setOppFilters((prev) => ({
+                                ...prev,
+                                dealStructure: e.target.value as OpportunityDealStructureSelection,
+                              }))
+                            }
+                            className="min-h-[38px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1 text-xs text-ink focus:border-ochre focus:outline-none"
+                          >
+                            <option value="ALL">All Structures</option>
+                            {OPPORTUNITY_DEAL_STRUCTURES.map((ds) => (
+                              <option key={ds} value={ds}>
+                                {ds}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            aria-label="Verification Tier"
+                            value={oppFilters.verification}
+                            onChange={(e) =>
+                              setOppFilters((prev) => ({
+                                ...prev,
+                                verification: e.target.value as OpportunityVerificationSelection,
+                              }))
+                            }
+                            className="min-h-[38px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1 text-xs text-ink focus:border-ochre focus:outline-none"
+                          >
+                            {OPPORTUNITY_VERIFICATION_TIERS.map((tier) => (
+                              <option key={tier.value} value={tier.value}>
+                                {tier.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            aria-label="Timeline Status"
+                            value={oppFilters.status}
+                            onChange={(e) =>
+                              setOppFilters((prev) => ({
+                                ...prev,
+                                status: e.target.value as OpportunityStatusSelection,
+                              }))
+                            }
+                            className="min-h-[38px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1 text-xs text-ink focus:border-ochre focus:outline-none"
+                          >
+                            {OPPORTUNITY_STATUS_OPTIONS.map((st) => (
+                              <option key={st.value} value={st.value}>
+                                {st.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            aria-label="Sort Opportunities"
+                            value={oppFilters.sort}
+                            onChange={(e) =>
+                              setOppFilters((prev) => ({
+                                ...prev,
+                                sort: e.target.value as OpportunitySortSelection,
+                              }))
+                            }
+                            className="min-h-[38px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1 text-xs text-ink focus:border-ochre focus:outline-none"
+                          >
+                            {OPPORTUNITY_SORT_OPTIONS.map((s) => (
+                              <option key={s.value} value={s.value}>
+                                Sort: {s.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Mobile Collapsible Panel */}
+                        {oppMobileFiltersOpen && (
+                          <div
+                            id="dashboard-opp-mobile-filters"
+                            className="grid grid-cols-1 gap-2 border-t border-ink/10 pt-2.5 md:hidden"
+                          >
+                            <select
+                              aria-label="Primary Commodity"
+                              value={oppFilters.commodity}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({
+                                  ...prev,
+                                  commodity: e.target.value as OpportunityCommoditySelection,
+                                }))
+                              }
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                            >
+                              <option value="ALL">All Commodities</option>
+                              {OPPORTUNITY_COMMODITIES.map((c) => (
+                                <option key={c} value={c}>
+                                  {c}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              aria-label="Region (Mkoa)"
+                              value={oppFilters.region}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({ ...prev, region: e.target.value }))
+                              }
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                            >
+                              <option value="ALL">All Regions</option>
+                              {OPPORTUNITY_REGIONS.map((reg) => (
+                                <option key={reg} value={reg}>
+                                  {reg}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              aria-label="Mineral Right or Tenement Type"
+                              value={oppFilters.tenementType}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({
+                                  ...prev,
+                                  tenementType: e.target.value as OpportunityTenementSelection,
+                                }))
+                              }
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                            >
+                              <option value="ALL">All Right Types</option>
+                              {OPPORTUNITY_TENEMENT_TYPES.map((rt) => (
+                                <option key={rt} value={rt}>
+                                  {rt}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              aria-label="Deal Structure"
+                              value={oppFilters.dealStructure}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({
+                                  ...prev,
+                                  dealStructure: e.target
+                                    .value as OpportunityDealStructureSelection,
+                                }))
+                              }
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                            >
+                              <option value="ALL">All Structures</option>
+                              {OPPORTUNITY_DEAL_STRUCTURES.map((ds) => (
+                                <option key={ds} value={ds}>
+                                  {ds}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              aria-label="Verification Tier"
+                              value={oppFilters.verification}
+                              onChange={(e) =>
+                                setOppFilters((prev) => ({
+                                  ...prev,
+                                  verification: e.target.value as OpportunityVerificationSelection,
+                                }))
+                              }
+                              className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                            >
+                              {OPPORTUNITY_VERIFICATION_TIERS.map((tier) => (
+                                <option key={tier.value} value={tier.value}>
+                                  {tier.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <select
+                                aria-label="Timeline Status"
+                                value={oppFilters.status}
+                                onChange={(e) =>
+                                  setOppFilters((prev) => ({
+                                    ...prev,
+                                    status: e.target.value as OpportunityStatusSelection,
+                                  }))
+                                }
+                                className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                              >
+                                {OPPORTUNITY_STATUS_OPTIONS.map((st) => (
+                                  <option key={st.value} value={st.value}>
+                                    {st.label}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <select
+                                aria-label="Sort Opportunities"
+                                value={oppFilters.sort}
+                                onChange={(e) =>
+                                  setOppFilters((prev) => ({
+                                    ...prev,
+                                    sort: e.target.value as OpportunitySortSelection,
+                                  }))
+                                }
+                                className="min-h-[42px] w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-base text-ink"
+                              >
+                                {OPPORTUNITY_SORT_OPTIONS.map((s) => (
+                                  <option key={s.value} value={s.value}>
+                                    {s.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {oppActiveChips.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 border-t border-ink/10 pt-2">
+                            {oppActiveChips.map((chip) => (
+                              <button
+                                key={chip.key}
+                                type="button"
+                                onClick={chip.clear}
+                                className="inline-flex items-center gap-1 rounded-full border border-ochre/35 bg-ochre/10 px-2.5 py-0.5 font-mono text-[10.5px] font-medium text-ink hover:border-ochre"
+                              >
+                                <span>{chip.label}</span>
+                                <X size={11} className="text-ochre" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {filteredUserOpportunities.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-ink/15 bg-paper px-4 py-5 text-center text-xs text-stone">
+                          No submitted opportunities match the current filters.
+                        </p>
+                      ) : (
+                        filteredUserOpportunities.map((opp) => (
+                          <div
+                            key={opp.id}
+                            className="rounded-lg border border-ink/10 bg-paper p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                                OPPORTUNITY · {formatOpportunityCategory(opp)} · {opp.location} ({opp.reference_code})
+                              </span>
+                              <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
+                                {opp.status}
+                              </span>
+                            </div>
+                            <h3 className="mt-1 font-display text-base font-semibold text-ink">
+                              {convertText(opp.title)}
+                            </h3>
+                            <p className="mt-1 text-xs text-stone">
+                              {opp.organization} · {ui('Deadline:', 'Mwisho:', 'Fecha límite:')} {opp.deadline} ·{' '}
+                              {ui('Budget', 'Bajeti', 'Presupuesto')} ({currency}):{' '}
+                              <strong className="font-mono text-ochre tabular-nums">
+                                {opp.compensation_usd > 0 ? (
+                                  <PriceDisplay amountInUSD={opp.compensation_usd} />
+                                ) : (
+                                  ui('Per Tender Schedule', 'Kulingana na Zabuni', 'Según Licitación')
+                                )}
+                              </strong>
+                            </p>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  ))}
+                  )}
                   {userServices.length > 0 && (
                     <div className="space-y-3 border-t border-ink/10 pt-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
