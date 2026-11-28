@@ -24,6 +24,7 @@ import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
 import { GuidedServiceWizard } from '../components/GuidedSubmissionWizards'
 import { useSubscription } from '../lib/subscriptions'
+import { formatServiceCategory } from '../lib/serviceCategories'
 import { mergeRecordsById } from '../lib/mergeRecords'
 import type { UserServiceRecord } from '../types/database'
 
@@ -286,7 +287,7 @@ function DashboardServicesRouteComponent() {
                           {srv.reference_code}
                         </span>
                         <span className="rounded bg-ochre/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ochre">
-                          {srv.expertise_area}
+                          {formatServiceCategory(srv)}
                         </span>
                       </div>
                       <span

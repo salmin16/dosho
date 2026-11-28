@@ -6,6 +6,7 @@ import type {
   VerificationLevelCode,
 } from '../types/database'
 import { normalizeVerificationLevel } from './verificationLevels'
+import { formatServiceCategory } from './serviceCategories'
 
 export interface DossierComplianceNote {
   label: string
@@ -183,12 +184,13 @@ export function buildLiveServiceDossier(
   service: UserServiceRecord,
 ): CounterpartyDossierData {
   const contact = buildContactTokens(service.reference_code || service.id, service.provider_organization)
+  const displayCategory = formatServiceCategory(service)
 
   return {
     entityKind: 'service',
     recordCode: service.reference_code,
     title: service.service_name,
-    mineralsOrCategory: [service.expertise_area],
+    mineralsOrCategory: [displayCategory],
     regionLabel: service.regional_coverage,
     scopeSummary: service.scope_description,
     licenceClass: 'PML · PL · ML · SML',
@@ -216,7 +218,7 @@ export function buildLiveServiceDossier(
       },
     ],
     counterpartyName: service.provider_organization,
-    counterpartyRole: `${service.expertise_area} Provider`,
+    counterpartyRole: `${displayCategory} Provider`,
     companyRegistration: contact.companyRegistration,
     localContentRef: contact.localContentRef,
     directPhone: contact.directPhone,

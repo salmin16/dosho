@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Briefcase,
   Compass,
@@ -8,9 +8,11 @@ import {
   LogOut,
   Pickaxe,
   PlusCircle,
+  Search,
   ShieldCheck,
   Trash2,
   Wrench,
+  X,
 } from 'lucide-react'
 import {
   createGroundedDocument,
@@ -30,6 +32,13 @@ import {
   formatOpportunityCategory,
   isOthersOpportunity,
 } from '../lib/opportunityCategories'
+import {
+  DEFAULT_SERVICES_FILTER,
+  SERVICE_FILTER_CATEGORIES,
+  formatServiceCategory,
+  matchesLiveServiceFilters,
+  type ServiceCategorySelection,
+} from '../lib/serviceCategories'
 import { mergeRecordsById, mergeSingleRecord } from '../lib/mergeRecords'
 import type {
   DocumentClassification,
@@ -64,6 +73,21 @@ export function DashboardRouteComponent() {
   const [userOpportunities, setUserOpportunities] = useState<UserOpportunityRecord[]>([])
   const [userServices, setUserServices] = useState<UserServiceRecord[]>([])
   const [oppCategoryFilter, setOppCategoryFilter] = useState<string>('ALL')
+  const [serviceCategoryFilter, setServiceCategoryFilter] =
+    useState<ServiceCategorySelection>('ALL')
+  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('')
+
+  const filteredUserServices = useMemo(
+    () =>
+      userServices.filter((srv) =>
+        matchesLiveServiceFilters(srv, {
+          ...DEFAULT_SERVICES_FILTER,
+          q: serviceSearchQuery,
+          category: serviceCategoryFilter,
+        }),
+      ),
+    [userServices, serviceSearchQuery, serviceCategoryFilter],
+  )
 
   const [title, setTitle] = useState('')
   const [classification, setClassification] =
@@ -629,32 +653,112 @@ export function DashboardRouteComponent() {
                       </p>
                     </div>
                   ))}
-                  {userServices.map((srv) => (
-                    <div
-                      key={srv.id}
-                      className="rounded-lg border border-ink/10 bg-paper p-4"
-                    >
+                  {userServices.length > 0 && (
+                    <div className="space-y-3 border-t border-ink/10 pt-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
-                          SERVICE · {srv.expertise_area} · {srv.regional_coverage} ({srv.reference_code})
+                        <span className="font-mono text-[10.5px] font-semibold uppercase tracking-wider text-stone tabular-nums">
+                          {ui(
+                            `Submitted Services (${filteredUserServices.length} of ${userServices.length})`,
+                            `Huduma Ulizowasilisha (${filteredUserServices.length} kati ya ${userServices.length})`,
+                            `Servicios Enviados (${filteredUserServices.length} de ${userServices.length})`,
+                          )}
                         </span>
-                        <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
-                          {srv.status}
-                        </span>
+                        {(serviceCategoryFilter !== 'ALL' || serviceSearchQuery.trim()) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setServiceCategoryFilter('ALL')
+                              setServiceSearchQuery('')
+                            }}
+                            className="font-mono text-[10.5px] font-semibold text-ochre hover:underline"
+                          >
+                            Clear filter
+                          </button>
+                        )}
                       </div>
-                      <h3 className="mt-1 font-display text-base font-semibold text-ink">
-                        {convertText(srv.service_name)}
-                      </h3>
-                      <p className="mt-1 text-xs text-stone">
-                        {srv.provider_organization} · {ui('Rate', 'Gharama', 'Tarifa')} ({currency}):{' '}
-                        {convertText(srv.rate_or_pricing_model)} (
-                        <strong className="font-mono text-ochre">
-                          <PriceDisplay amountInUSD={srv.estimated_rate_usd} />
-                        </strong>
-                        )
-                      </p>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
+                        <div className="relative sm:col-span-7">
+                          <Search
+                            size={14}
+                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone"
+                          />
+                          <input
+                            id="dashboard-services-search"
+                            type="text"
+                            aria-label="Search your submitted services"
+                            value={serviceSearchQuery}
+                            onChange={(e) => setServiceSearchQuery(e.target.value)}
+                            placeholder="Search service title, discipline, certification, or region..."
+                            className="min-h-[40px] w-full rounded-lg border border-ink/15 bg-paper pl-8 pr-8 text-base text-ink placeholder-stone/70 focus:border-ochre focus:bg-white focus:outline-none sm:text-sm"
+                          />
+                          {serviceSearchQuery && (
+                            <button
+                              type="button"
+                              aria-label="Clear service search"
+                              onClick={() => setServiceSearchQuery('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-stone hover:text-ink"
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="sm:col-span-5">
+                          <label htmlFor="dashboard-services-category" className="sr-only">
+                            Filter your services by category
+                          </label>
+                          <select
+                            id="dashboard-services-category"
+                            value={serviceCategoryFilter}
+                            onChange={(e) =>
+                              setServiceCategoryFilter(e.target.value as ServiceCategorySelection)
+                            }
+                            className="min-h-[40px] w-full rounded-lg border border-ink/15 bg-paper px-3 py-1.5 text-base text-ink focus:border-ochre focus:bg-white focus:outline-none sm:text-sm"
+                          >
+                            <option value="ALL">All Services</option>
+                            {SERVICE_FILTER_CATEGORIES.map((cat) => (
+                              <option key={cat} value={cat}>
+                                {cat}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {filteredUserServices.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-ink/15 bg-paper px-4 py-5 text-center text-xs text-stone">
+                          No submitted services match the selected category or search query.
+                        </p>
+                      ) : (
+                        filteredUserServices.map((srv) => (
+                          <div
+                            key={srv.id}
+                            className="rounded-lg border border-ink/10 bg-paper p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-ochre">
+                                SERVICE · {formatServiceCategory(srv)} · {srv.regional_coverage} ({srv.reference_code})
+                              </span>
+                              <span className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase text-ink">
+                                {srv.status}
+                              </span>
+                            </div>
+                            <h3 className="mt-1 font-display text-base font-semibold text-ink">
+                              {convertText(srv.service_name)}
+                            </h3>
+                            <p className="mt-1 text-xs text-stone">
+                              {srv.provider_organization} · {ui('Rate', 'Gharama', 'Tarifa')} ({currency}):{' '}
+                              {convertText(srv.rate_or_pricing_model)} (
+                              <strong className="font-mono text-ochre tabular-nums">
+                                <PriceDisplay amountInUSD={srv.estimated_rate_usd} />
+                              </strong>
+                              )
+                            </p>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>

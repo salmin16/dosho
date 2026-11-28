@@ -53,6 +53,7 @@ import {
   VERIFICATION_LEVELS,
   VERIFICATION_LEVEL_LIST,
 } from '../lib/verificationLevels'
+import { formatServiceCategory } from '../lib/serviceCategories'
 import { formatBytesCompact } from '../lib/verificationUpload'
 import AdminSubscriptionsTab, {
   type AdminBillingPaymentRow,
@@ -421,6 +422,7 @@ export function MasterAdminDashboard({
         s.service_name.toLowerCase().includes(q) ||
         s.provider_organization.toLowerCase().includes(q) ||
         s.expertise_area.toLowerCase().includes(q) ||
+        formatServiceCategory(s).toLowerCase().includes(q) ||
         (owner?.email || '').toLowerCase().includes(q)
       )
     })
@@ -1577,9 +1579,7 @@ export function MasterAdminDashboard({
                               {s.reference_code}
                             </span>
                             <span className="font-mono text-[11px] text-ochre">
-                              {typeof srvDetails?.disciplineLabel === 'string'
-                                ? srvDetails.disciplineLabel
-                                : s.expertise_area}
+                              {formatServiceCategory(s)}
                             </span>
                             {srvAttachments.length > 0 && (
                               <span className="rounded border border-moss/35 bg-moss-light px-2 py-0.5 font-mono text-[10px] font-semibold text-moss">

@@ -204,6 +204,24 @@ const SERVICE_DISCIPLINES: ReadonlyArray<{
     code: 'MET',
     desc: 'CIL/CIP plant design, comminution, gravity recovery, and tailings engineering',
   },
+  {
+    label: 'Surveying & GIS',
+    dbExpertise: 'Geological & Exploration',
+    code: 'GIS',
+    desc: 'Boundary pegging, drone photogrammetry, cadastral survey, and spatial GIS deliverables',
+  },
+  {
+    label: 'Equipment & Suppliers',
+    dbExpertise: 'Mine Engineering & EPCM',
+    code: 'EQP',
+    desc: 'Heavy mining fleet hire, crushers, compressors, generators, and consumables supply',
+  },
+  {
+    label: 'Others',
+    dbExpertise: 'Others',
+    code: 'OTH',
+    desc: 'Specialized mining technical or field support outside standard service categories',
+  },
 ] as const;
 
 const SERVICE_PRICING_MODELS = [
@@ -211,6 +229,7 @@ const SERVICE_PRICING_MODELS = [
   'Per Sample',
   'Daily/Monthly Rate',
   'Fixed Quote',
+  'SLA Retainer',
   'RFQ Only',
 ] as const;
 
@@ -1466,6 +1485,7 @@ export function GuidedServiceWizard({
   const [disciplineLabel, setDisciplineLabel] = useState<string>(
     SERVICE_DISCIPLINES[0].label,
   );
+  const [customServiceCategory, setCustomServiceCategory] = useState('');
   const [selectedRegions, setSelectedRegions] = useState<string[]>([
     'Geita',
     'Mwanza',
@@ -1514,6 +1534,9 @@ export function GuidedServiceWizard({
         if (d.serviceName) setServiceName(d.serviceName);
         if (d.providerOrganization) setProviderOrganization(d.providerOrganization);
         if (d.disciplineLabel) setDisciplineLabel(d.disciplineLabel);
+        if (typeof d.customServiceCategory === 'string') {
+          setCustomServiceCategory(d.customServiceCategory);
+        }
         if (Array.isArray(d.selectedRegions)) setSelectedRegions(d.selectedRegions);
         if (d.customCoverage) setCustomCoverage(d.customCoverage);
         if (d.equipmentStandards) setEquipmentStandards(d.equipmentStandards);
@@ -1581,6 +1604,7 @@ export function GuidedServiceWizard({
         serviceName,
         providerOrganization,
         disciplineLabel,
+        customServiceCategory,
         selectedRegions,
         customCoverage,
         equipmentStandards,
@@ -1603,6 +1627,7 @@ export function GuidedServiceWizard({
       window.localStorage.removeItem(SERVICE_DRAFT_KEY);
     }
     setServiceName('');
+    setCustomServiceCategory('');
     setEquipmentStandards('');
     setScopeDescription('');
     setExtraCertNotes('');
@@ -1665,6 +1690,10 @@ export function GuidedServiceWizard({
     }
     if (providerOrganization.trim().length < 2) {
       setError('Step 1 Validation: Provider firm or organization name is required.');
+      return false;
+    }
+    if (disciplineLabel === 'Others' && customServiceCategory.trim().length < 2) {
+      setError('Step 1 Validation: Please specify the custom service category when "Others" is selected.');
       return false;
     }
     if (!combinedCoverage.trim()) {
@@ -1762,6 +1791,8 @@ export function GuidedServiceWizard({
         certifications: combinedCertifications || 'Standard Commercial Provider',
         structuredDetails: {
           disciplineLabel: selectedDisciplineSpec.label,
+          customCategory:
+            disciplineLabel === 'Others' ? customServiceCategory.trim() : null,
           coverageRegions: selectedRegions,
           equipmentStandards: equipmentStandards.trim() || null,
           pricingModel,
@@ -1976,39 +2007,54 @@ export function GuidedServiceWizard({
             </div>
 
             <div className="field-group">
-              <span className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
-                Technical Discipline *
-              </span>
-              <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                {SERVICE_DISCIPLINES.map((disc) => {
-                  const active = disciplineLabel === disc.label;
-                  return (
-                    <button
-                      key={disc.label}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setDisciplineLabel(disc.label)}
-                      className={`rounded-xl border p-3.5 text-left transition ${
-                        active
-                          ? 'border-gold bg-gold/15 text-paper ring-1 ring-gold/50'
-                          : 'border-paper/15 bg-ink-2/70 text-paper/80 hover:border-paper/35'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-xs font-bold text-paper">
-                          {disc.label}
-                        </span>
-                        <span className="rounded bg-paper/10 px-1.5 py-0.5 font-mono text-[9px] uppercase text-gold">
-                          {disc.code}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-paper/65">
-                        {disc.desc}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
+              <label
+                htmlFor="srv-discipline"
+                className="block text-xs font-semibold uppercase tracking-wider text-paper/80"
+              >
+                Service Category / Technical Discipline *
+              </label>
+              <select
+                id="srv-discipline"
+                required
+                value={disciplineLabel}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDisciplineLabel(next);
+                  if (next !== 'Others') {
+                    setCustomServiceCategory('');
+                  }
+                }}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3.5 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
+              >
+                {SERVICE_DISCIPLINES.map((disc) => (
+                  <option key={disc.label} value={disc.label}>
+                    {disc.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-paper/65">
+                {selectedDisciplineSpec.desc}
+              </p>
+
+              {disciplineLabel === 'Others' && (
+                <div className="mt-4">
+                  <label
+                    htmlFor="srv-custom-category"
+                    className="block text-xs font-semibold uppercase tracking-wider text-paper/80"
+                  >
+                    Specify Other Service Category *
+                  </label>
+                  <input
+                    id="srv-custom-category"
+                    type="text"
+                    required
+                    value={customServiceCategory}
+                    onChange={(e) => setCustomServiceCategory(e.target.value)}
+                    placeholder="e.g. Mine Dewatering, Tailings Telemetry, Camp Logistics"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-gold/50 bg-ink-2 px-3.5 py-2.5 text-base text-paper placeholder-paper/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="field-group">
@@ -2294,7 +2340,11 @@ export function GuidedServiceWizard({
                 </div>
                 <div>
                   <dt className="font-mono text-[10px] uppercase text-paper/50">Discipline</dt>
-                  <dd className="mt-0.5 font-semibold text-gold">{selectedDisciplineSpec.label}</dd>
+                  <dd className="mt-0.5 font-semibold text-gold">
+                    {disciplineLabel === 'Others' && customServiceCategory.trim()
+                      ? `Others · ${customServiceCategory.trim()}`
+                      : selectedDisciplineSpec.label}
+                  </dd>
                   {equipmentStandards && (
                     <dd className="mt-0.5 text-[11px] text-paper/70">{equipmentStandards}</dd>
                   )}

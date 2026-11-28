@@ -356,6 +356,7 @@ export const ServiceSubmissionSchema = z.object({
       'Legal, Licensing & Cadastre',
       'Environmental (ESIA) & ESG',
       'Mine Engineering & EPCM',
+      'Others',
     ] as const,
     'Expertise area'
   ),

@@ -858,6 +858,11 @@ export interface ServiceProvider {
   reviews: number
   responseTime: string
   initials: string
+  verificationTier?: 0 | 1 | 2 | 3 | 4
+  rateModel?: 'day-rate' | 'unit-rate' | 'fixed-project' | 'sla-retainer' | 'rfq-custom'
+  nationwide?: boolean
+  mobilizationRegions?: string[]
+  certifications?: string[]
 }
 
 export const SERVICE_CATEGORIES = [
@@ -884,6 +889,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 38,
     responseTime: '< 24 h',
     initials: 'LZ',
+    verificationTier: 3,
+    rateModel: 'day-rate',
+    nationwide: true,
+    mobilizationRegions: ['Mwanza', 'Geita', 'Shinyanga', 'Mara', 'Simiyu', 'Kagera'],
+    certifications: ['Mining Commission', 'AusIMM', 'TGS'],
   },
   {
     id: 'sp-02',
@@ -897,6 +907,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 64,
     responseTime: '< 48 h',
     initials: 'MA',
+    verificationTier: 4,
+    rateModel: 'unit-rate',
+    nationwide: true,
+    mobilizationRegions: ['Mwanza', 'Geita', 'Shinyanga', 'Mara', 'Singida', 'Dodoma'],
+    certifications: ['ISO/IEC 17025', 'Mining Commission', 'TBS'],
   },
   {
     id: 'sp-03',
@@ -910,6 +925,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 21,
     responseTime: '< 48 h',
     initials: 'KD',
+    verificationTier: 3,
+    rateModel: 'unit-rate',
+    nationwide: true,
+    mobilizationRegions: ['Arusha', 'Manyara', 'Kilimanjaro', 'Geita', 'Mwanza', 'Dodoma'],
+    certifications: ['Mining Commission', 'OSHA Tanzania', 'Explosives Permit'],
   },
   {
     id: 'sp-04',
@@ -923,6 +943,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 29,
     responseTime: '< 24 h',
     initials: 'CS',
+    verificationTier: 2,
+    rateModel: 'fixed-project',
+    nationwide: true,
+    mobilizationRegions: ['Dar es Salaam', 'Pwani', 'Morogoro', 'Lindi', 'Mtwara', 'Tanga'],
+    certifications: ['NCPS Licensed', 'TCAA Drone Permit'],
   },
   {
     id: 'sp-05',
@@ -936,6 +961,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 12,
     responseTime: '< 72 h',
     initials: 'SE',
+    verificationTier: 1,
+    rateModel: 'fixed-project',
+    nationwide: false,
+    mobilizationRegions: ['Dodoma', 'Singida', 'Morogoro', 'Iringa', 'Mbeya'],
+    certifications: ['NEMC Registered'],
   },
   {
     id: 'sp-06',
@@ -949,6 +979,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 17,
     responseTime: '< 24 h',
     initials: 'MM',
+    verificationTier: 2,
+    rateModel: 'sla-retainer',
+    nationwide: true,
+    mobilizationRegions: ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mwanza'],
+    certifications: ['TLS', 'Mining Commission Advisory'],
   },
   {
     id: 'sp-07',
@@ -962,6 +997,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 45,
     responseTime: '< 12 h',
     initials: 'GP',
+    verificationTier: 2,
+    rateModel: 'day-rate',
+    nationwide: false,
+    mobilizationRegions: ['Geita', 'Mwanza', 'Shinyanga', 'Kagera', 'Simiyu', 'Mara'],
+    certifications: ['BRELA', 'OSHA Equipment'],
   },
   {
     id: 'sp-08',
@@ -975,6 +1015,11 @@ export const SERVICE_PROVIDERS: ServiceProvider[] = [
     reviews: 9,
     responseTime: '< 48 h',
     initials: 'RM',
+    verificationTier: 1,
+    rateModel: 'rfq-custom',
+    nationwide: false,
+    mobilizationRegions: ['Arusha', 'Manyara', 'Geita', 'Singida', 'Mbeya'],
+    certifications: ['ERB', 'SAIMM'],
   },
 ]
 

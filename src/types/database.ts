@@ -364,7 +364,8 @@ export type ServiceExpertiseArea =
   | 'Assay & Laboratory Testing'
   | 'Legal, Licensing & Cadastre'
   | 'Environmental (ESIA) & ESG'
-  | 'Mine Engineering & EPCM';
+  | 'Mine Engineering & EPCM'
+  | 'Others';
 
 export interface UserServiceRecord {
   id: string;

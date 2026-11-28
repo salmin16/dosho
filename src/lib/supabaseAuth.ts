@@ -2519,6 +2519,24 @@ export async function createGuidedServiceSubmission(input: {
     .select('*')
     .single()
 
+  // Graceful fallback if remote DB CHECK constraint hasn't yet added 'Others'
+  if (
+    error &&
+    input.expertiseArea === 'Others' &&
+    (/check constraint|expertise_area|23514/i.test(error.message ?? '') || error.code === '23514')
+  ) {
+    const fallbackRes = await supabase
+      .from('services')
+      .insert({
+        ...fullPayload,
+        expertise_area: 'Mine Engineering & EPCM',
+      })
+      .select('*')
+      .single()
+    data = fallbackRes.data
+    error = fallbackRes.error
+  }
+
   if (error && /structured_details|attachments|column|schema cache/i.test(error.message ?? '')) {
     const legacyRes = await supabase
       .from('services')
@@ -2526,7 +2544,8 @@ export async function createGuidedServiceSubmission(input: {
         user_id: session.user.id,
         service_name: serviceName,
         provider_organization: providerOrganization,
-        expertise_area: input.expertiseArea,
+        expertise_area:
+          input.expertiseArea === 'Others' ? 'Mine Engineering & EPCM' : input.expertiseArea,
         regional_coverage: regionalCoverage,
         rate_or_pricing_model: rateOrPricingModel,
         estimated_rate_usd: Math.max(0, Number(input.estimatedRateUsd) || 0),
