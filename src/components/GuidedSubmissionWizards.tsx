@@ -407,16 +407,13 @@ export function GuidedOpportunityWizard({
 }: {
   onSubmitted?: (record: UserOpportunityRecord) => void;
 }) {
-  const session = useAuthSession();
   const { currency, rateForSelected } = useCurrency();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Step 1: Opportunity & Location
   const [title, setTitle] = useState('');
-  const [organization, setOrganization] = useState(
-    session?.user.fullName ? `${session.user.fullName} Operations` : '',
-  );
+  const [organization, setOrganization] = useState('');
   const [categoryLabel, setCategoryLabel] = useState<string>(
     OPPORTUNITY_CATEGORIES[0].label,
   );
@@ -538,6 +535,7 @@ export function GuidedOpportunityWizard({
       window.localStorage.removeItem(OPPORTUNITY_DRAFT_KEY);
     }
     setTitle('');
+    setOrganization('');
     setRegion('');
     setDistrict('');
     setCoordinates('');
@@ -601,7 +599,7 @@ export function GuidedOpportunityWizard({
       return false;
     }
     if (organization.trim().length < 2) {
-      setError('Step 1 Validation: Issuing organization or company name is required.');
+      setError('Step 1 Validation: Issuing organization, company, or individual name is required.');
       return false;
     }
     if (!region) {
@@ -917,7 +915,7 @@ export function GuidedOpportunityWizard({
 
               <div className="field-group">
                 <label htmlFor="opp-org" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
-                  Issuing Organization / Company *
+                  Issuing Organization / Company / Individual *
                 </label>
                 <input
                   id="opp-org"
@@ -925,46 +923,29 @@ export function GuidedOpportunityWizard({
                   required
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
-                  placeholder="Enter issuing organization or licence holder"
+                  placeholder="Enter issuing organization, company, or individual name"
                   className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3.5 py-2.5 text-base text-paper placeholder-paper/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
                 />
               </div>
             </div>
 
             <div className="field-group">
-              <span className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
+              <label htmlFor="opp-category" className="block text-xs font-semibold uppercase tracking-wider text-paper/80">
                 Opportunity Category *
-              </span>
-              <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                {OPPORTUNITY_CATEGORIES.map((cat) => {
-                  const active = categoryLabel === cat.label;
-                  return (
-                    <button
-                      key={cat.label}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setCategoryLabel(cat.label)}
-                      className={`rounded-xl border p-3.5 text-left transition ${
-                        active
-                          ? 'border-gold bg-gold/15 text-paper ring-1 ring-gold/50'
-                          : 'border-paper/15 bg-ink-2/70 text-paper/80 hover:border-paper/35'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-xs font-bold text-paper">
-                          {cat.label}
-                        </span>
-                        <span className="rounded bg-paper/10 px-1.5 py-0.5 font-mono text-[9px] uppercase text-gold">
-                          {cat.badge}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-paper/65">
-                        {cat.desc}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
+              </label>
+              <select
+                id="opp-category"
+                required
+                value={categoryLabel}
+                onChange={(e) => setCategoryLabel(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3 py-2.5 text-base text-paper focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
+              >
+                {OPPORTUNITY_CATEGORIES.map((cat) => (
+                  <option key={cat.label} value={cat.label}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
