@@ -170,19 +170,19 @@ function GroundedAuthHeroBanner() {
   const { session, isAdmin } = useAuthState()
 
   return (
-    <div className="mt-8 flex flex-col items-start justify-between gap-4 rounded-xl border border-gold/30 bg-ink-2/90 p-5 shadow-xl backdrop-blur-md sm:flex-row sm:items-center">
+    <div className="mt-8 flex flex-col items-start justify-between gap-4 rounded-xl border border-paper/15 bg-ink/60 p-5 shadow-2xl backdrop-blur-xl sm:flex-row sm:items-center">
       <div className="flex items-start gap-3.5">
-        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ochre/20 text-gold">
+        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-paper/15 bg-paper/[0.06] text-paper/80">
           <Lock size={18} />
         </div>
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-moss/30 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-paper/60">
               Verified Member Workspace
             </span>
             <h2 className="font-display text-base font-semibold text-paper">
               {session
-                ? `Welcome, ${session.user.fullName} (${session.user.email})`
+                ? `Welcome, ${session.user.fullName}`
                 : 'Enterprise Due-Diligence Vault & Marketplace Portal'}
             </h2>
           </div>
@@ -203,7 +203,7 @@ function GroundedAuthHeroBanner() {
             {isAdmin && (
               <Link
                 to="/admin"
-                className="rounded-md border border-gold/50 bg-moss/30 px-4 py-2.5 text-xs font-semibold text-gold transition hover:bg-moss/40"
+                className="rounded-md border border-paper/20 bg-paper/[0.06] px-4 py-2.5 text-xs font-semibold text-paper transition hover:bg-paper/15"
               >
                 Admin Dashboard
               </Link>
