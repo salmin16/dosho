@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowRight, Check, CircleSlash, Clock, UserCheck, CalendarCheck } from 'lucide-react'
 import { PROJECTS } from '../data/fixtures'
 import VerificationBadge, { levelTone } from '../components/VerificationBadge'
+import VerificationRequestCard from '../components/VerificationRequestCard'
 import { useI18n } from '../i18n'
 import { useAuthState } from '../lib/supabaseAuth'
 import {
@@ -43,11 +44,15 @@ function Verification() {
                 Status:{' '}
                 <strong>{profile?.verification_status || 'unverified'}</strong>
               </span>
-              <Link to="/dashboard" className="font-semibold text-paper underline hover:text-gold">
-                {profile?.verification_status === 'verified'
-                  ? 'Manage Verification in Vault →'
-                  : 'Submit / Upgrade Verification Level →'}
-              </Link>
+              {currentUserLevel !== 'L4' ? (
+                <a href="#submit-verification" className="font-semibold text-paper underline hover:text-gold">
+                  Submit / Upgrade Verification Level →
+                </a>
+              ) : (
+                <Link to="/dashboard" className="font-semibold text-paper underline hover:text-gold">
+                  Return to Workspace →
+                </Link>
+              )}
             </div>
           )}
           <div className="mt-12 grid max-w-3xl gap-6 sm:grid-cols-3">
@@ -69,8 +74,14 @@ function Verification() {
         </div>
       </section>
 
-      <section className="px-5 py-20 lg:px-8">
+      <section className="px-4 py-16 sm:px-6 lg:px-8 xl:px-10">
         <div className="mx-auto w-full max-w-[1920px] space-y-5">
+          {session && currentUserLevel !== 'L4' && (
+            <VerificationRequestCard
+              profile={profile}
+              currentLevel={currentUserLevel}
+            />
+          )}
           {levels.map((v, i) => {
             const isCurrentTier = Boolean(session) && currentUserLevel === `L${v.level}`
             return (
