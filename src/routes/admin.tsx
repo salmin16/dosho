@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BadgeCheck,
@@ -59,11 +59,11 @@ import AdminSubscriptionsTab, {
   type AdminBillingSubRow,
 } from '../components/AdminSubscriptionsTab'
 import { fetchAdminBillingData } from '../lib/subscriptions'
+import { useMarketPrices } from '../context/MarketDataContext'
+import { mergeRecordsById } from '../lib/mergeRecords'
 import {
   adminSyncLiveMarketBenchmarks,
   adminUpdateMineralPrice,
-  getStoredMineralPrices,
-  subscribeMineralPrices,
 } from '../data/mineralPrices'
 import type {
   AdminAuditLogRecord,
@@ -253,16 +253,6 @@ export function MasterAdminDashboard({
   const [auditSearch, setAuditSearch] = useState('')
   const [auditActionFilter, setAuditActionFilter] = useState('ALL')
 
-  // Mineral benchmarks panel state
-  const [mineralBenchmarks, setMineralBenchmarks] = useState<MineralPriceRecord[]>(
-    () => getStoredMineralPrices()
-  )
-  const [editingMineral, setEditingMineral] = useState<MineralPriceRecord | null>(null)
-  const [editWorldPrice, setEditWorldPrice] = useState('')
-  const [editLocalPrice, setEditLocalPrice] = useState('')
-  const [editBuyingPrice, setEditBuyingPrice] = useState('')
-  const [editTrendPct, setEditTrendPct] = useState('')
-
   const [busyId, setBusyId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error'
@@ -301,20 +291,31 @@ export function MasterAdminDashboard({
         fetchAdminBillingData(),
       ])
       setAuthorized(Boolean(data?.authorized))
-      setUsers(data?.users ?? [])
-      setVerificationSubmissions(data?.verificationSubmissions ?? [])
-      setServices(data?.servicesList ?? [])
-      setOpportunities(data?.opportunitiesList ?? [])
-      setProjects(data?.projectsList ?? [])
-      setQuotes(data?.quotesList ?? [])
-      setAuditLogs(data?.adminAuditLogs ?? [])
+      setUsers((prev) => mergeRecordsById(prev, data?.users ?? []))
+      setVerificationSubmissions((prev) =>
+        mergeRecordsById(prev, data?.verificationSubmissions ?? []),
+      )
+      setServices((prev) => mergeRecordsById(prev, data?.servicesList ?? []))
+      setOpportunities((prev) => mergeRecordsById(prev, data?.opportunitiesList ?? []))
+      setProjects((prev) => mergeRecordsById(prev, data?.projectsList ?? []))
+      setQuotes((prev) => mergeRecordsById(prev, data?.quotesList ?? []))
+      setAuditLogs((prev) => mergeRecordsById(prev, data?.adminAuditLogs ?? []))
       setDbLatencyMs(data?.dbLatencyMs ?? 0)
-      setComplaints(complaintsRes?.complaints ?? [])
+      setComplaints((prev) => mergeRecordsById(prev, complaintsRes?.complaints ?? []))
       setComplaintsWarning(complaintsRes?.error ?? null)
-      setBillingPlans(billingRes?.plans ?? [])
-      setBillingPayments(billingRes?.payments ?? [])
-      setBillingSubs(billingRes?.subscriptions ?? [])
-      setBillingLedger(billingRes?.accountsLedger ?? [])
+      setBillingPlans((prev) => mergeRecordsById(prev, billingRes?.plans ?? []))
+      setBillingPayments((prev) => mergeRecordsById(prev, billingRes?.payments ?? []))
+      setBillingSubs((prev) => mergeRecordsById(prev, billingRes?.subscriptions ?? []))
+      setBillingLedger((prev) => {
+        const next = billingRes?.accountsLedger ?? []
+        if (
+          prev.length === next.length &&
+          prev.every((row, idx) => JSON.stringify(row) === JSON.stringify(next[idx]))
+        ) {
+          return prev
+        }
+        return next
+      })
       setBillingWarning(billingRes?.error ?? null)
       hasLoadedOnceRef.current = true
       if (data.dbError) {
@@ -361,13 +362,6 @@ export function MasterAdminDashboard({
     loadedUserIdRef.current = currentUserId
     void loadGovernanceTelemetry()
   }, [authLoading, profileLoading, currentUserId, isAdmin, navigate, loadGovernanceTelemetry])
-
-  useEffect(() => {
-    setMineralBenchmarks(getStoredMineralPrices())
-    return subscribeMineralPrices(() => {
-      setMineralBenchmarks(getStoredMineralPrices())
-    })
-  }, [])
 
   const profileMap = useMemo(() => {
     const map = new Map<string, UserProfile>()
@@ -820,35 +814,6 @@ export function MasterAdminDashboard({
     } finally {
       setBusyId(null)
     }
-  }
-
-  const handleSaveMineralEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingMineral) return
-    const res = await adminUpdateMineralPrice({
-      id: editingMineral.id,
-      world_market_price_usd: Number(editWorldPrice),
-      local_market_price_usd: Number(editLocalPrice),
-      buying_centre_price_usd: Number(editBuyingPrice),
-      trend_percentage: Number(editTrendPct) || 0,
-    })
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setMineralBenchmarks(getStoredMineralPrices())
-    setEditingMineral(null)
-    setFeedback({ type: 'success', message: `Updated ${editingMineral.mineral_name} benchmarks.` })
-  }
-
-  const handleSyncMinerals = async () => {
-    const res = await adminSyncLiveMarketBenchmarks()
-    if (res.error) {
-      setFeedback({ type: 'error', message: res.error })
-      return
-    }
-    setMineralBenchmarks(res.records)
-    setFeedback({ type: 'success', message: `Synchronized ${res.records.length} mineral benchmarks.` })
   }
 
   const handleUpdateComplaint = async (
@@ -2386,90 +2351,9 @@ export function MasterAdminDashboard({
           />
         )}
 
-        {/* TAB 8: MINERAL PRICES BENCHMARK GOVERNANCE */}
+        {/* TAB 8: MINERAL PRICES BENCHMARK GOVERNANCE (Isolated via MarketDataContext) */}
         {activeTab === 'minerals' && (
-          <section className="rounded-2xl border border-ink/12 bg-white/85 p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="font-display text-2xl font-semibold">
-                  Indicative Mineral Price Benchmarks (`public.mineral_prices`)
-                </h2>
-                <p className="text-xs text-stone">Manage LBMA/LME &amp; Tume ya Madini statutory pricing tiers.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleSyncMinerals()}
-                className="btn-primary !py-2 !px-4 text-xs"
-              >
-                <RefreshCw size={13} /> Sync Live Market Benchmarks
-              </button>
-            </div>
-
-            {editingMineral && (
-              <form onSubmit={handleSaveMineralEdit} className="grid gap-3 rounded-xl border border-ochre/40 bg-paper p-4 sm:grid-cols-5 sm:items-end">
-                <div className="sm:col-span-5 font-display text-base font-semibold">
-                  Editing {editingMineral.mineral_name} ({editingMineral.symbol})
-                </div>
-                <div>
-                  <label htmlFor="mineral-edit-world" className="label !mb-1 !text-[10px]">
-                    World Spot (USD)
-                  </label>
-                  <input id="mineral-edit-world" type="number" inputMode="decimal" step="any" value={editWorldPrice} onChange={(e) => setEditWorldPrice(e.target.value)} placeholder="e.g. 2650" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
-                </div>
-                <div>
-                  <label htmlFor="mineral-edit-local" className="label !mb-1 !text-[10px]">
-                    Soko la Madini (USD)
-                  </label>
-                  <input id="mineral-edit-local" type="number" inputMode="decimal" step="any" value={editLocalPrice} onChange={(e) => setEditLocalPrice(e.target.value)} placeholder="e.g. 2465" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
-                </div>
-                <div>
-                  <label htmlFor="mineral-edit-buying" className="label !mb-1 !text-[10px]">
-                    Buying Centre (USD)
-                  </label>
-                  <input id="mineral-edit-buying" type="number" inputMode="decimal" step="any" value={editBuyingPrice} onChange={(e) => setEditBuyingPrice(e.target.value)} placeholder="e.g. 2320" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
-                </div>
-                <div>
-                  <label htmlFor="mineral-edit-trend" className="label !mb-1 !text-[10px]">
-                    24h Trend (%)
-                  </label>
-                  <input id="mineral-edit-trend" type="number" inputMode="decimal" step="any" value={editTrendPct} onChange={(e) => setEditTrendPct(e.target.value)} placeholder="e.g. 1.25" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
-                </div>
-                <div className="flex gap-2">
-                  <button type="submit" className="btn-primary !min-h-[44px] sm:!min-h-[36px] !py-1.5 !px-3 text-xs">Save</button>
-                  <button type="button" onClick={() => setEditingMineral(null)} className="min-h-[44px] sm:min-h-[36px] rounded border border-ink/20 px-3 text-xs font-medium">Cancel</button>
-                </div>
-              </form>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {mineralBenchmarks.map((m) => (
-                <div key={m.id} className="rounded-xl border border-ink/12 bg-paper/60 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display font-semibold">{m.mineral_name}</span>
-                    <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{m.symbol}</span>
-                  </div>
-                  <div className="mt-2 space-y-1 font-mono text-xs text-stone">
-                    <div>World: <strong className="text-ink">${m.world_market_price_usd}</strong></div>
-                    <div>Soko la Madini: <strong className="text-ink">${m.local_market_price_usd}</strong></div>
-                    <div>Buying Centre: <strong className="text-ink">${m.buying_centre_price_usd}</strong></div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingMineral(m)
-                      setEditWorldPrice(String(m.world_market_price_usd))
-                      setEditLocalPrice(String(m.local_market_price_usd))
-                      setEditBuyingPrice(String(m.buying_centre_price_usd))
-                      setEditTrendPct(String(m.trend_percentage))
-                    }}
-                    className="mt-3 rounded border border-ink/20 bg-white px-2.5 py-1 text-xs font-semibold text-ochre hover:border-ochre"
-                  >
-                    Edit Rates
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
+          <AdminMineralsTab onFeedback={setFeedback} />
         )}
 
         {/* Quick Icon Legend / Footer */}
@@ -2485,3 +2369,129 @@ export function MasterAdminDashboard({
     </div>
   )
 }
+
+
+const AdminMineralsTab = memo(function AdminMineralsTab({
+  onFeedback,
+}: {
+  onFeedback: (fb: { type: 'success' | 'error'; message: string }) => void
+}) {
+  const mineralBenchmarks = useMarketPrices()
+  const [editingMineral, setEditingMineral] = useState<MineralPriceRecord | null>(null)
+  const [editWorldPrice, setEditWorldPrice] = useState('')
+  const [editLocalPrice, setEditLocalPrice] = useState('')
+  const [editBuyingPrice, setEditBuyingPrice] = useState('')
+  const [editTrendPct, setEditTrendPct] = useState('')
+
+  const handleSaveMineralEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingMineral) return
+    const res = await adminUpdateMineralPrice({
+      id: editingMineral.id,
+      world_market_price_usd: Number(editWorldPrice),
+      local_market_price_usd: Number(editLocalPrice),
+      buying_centre_price_usd: Number(editBuyingPrice),
+      trend_percentage: Number(editTrendPct) || 0,
+    })
+    if (res.error) {
+      onFeedback({ type: 'error', message: res.error })
+      return
+    }
+    setEditingMineral(null)
+    onFeedback({ type: 'success', message: `Updated ${editingMineral.mineral_name} benchmarks.` })
+  }
+
+  const handleSyncMinerals = async () => {
+    const res = await adminSyncLiveMarketBenchmarks()
+    if (res.error) {
+      onFeedback({ type: 'error', message: res.error })
+      return
+    }
+    onFeedback({ type: 'success', message: `Synchronized ${res.records.length} mineral benchmarks.` })
+  }
+
+  return (
+    <section className="space-y-5 rounded-2xl border border-ink/12 bg-white/85 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-semibold">
+            Indicative Mineral Price Benchmarks (`public.mineral_prices`)
+          </h2>
+          <p className="text-xs text-stone">Manage LBMA/LME &amp; Tume ya Madini statutory pricing tiers.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleSyncMinerals()}
+          className="btn-primary !py-2 !px-4 text-xs"
+        >
+          <RefreshCw size={13} /> Sync Live Market Benchmarks
+        </button>
+      </div>
+
+      {editingMineral && (
+        <form onSubmit={handleSaveMineralEdit} className="grid gap-3 rounded-xl border border-ochre/40 bg-paper p-4 sm:grid-cols-5 sm:items-end">
+          <div className="sm:col-span-5 font-display text-base font-semibold">
+            Editing {editingMineral.mineral_name} ({editingMineral.symbol})
+          </div>
+          <div>
+            <label htmlFor="mineral-edit-world" className="label !mb-1 !text-[10px]">
+              World Spot (USD)
+            </label>
+            <input id="mineral-edit-world" type="number" inputMode="decimal" step="any" value={editWorldPrice} onChange={(e) => setEditWorldPrice(e.target.value)} placeholder="e.g. 2650" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+          </div>
+          <div>
+            <label htmlFor="mineral-edit-local" className="label !mb-1 !text-[10px]">
+              Soko la Madini (USD)
+            </label>
+            <input id="mineral-edit-local" type="number" inputMode="decimal" step="any" value={editLocalPrice} onChange={(e) => setEditLocalPrice(e.target.value)} placeholder="e.g. 2465" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+          </div>
+          <div>
+            <label htmlFor="mineral-edit-buying" className="label !mb-1 !text-[10px]">
+              Buying Centre (USD)
+            </label>
+            <input id="mineral-edit-buying" type="number" inputMode="decimal" step="any" value={editBuyingPrice} onChange={(e) => setEditBuyingPrice(e.target.value)} placeholder="e.g. 2320" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+          </div>
+          <div>
+            <label htmlFor="mineral-edit-trend" className="label !mb-1 !text-[10px]">
+              24h Trend (%)
+            </label>
+            <input id="mineral-edit-trend" type="number" inputMode="decimal" step="any" value={editTrendPct} onChange={(e) => setEditTrendPct(e.target.value)} placeholder="e.g. 1.25" className="field !min-h-[44px] sm:!min-h-[36px] !text-base sm:!text-xs tabular-nums" />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" className="btn-primary !min-h-[44px] sm:!min-h-[36px] !py-1.5 !px-3 text-xs">Save</button>
+            <button type="button" onClick={() => setEditingMineral(null)} className="min-h-[44px] sm:!min-h-[36px] rounded border border-ink/20 px-3 text-xs font-medium">Cancel</button>
+          </div>
+        </form>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        {mineralBenchmarks.map((m) => (
+          <div key={m.id} className="rounded-xl border border-ink/12 bg-paper/60 p-4">
+            <div className="flex items-center justify-between">
+              <span className="font-display font-semibold">{m.mineral_name}</span>
+              <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{m.symbol}</span>
+            </div>
+            <div className="mt-2 space-y-1 font-mono text-xs text-stone tabular-nums">
+              <div>World: <strong className="text-ink">${m.world_market_price_usd}</strong></div>
+              <div>Soko la Madini: <strong className="text-ink">${m.local_market_price_usd}</strong></div>
+              <div>Buying Centre: <strong className="text-ink">${m.buying_centre_price_usd}</strong></div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingMineral(m)
+                setEditWorldPrice(String(m.world_market_price_usd))
+                setEditLocalPrice(String(m.local_market_price_usd))
+                setEditBuyingPrice(String(m.buying_centre_price_usd))
+                setEditTrendPct(String(m.trend_percentage))
+              }}
+              className="mt-3 rounded border border-ink/20 bg-white px-2.5 py-1 text-xs font-semibold text-ochre hover:border-ochre"
+            >
+              Edit Rates
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+})

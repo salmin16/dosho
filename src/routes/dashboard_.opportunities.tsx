@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Briefcase,
@@ -24,6 +24,7 @@ import SubscriptionQuotaBar from '../components/SubscriptionQuotaBar'
 import UpgradeRequiredGate from '../components/UpgradeRequiredGate'
 import { GuidedOpportunityWizard } from '../components/GuidedSubmissionWizards'
 import { useSubscription } from '../lib/subscriptions'
+import { mergeRecordsById } from '../lib/mergeRecords'
 import type { UserOpportunityRecord } from '../types/database'
 
 export const Route = createFileRoute('/dashboard_/opportunities')({
@@ -53,9 +54,13 @@ function DashboardOpportunitiesRouteComponent() {
   const [listedProjectsCount, setListedProjectsCount] = useState(0)
   const [monthlyRfqsCount, setMonthlyRfqsCount] = useState(0)
 
+  const currentUserId = session?.user.id ?? null
+  const loadedUserIdRef = useRef<string | null>(null)
+  const hasLoadedOnceRef = useRef(false)
+
   const loadData = useCallback(async () => {
     const data = await fetchGroundedUserData()
-    setOpportunities(data.userOpportunities)
+    setOpportunities((prev) => mergeRecordsById(prev, data.userOpportunities))
     setListedProjectsCount(data.listedProjects.length)
     const now = new Date()
     setMonthlyRfqsCount(
@@ -67,18 +72,25 @@ function DashboardOpportunitiesRouteComponent() {
         )
       }).length,
     )
+    hasLoadedOnceRef.current = true
   }, [])
 
   useEffect(() => {
     if (authLoading) return
-    if (!session) {
+    if (!currentUserId) {
+      loadedUserIdRef.current = null
+      hasLoadedOnceRef.current = false
       navigate({ to: '/login' })
       return
     }
+    if (loadedUserIdRef.current === currentUserId) {
+      return
+    }
+    loadedUserIdRef.current = currentUserId
     void loadData()
-  }, [authLoading, session, navigate, loadData])
+  }, [authLoading, currentUserId, navigate, loadData])
 
-  if (authLoading || !session) {
+  if ((authLoading && !hasLoadedOnceRef.current) || !session) {
     return null
   }
 

@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Briefcase,
@@ -45,6 +45,7 @@ import {
   validateAndCompressVerificationFile,
   type PreparedVerificationFile,
 } from '../lib/verificationUpload'
+import { mergeRecordsById, mergeSingleRecord } from '../lib/mergeRecords'
 import type {
   DocumentClassification,
   QuoteRequestRecord,
@@ -104,17 +105,38 @@ export function DashboardRouteComponent() {
   const [verifSubmitting, setVerifSubmitting] = useState(false)
   const [initialDataLoading, setInitialDataLoading] = useState(true)
 
+  const currentUserId = session?.user.id ?? null
+  const currentUserIdRef = useRef<string | null>(currentUserId)
+  const loadedUserIdRef = useRef<string | null>(null)
+  const hasLoadedOnceRef = useRef(false)
+  const verifFieldsInitializedRef = useRef(false)
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
+
   const loadData = useCallback(async () => {
     try {
       const data = await fetchGroundedUserData()
-      setProfile(data.profile)
-      if (data.profile?.company_name) setVerifCompany(data.profile.company_name)
-      if (data.profile?.phone) setVerifPhone(formatTanzaniaPhoneDisplay(data.profile.phone))
-      setDocuments(data.documents)
-      setListedProjects(data.listedProjects)
-      setQuoteRequests(data.quoteRequests)
-      setUserOpportunities(data.userOpportunities)
-      setUserServices(data.userServices)
+      setProfile((prev) => mergeSingleRecord(prev, data.profile))
+      // Pre-fill company/phone ONCE on initial hydrate so background refreshes never overwrite user drafts
+      if (!verifFieldsInitializedRef.current && data.profile) {
+        verifFieldsInitializedRef.current = true
+        if (data.profile.company_name) {
+          setVerifCompany((prev) => (prev ? prev : data.profile!.company_name!))
+        }
+        if (data.profile.phone) {
+          setVerifPhone((prev) =>
+            prev ? prev : formatTanzaniaPhoneDisplay(data.profile!.phone!),
+          )
+        }
+      }
+      setDocuments((prev) => mergeRecordsById(prev, data.documents))
+      setListedProjects((prev) => mergeRecordsById(prev, data.listedProjects))
+      setQuoteRequests((prev) => mergeRecordsById(prev, data.quoteRequests))
+      setUserOpportunities((prev) => mergeRecordsById(prev, data.userOpportunities))
+      setUserServices((prev) => mergeRecordsById(prev, data.userServices))
+      hasLoadedOnceRef.current = true
     } finally {
       setInitialDataLoading(false)
     }
@@ -122,14 +144,21 @@ export function DashboardRouteComponent() {
 
   useEffect(() => {
     if (authLoading) return
-    if (!session) {
+    if (!currentUserId) {
+      loadedUserIdRef.current = null
+      hasLoadedOnceRef.current = false
+      verifFieldsInitializedRef.current = false
       navigate({ to: '/login' })
       return
     }
+    if (loadedUserIdRef.current === currentUserId) {
+      return
+    }
+    loadedUserIdRef.current = currentUserId
     void loadData()
-  }, [authLoading, session, navigate, loadData])
+  }, [authLoading, currentUserId, navigate, loadData])
 
-  if (authLoading || (session && initialDataLoading && !profile)) {
+  if ((authLoading && !hasLoadedOnceRef.current) || (currentUserId && initialDataLoading && !hasLoadedOnceRef.current && !profile)) {
     return <DashboardWorkspaceSkeleton />
   }
 

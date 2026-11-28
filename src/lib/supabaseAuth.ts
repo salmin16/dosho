@@ -91,6 +91,7 @@ let authLoading = true
 let profileLoading = false
 let authBootstrapped = false
 let authInitPromise: Promise<AuthSession | null> | null = null
+const currentUserIdRef: { current: string | null } = { current: null }
 
 function hasRecoveryIndicatorInUrl(): boolean {
   if (typeof window === 'undefined') return false
@@ -150,12 +151,61 @@ function notifyAuthListeners() {
   }
 }
 
+function isSameSessionPayload(a: AuthSession | null, b: AuthSession | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.user.id === b.user.id &&
+    a.user.email === b.user.email &&
+    a.user.fullName === b.user.fullName &&
+    a.user.role === b.user.role &&
+    a.user.status === b.user.status &&
+    a.user.preferredCurrency === b.user.preferredCurrency
+  )
+}
+
+function isSameProfilePayload(a: UserProfile | null, b: UserProfile | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.full_name === b.full_name &&
+    a.company_name === b.company_name &&
+    a.phone === b.phone &&
+    a.role === b.role &&
+    a.status === b.status &&
+    a.verification_status === b.verification_status &&
+    a.verification_level === b.verification_level &&
+    a.verification_notes === b.verification_notes &&
+    a.preferred_currency === b.preferred_currency
+  )
+}
+
 function setCurrentSession(
   next: AuthSession | null,
   profile: UserProfile | null = next ? currentProfile : null
 ) {
-  currentSession = next
-  currentProfile = profile
+  const prevSession = currentSession
+  const prevProfile = currentProfile
+  currentUserIdRef.current = next?.user.id ?? null
+
+  const sameSession = isSameSessionPayload(prevSession, next)
+  const sameProfile = isSameProfilePayload(prevProfile, profile)
+
+  if (sameSession && sameProfile) {
+    // Same user & identical profile: update access token silently in place without re-rendering UI
+    if (prevSession && next && prevSession.accessToken !== next.accessToken) {
+      prevSession.accessToken = next.accessToken
+    }
+    return
+  }
+
+  currentSession = sameSession && prevSession ? prevSession : next
+  if (currentSession && next && currentSession.accessToken !== next.accessToken) {
+    currentSession.accessToken = next.accessToken
+  }
+  currentProfile = sameProfile && prevProfile ? prevProfile : profile
   notifyAuthListeners()
 }
 
@@ -475,16 +525,22 @@ function bootstrapSupabaseAuth(): Promise<AuthSession | null> {
       }
 
       const sameActiveUser =
+        Boolean(currentUserIdRef.current) &&
+        currentUserIdRef.current === nextSdkSession.user.id &&
         currentSession?.user.id === nextSdkSession.user.id &&
         currentProfile?.id === nextSdkSession.user.id
 
-      // Silent token refresh for the already-hydrated user: keep UI mounted & preserve active tabs/selections
-      if (event === 'TOKEN_REFRESHED' && sameActiveUser && currentSession) {
+      // Ignore TOKEN_REFRESHED and same-user session events (e.g. window focus / tab switch)
+      // for UI navigation & loading flags: update accessToken silently in place without resetting views
+      if (
+        sameActiveUser &&
+        currentSession &&
+        (event === 'TOKEN_REFRESHED' ||
+          event === 'SIGNED_IN' ||
+          event === 'INITIAL_SESSION')
+      ) {
         if (currentSession.accessToken !== nextSdkSession.access_token) {
-          currentSession = {
-            ...currentSession,
-            accessToken: nextSdkSession.access_token,
-          }
+          currentSession.accessToken = nextSdkSession.access_token
         }
         return
       }
@@ -570,7 +626,23 @@ export function useAuthState(): AuthState {
   useEffect(() => {
     void bootstrapSupabaseAuth()
     const sync = () => {
-      setState(buildState())
+      const next = buildState()
+      setState((prev) => {
+        if (
+          prev.session === next.session &&
+          prev.profile === next.profile &&
+          prev.isAdmin === next.isAdmin &&
+          prev.passwordRecovery === next.passwordRecovery &&
+          prev.loading === next.loading &&
+          prev.authLoading === next.authLoading &&
+          prev.profileLoading === next.profileLoading &&
+          prev.profileError === next.profileError &&
+          prev.configured === next.configured
+        ) {
+          return prev
+        }
+        return next
+      })
     }
     sync()
     window.addEventListener(AUTH_EVENT, sync)

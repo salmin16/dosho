@@ -58,10 +58,10 @@ const CURRENCY_COOKIE_NAME = 'mc_currency';
 const CURRENCY_CHANGE_EVENT = 'mineconnect:currency-changed';
 const RATES_UPDATED_EVENT = 'mineconnect:fx-rates-updated';
 
-/** Live freshness window before automatic refresh (15 seconds) */
-const LIVE_FRESH_TTL_MS = 15 * 1000;
-/** Periodic background refresh interval while tab is visible (15 seconds) */
-const AUTO_REFRESH_INTERVAL_MS = 15 * 1000;
+/** Live freshness window before automatic silent refresh (60 seconds) */
+const LIVE_FRESH_TTL_MS = 60 * 1000;
+/** Periodic silent background FX refresh interval while tab is visible (60 seconds) */
+const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
 /** Per-endpoint network timeout (3500ms abort guard on slow mobile networks) */
 const FX_FETCH_TIMEOUT_MS = 3500;
 
@@ -85,6 +85,42 @@ let activeRatesPayload: CachedRatesPayload = {
   rates: { ...FALLBACK_RATES_PER_USD },
 };
 let inFlightFxRefresh: Promise<CachedRatesPayload> | null = null;
+const fxStoreListeners = new Set<() => void>();
+
+function notifyFxStoreListeners(): void {
+  fxStoreListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // Ignore individual subscriber errors
+    }
+  });
+}
+
+export function subscribeFxStore(listener: () => void): () => void {
+  fxStoreListeners.add(listener);
+  return () => {
+    fxStoreListeners.delete(listener);
+  };
+}
+
+export function getFxStoreSnapshot(): CachedRatesPayload {
+  return activeRatesPayload;
+}
+
+function haveFxRatesChanged(
+  prev: Record<SupportedCurrency, number>,
+  next: Record<SupportedCurrency, number>,
+): boolean {
+  const keys = Object.keys(CURRENCIES) as SupportedCurrency[];
+  for (let i = 0; i < keys.length; i++) {
+    const code = keys[i];
+    if (Math.abs((prev[code] ?? 0) - (next[code] ?? 0)) > 1e-6) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function isValidRateNumber(val: unknown): val is number {
   return typeof val === 'number' && Number.isFinite(val) && val > 0;
@@ -553,26 +589,49 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const refreshRates = useCallback(async () => {
-    setIsRefreshingRates(true);
+  const refreshRates = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
+    if (!silent) {
+      setIsRefreshingRates(true);
+    }
     try {
-      const nextPayload = await fetchLiveExchangeRates(activeRatesPayload);
-      activeRatesPayload = nextPayload;
-      setRatesState(nextPayload);
+      const prevPayload = activeRatesPayload;
+      const nextPayload = await fetchLiveExchangeRates(prevPayload);
+      const ratesChanged =
+        haveFxRatesChanged(prevPayload.rates, nextPayload.rates) ||
+        prevPayload.source !== nextPayload.source;
+
+      if (ratesChanged || !silent) {
+        activeRatesPayload = nextPayload;
+        setRatesState(nextPayload);
+        notifyFxStoreListeners();
+      } else {
+        // Rates are identical: update fetchedAt in place without triggering React re-renders
+        activeRatesPayload = {
+          ...prevPayload,
+          fetchedAt: nextPayload.fetchedAt,
+          updatedAt: nextPayload.updatedAt,
+        };
+      }
+
       if (typeof window !== 'undefined') {
         try {
           if (nextPayload.fetchedAt > 0) {
             window.localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(nextPayload));
           }
-          window.dispatchEvent(
-            new CustomEvent(RATES_UPDATED_EVENT, { detail: nextPayload }),
-          );
+          if (ratesChanged || !silent) {
+            window.dispatchEvent(
+              new CustomEvent(RATES_UPDATED_EVENT, { detail: nextPayload }),
+            );
+          }
         } catch {
           // ignore storage quota errors
         }
       }
     } finally {
-      setIsRefreshingRates(false);
+      if (!silent) {
+        setIsRefreshingRates(false);
+      }
     }
   }, []);
 
@@ -584,16 +643,17 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     const cached = readCachedRates();
     activeRatesPayload = cached;
     setRatesState(cached);
+    notifyFxStoreListeners();
 
-    // Always hydrate live FX rates on mount if cache is older than 90s or not live
+    // Hydrate live FX rates silently on mount if cache is older than TTL or not live
     if (cached.source !== 'live' || Date.now() - cached.fetchedAt > LIVE_FRESH_TTL_MS) {
-      void refreshRates();
+      void refreshRates({ silent: true });
     }
 
-    // Periodic live FX refresh every 2 minutes while tab is active
+    // Periodic silent live FX refresh while tab is visible (never resets views or toggles spinners)
     const intervalId = window.setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        void refreshRates();
+        void refreshRates({ silent: true });
       }
     }, AUTO_REFRESH_INTERVAL_MS);
 
@@ -603,20 +663,26 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
         (activeRatesPayload.source !== 'live' ||
           Date.now() - activeRatesPayload.fetchedAt > LIVE_FRESH_TTL_MS)
       ) {
-        void refreshRates();
+        void refreshRates({ silent: true });
       }
     };
 
     const handleOnline = () => {
-      void refreshRates();
+      void refreshRates({ silent: true });
     };
 
     const handleCurrencySync = (e: Event) => {
       if (e instanceof StorageEvent) {
         if (e.key === RATES_CACHE_KEY && e.newValue) {
           const synced = readCachedRates();
-          activeRatesPayload = synced;
-          setRatesState(synced);
+          if (
+            haveFxRatesChanged(activeRatesPayload.rates, synced.rates) ||
+            activeRatesPayload.source !== synced.source
+          ) {
+            activeRatesPayload = synced;
+            setRatesState(synced);
+            notifyFxStoreListeners();
+          }
           return;
         }
       }

@@ -5,11 +5,12 @@ import {
   useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import CookieConsentBanner from '../components/CookieConsentBanner'
-import { LocalizationProvider, useLocalization } from '../context/LocalizationContext'
+import { LocalizationProvider } from '../context/LocalizationContext'
+import { MarketDataProvider } from '../context/MarketDataContext'
 import { useAuthState } from '../lib/supabaseAuth'
 
 import '../styles.css'
@@ -36,10 +37,12 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <LocalizationProvider>
-      <HeadContent />
-      <Chrome>
-        <Outlet />
-      </Chrome>
+      <MarketDataProvider>
+        <HeadContent />
+        <Chrome>
+          <Outlet />
+        </Chrome>
+      </MarketDataProvider>
     </LocalizationProvider>
   )
 }
@@ -47,8 +50,12 @@ function RootComponent() {
 function Chrome({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const { session, passwordRecovery, loading: authLoading } = useAuthState()
-  // Subscribe Chrome & child routes to active currency AND language changes so all formatting and translation calls re-render immediately
-  const { currency, rateForSelected, lang } = useLocalization()
+  const currentUserIdRef = useRef<string | null>(session?.user.id ?? null)
+  const currentUserId = session?.user.id ?? null
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
 
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
@@ -100,9 +107,10 @@ function Chrome({ children }: { children: React.ReactNode }) {
 
   // Strict Mandatory Membership Guard:
   // Wait for Supabase Auth hydration before enforcing redirect so authenticated users never bounce.
+  // Depend on primitive `currentUserId` so background token refreshes for the same user never re-trigger navigation.
   useEffect(() => {
     if (authLoading) return
-    if (!isHome && !isMarketsPage && !isMapPage && !isLegalPage && !isAuthPage && !isAdminPage && !session) {
+    if (!isHome && !isMarketsPage && !isMapPage && !isLegalPage && !isAuthPage && !isAdminPage && !currentUserId) {
       navigate({
         to: '/signup',
         search: {
@@ -116,20 +124,18 @@ function Chrome({ children }: { children: React.ReactNode }) {
         } as unknown as undefined,
       })
     }
-  }, [authLoading, isHome, isMarketsPage, isMapPage, isLegalPage, isAuthPage, isAdminPage, normalizedPath, navigate, session])
+  }, [authLoading, isHome, isMarketsPage, isMapPage, isLegalPage, isAuthPage, isAdminPage, normalizedPath, navigate, currentUserId])
 
+  // NEVER key <Header>, <main>, or <Footer> by currency, FX rate, or language:
+  // React Context & MarketDataProvider update price/currency/label nodes in place
+  // without ever unmounting dashboards, forms, charts, or active tab selections.
   return (
-    <div
-      data-currency={currency}
-      data-fx-rate={rateForSelected}
-      data-lang={lang}
-      className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden"
-    >
-      <Header overlay={isHome} key={isHome ? `home-${currency}-${lang}` : `page-${currency}-${lang}`} />
-      <main key={`${currency}-${rateForSelected}-${lang}`} className="w-full min-w-0 flex-1">
+    <div className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden">
+      <Header overlay={isHome} />
+      <main className="w-full min-w-0 flex-1">
         {children}
       </main>
-      <Footer key={`footer-${currency}-${lang}`} />
+      <Footer />
       <CookieConsentBanner />
     </div>
   )

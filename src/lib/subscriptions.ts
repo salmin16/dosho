@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   recordAuditActivity,
   useAuthSession,
@@ -1505,9 +1505,12 @@ export function useSubscription() {
     () => getUserPaymentTransactions(userId),
   );
   const [loading, setLoading] = useState<boolean>(Boolean(userId));
+  const hasLoadedOnceRef = useRef<boolean>(false);
+  const loadedUserIdRef = useRef<string | null>(null);
 
-  const refreshSubscription = useCallback(async () => {
+  const refreshSubscription = useCallback(async (options?: { silent?: boolean }) => {
     if (!userId) {
+      loadedUserIdRef.current = null;
       const loadedPlans = await fetchSubscriptionPlans();
       setPlans(loadedPlans);
       setSubscription(createDefaultExplorerSubscription(null));
@@ -1515,10 +1518,15 @@ export function useSubscription() {
       setPayments([]);
       setTransactions([]);
       setLoading(false);
+      hasLoadedOnceRef.current = true;
       return;
     }
 
-    setLoading(true);
+    const isInitialForUser =
+      !hasLoadedOnceRef.current || loadedUserIdRef.current !== userId;
+    if (isInitialForUser && !options?.silent) {
+      setLoading(true);
+    }
     try {
       const res = await fetchUserSubscriptionFromSupabase(
         userId,
@@ -1530,16 +1538,22 @@ export function useSubscription() {
       setEntitlements(res.entitlements);
       setPayments(res.payments);
       setTransactions(res.transactions);
+      loadedUserIdRef.current = userId;
+      hasLoadedOnceRef.current = true;
     } finally {
       setLoading(false);
     }
   }, [userId, userEmail, isAdmin]);
 
   useEffect(() => {
-    void refreshSubscription();
+    if (userId && loadedUserIdRef.current === userId && hasLoadedOnceRef.current) {
+      // Same signed-in user already loaded: keep listener active without resetting UI
+    } else {
+      void refreshSubscription();
+    }
 
     const handleSync = () => {
-      void refreshSubscription();
+      void refreshSubscription({ silent: true });
     };
 
     window.addEventListener(SUBSCRIPTION_UPDATED_EVENT, handleSync);
