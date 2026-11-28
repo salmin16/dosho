@@ -8,12 +8,7 @@ import {
   SlidersHorizontal,
   X,
   SearchX,
-  FileSpreadsheet,
-  Wrench,
-  HardHat,
-  BarChart3,
   CheckCircle2,
-  ArrowUpRight,
   Star,
   FileCheck2,
   Unlock,
@@ -27,11 +22,11 @@ import {
   STAGES,
   VERIFICATION_LEVELS,
   formatUsd,
+  type OpportunityType,
   type Project,
 } from '../data/fixtures'
 import { useSavedProjects } from '../lib/saved'
 import { fetchApprovedPublicOpportunities } from '../lib/supabaseAuth'
-import { convertInlineUsdText } from '../lib/currency'
 import { useI18n } from '../i18n'
 import ProjectCard from '../components/ProjectCard'
 import { ProjectListingSkeletonGrid } from '../components/Skeletons'
@@ -61,6 +56,47 @@ type Search = {
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+
+interface StreamFilterPill {
+  id: string
+  label: string
+  type?: OpportunityType
+  liveCategories?: readonly string[]
+}
+
+const STREAM_FILTER_PILLS: readonly StreamFilterPill[] = [
+  { id: 'all', label: 'All' },
+  {
+    id: 'tenders',
+    label: 'Tenders & Procurement',
+    type: 'Tenders opportunity in mine sites',
+    liveCategories: ['Tender'],
+  },
+  {
+    id: 'services',
+    label: 'Service Contracts',
+    type: 'Service provision opportunities',
+    liveCategories: ['Consultancy', 'Offtake / Supply'],
+  },
+  {
+    id: 'personnel',
+    label: 'Technical Personnel',
+    type: 'Technical personnel (Engineers & Technicians)',
+    liveCategories: ['Internship'],
+  },
+  {
+    id: 'jv',
+    label: 'Joint Ventures',
+    type: 'Joint venture',
+    liveCategories: ['Joint Venture'],
+  },
+  {
+    id: 'exploration',
+    label: 'Exploration',
+    type: 'Exploration opportunity',
+    liveCategories: ['Exploration Grant'],
+  },
+]
 
 export const Route = createFileRoute('/opportunities')({
   validateSearch: (s: Record<string, unknown>): Search => ({
@@ -168,6 +204,57 @@ function Opportunities() {
     () => applyFilters(PROJECTS, search, saved, localizeProject, tv),
     [search, saved, localizeProject, tv],
   )
+
+  const filteredLiveOpportunities = useMemo(() => {
+    const q = search.q?.toLowerCase().trim()
+    const activePill = STREAM_FILTER_PILLS.find((p) => p.type && p.type === search.type)
+    return liveOpportunities.filter((opp) => {
+      if (activePill?.liveCategories) {
+        const catLower = (opp.category || '').toLowerCase()
+        const matched = activePill.liveCategories.some((c) =>
+          catLower.includes(c.toLowerCase()),
+        )
+        if (!matched) return false
+      } else if (search.type) {
+        return false
+      }
+      if (q) {
+        const hay = `${opp.title} ${opp.organization} ${opp.category} ${opp.location} ${opp.description}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      if (search.region && !opp.location.toLowerCase().includes(search.region.toLowerCase())) {
+        return false
+      }
+      return true
+    })
+  }, [liveOpportunities, search.q, search.type, search.region])
+
+  const filteredLiveProjects = useMemo(() => {
+    const q = search.q?.toLowerCase().trim()
+    return liveProjects.filter((proj) => {
+      if (
+        search.type &&
+        search.type !== 'Joint venture' &&
+        search.type !== 'Exploration opportunity' &&
+        search.type !== 'Licence / rights opportunity' &&
+        search.type !== 'Existing mine seeking investment'
+      ) {
+        return false
+      }
+      if (search.mineral && proj.mineral.toLowerCase() !== search.mineral.toLowerCase()) {
+        return false
+      }
+      if (search.region && !proj.region.toLowerCase().includes(search.region.toLowerCase())) {
+        return false
+      }
+      if (q) {
+        const hay = `${proj.title} ${proj.mineral} ${proj.region} ${proj.licence_type} ${proj.licence_reference} ${proj.summary}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [liveProjects, search.q, search.type, search.mineral, search.region])
+
   const view = search.view ?? 'grid'
 
   const set = (patch: Partial<Search>) => navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
@@ -193,7 +280,7 @@ function Opportunities() {
   return (
     <div className="pt-[72px]">
       <section className="border-b border-ink/10 bg-paper-2">
-        <div className="mx-auto w-full max-w-[1920px] px-4 pb-10 pt-14 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto w-full max-w-[1920px] px-4 pb-7 pt-12 sm:px-6 lg:px-8 xl:px-10">
           <p className="eyebrow mb-3 text-ochre">{t('opp.eyebrow')}</p>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <h1 className="font-display text-5xl font-light leading-none md:text-6xl">{t('opp.title')}</h1>
@@ -215,20 +302,64 @@ function Opportunities() {
               </div>
             </div>
           </div>
+
+          {/* Compact High-Contrast Stream / Category Filter Pills */}
+          <div
+            role="group"
+            aria-label="Filter by opportunity stream"
+            className="mt-6 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
+          >
+            {STREAM_FILTER_PILLS.map((pill) => {
+              const isSelected = pill.type ? search.type === pill.type : !search.type
+              const count = pill.type
+                ? PROJECTS.filter((p) => p.type === pill.type).length
+                : PROJECTS.length
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() =>
+                    set({
+                      type: !pill.type
+                        ? undefined
+                        : search.type === pill.type
+                          ? undefined
+                          : pill.type,
+                    })
+                  }
+                  className={`inline-flex min-h-[38px] shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                    isSelected
+                      ? 'border-ink bg-ink text-paper shadow-2xs'
+                      : 'border-ink/15 bg-white text-ink hover:border-ochre hover:text-ochre'
+                  }`}
+                >
+                  <span>{pill.label}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums ${
+                      isSelected
+                        ? 'bg-paper/15 text-gold'
+                        : 'bg-paper-2 text-stone'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </section>
 
-      <OpportunityStreamsHub activeType={search.type} onSelectType={(type) => set({ type: search.type === type ? undefined : type })} />
-
       {loadingLiveFeed ? (
-        <section className="mx-auto w-full max-w-[1920px] px-4 pt-10 sm:px-6 lg:px-8 xl:px-10">
+        <section className="mx-auto w-full max-w-[1920px] px-4 pt-8 sm:px-6 lg:px-8 xl:px-10">
           <div className="rounded-2xl border border-ink/10 bg-[#FCFBF8] p-6 shadow-xs">
             <div className="mb-4 h-6 w-64 animate-pulse rounded bg-ink/10" />
             <ProjectListingSkeletonGrid count={3} />
           </div>
         </section>
-      ) : (liveOpportunities.length > 0 || liveProjects.length > 0) && (
-        <section className="mx-auto w-full max-w-[1920px] px-4 pt-10 sm:px-6 lg:px-8 xl:px-10">
+      ) : (filteredLiveOpportunities.length > 0 || filteredLiveProjects.length > 0) && (
+        <section className="mx-auto w-full max-w-[1920px] px-4 pt-8 sm:px-6 lg:px-8 xl:px-10">
           <div className="rounded-2xl border border-moss/30 bg-[#FCFBF8] p-6 shadow-xs">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -236,12 +367,12 @@ function Opportunities() {
                   <CheckCircle2 size={13} /> Live Verified Marketplace
                 </span>
                 <h2 className="mt-0.5 font-display text-2xl font-semibold text-ink">
-                  Verified Member Opportunities &amp; Projects ({liveOpportunities.length + liveProjects.length})
+                  Verified Member Opportunities &amp; Projects ({filteredLiveOpportunities.length + filteredLiveProjects.length})
                 </h2>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {liveOpportunities.map((opp) => (
+              {filteredLiveOpportunities.map((opp) => (
                 <article key={`opp-${opp.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <span className="rounded bg-ink px-2 py-0.5 font-mono text-[10px] text-gold">{opp.category}</span>
@@ -270,7 +401,7 @@ function Opportunities() {
                   </div>
                 </article>
               ))}
-              {liveProjects.map((proj) => (
+              {filteredLiveProjects.map((proj) => (
                 <article key={`proj-${proj.id}`} className="flex flex-col rounded-xl border border-ink/12 bg-paper/60 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <span className="rounded bg-moss px-2 py-0.5 font-mono text-[10px] text-paper">VERIFIED PROJECT</span>
@@ -450,243 +581,6 @@ function Opportunities() {
         </div>
       )}
     </div>
-  )
-}
-
-function OpportunityStreamsHub({
-  activeType,
-  onSelectType,
-}: {
-  activeType?: string
-  onSelectType: (type: string) => void
-}) {
-  const { t, tv, fixtures } = useI18n()
-  const [showMatrix, setShowMatrix] = useState(false)
-
-  const streamIcons = {
-    tenders: FileSpreadsheet,
-    services: Wrench,
-    personnel: HardHat,
-  } as const
-
-  return (
-    <section className="border-b border-ink/10 bg-gradient-to-b from-paper-2/70 to-paper px-4 py-12 sm:px-6 lg:px-8 xl:px-10">
-      <div className="mx-auto w-full max-w-[1920px]">
-        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-          <div className="max-w-3xl">
-            <p className="eyebrow mb-2.5 text-ochre">{t('opp.streams.eyebrow')}</p>
-            <h2 className="font-display text-3xl font-light leading-tight md:text-4xl">
-              {t('opp.streams.titlePre')}
-              <em className="italic text-ochre">{t('opp.streams.titleEm')}</em>
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-stone md:text-base">{t('opp.streams.subtitle')}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowMatrix((v) => !v)}
-            className="btn-ghost shrink-0 self-start lg:self-auto"
-            aria-expanded={showMatrix}
-          >
-            <BarChart3 size={16} className="text-ochre" />
-            {showMatrix ? t('opp.streams.matrixToggleClose') : t('opp.streams.matrixToggleOpen')}
-          </button>
-        </div>
-
-        <div className="mt-8 grid gap-6 lg:grid-cols-3">
-          {fixtures.opportunityStreams.map((stream) => {
-            const Icon = streamIcons[stream.id]
-            const isSelected = activeType === stream.type
-            const matchingProjects = PROJECTS.filter((p) => p.type === stream.type)
-            const totalPipelineUsd = matchingProjects.reduce((sum, p) => sum + p.investmentUsd, 0)
-
-            return (
-              <article
-                key={stream.id}
-                className={`group relative flex min-w-0 max-w-full flex-col justify-between overflow-hidden rounded-xl border p-4 transition duration-200 sm:p-6 ${
-                  isSelected
-                    ? 'border-ochre bg-white shadow-sm ring-1 ring-ochre/30'
-                    : 'border-ink/12 bg-white shadow-xs hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-md'
-                }`}
-              >
-                <div className="min-w-0">
-                  {/* Top bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-full bg-ink px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold">
-                      <span className="shrink-0">{stream.code}</span>
-                      <span className="text-paper/40" aria-hidden="true">·</span>
-                      <span className="break-words">{stream.badge}</span>
-                    </span>
-                    <span className="max-w-full rounded-full border border-moss/25 bg-moss-light px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wider text-moss">
-                      {stream.complianceTag}
-                    </span>
-                  </div>
-
-                  {/* Title & Summary */}
-                  <div className="mt-5 flex min-w-0 items-start gap-3 sm:gap-3.5">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-ochre/20 bg-ochre/10 text-ochre sm:h-12 sm:w-12">
-                      <Icon size={20} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-display break-words text-xl font-medium leading-snug text-ink sm:text-2xl">{stream.title}</h3>
-                      <p className="mt-1 break-words font-mono text-[11px] text-stone">{stream.contractModel}</p>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-sm leading-relaxed text-stone">{stream.summary}</p>
-
-                  {/* Analytical KPI strip — responsive 2-col on mobile so Typical Scope Value never clips */}
-                  <dl className="mt-5 grid grid-cols-2 gap-x-2 gap-y-2.5 rounded-xl border border-ink/10 bg-paper-2/70 p-3 text-center sm:grid-cols-3 sm:gap-y-0">
-                    <div className="min-w-0">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.activeListings')}</dt>
-                      <dd className="font-display mt-0.5 text-xl font-medium text-ink tabular-nums sm:text-2xl">{matchingProjects.length}</dd>
-                    </div>
-                    <div className="min-w-0 border-l border-ink/10 pl-2 sm:border-x sm:px-2">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.pipelineValue')}</dt>
-                      <dd className="font-display mt-0.5 truncate text-xl font-medium text-ochre tabular-nums sm:text-2xl">{formatUsd(totalPipelineUsd)}</dd>
-                    </div>
-                    <div className="col-span-2 min-w-0 border-t border-ink/10 pt-2.5 sm:col-span-1 sm:border-t-0 sm:pt-0 sm:pl-1">
-                      <dt className="font-mono text-[9.5px] uppercase tracking-wider text-stone sm:text-[10px]">{t('opp.streams.typicalTicket')}</dt>
-                      <dd className="mt-1 break-words font-mono text-[11px] font-semibold leading-snug text-ink tabular-nums">{convertInlineUsdText(stream.typicalValue)}</dd>
-                    </div>
-                  </dl>
-
-                  {/* Visual Demand Breakdown Bars */}
-                  <div className="mt-5 min-w-0">
-                    <div className="mb-2.5 flex items-center justify-between">
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                        {t('opp.streams.demandBreakdown')}
-                      </span>
-                    </div>
-                    <ul className="space-y-2.5">
-                      {stream.subCategories.map((sub) => (
-                        <li key={sub.name} className="min-w-0 text-xs">
-                          <div className="flex min-w-0 items-center justify-between gap-2">
-                            <span className="min-w-0 flex-1 truncate font-medium text-ink/90">{sub.name}</span>
-                            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums">
-                              <span
-                                className={`rounded px-1.5 py-0.5 ${
-                                  sub.demand === 'High'
-                                    ? 'bg-ochre/15 text-ochre font-semibold'
-                                    : sub.demand === 'Active'
-                                      ? 'bg-moss-light text-moss'
-                                      : 'bg-paper-2 text-stone'
-                                }`}
-                              >
-                                {tv(sub.demand)}
-                              </span>
-                              <span className="w-7 text-right text-stone">{sub.share}%</span>
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink/10">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-ochre to-gold transition-all duration-500"
-                              style={{ width: `${Math.min(100, sub.share * 2.2)}%` }}
-                            />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Requirements & Target Audience */}
-                  <div className="mt-5 border-t border-ink/10 pt-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-stone">
-                      {t('opp.streams.keyRequirements')}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {stream.requirements.map((req) => (
-                        <span
-                          key={req}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-sand bg-paper/60 px-2 py-1 text-[11px] text-ink/85"
-                        >
-                          <CheckCircle2 size={11} className="shrink-0 text-moss" />
-                          <span className="break-words">{req}</span>
-                        </span>
-                      ))}
-                    </div>
-                    <p className="mt-3 break-words text-xs text-stone">
-                      <strong className="font-semibold text-ink">{t('opp.streams.targetAudience')}:</strong> {stream.targetAudience}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Action button */}
-                <button
-                  type="button"
-                  onClick={() => onSelectType(stream.type)}
-                  aria-pressed={isSelected}
-                  className={`mt-6 flex w-full max-w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
-                    isSelected
-                      ? 'bg-ochre text-paper shadow-sm'
-                      : 'bg-ink text-paper hover:bg-ink-2'
-                  }`}
-                >
-                  <span className="min-w-0 flex-1 truncate sm:whitespace-normal">{isSelected ? t('opp.streams.showingStream') : t('opp.streams.filterStream')}</span>
-                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums opacity-90">
-                    {matchingProjects.length} <ArrowUpRight size={15} />
-                  </span>
-                </button>
-              </article>
-            )
-          })}
-        </div>
-
-        {/* Comparative Analysis Matrix Table */}
-        {showMatrix && (
-          <div className="mt-8 overflow-hidden rounded-2xl border border-ink/15 bg-white shadow-lg animate-rise">
-            <div className="border-b border-ink/10 bg-ink px-6 py-4 text-paper">
-              <h3 className="font-display text-xl font-light text-gold">{t('opp.streams.matrixTitle')}</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-ink/10 bg-paper-2 font-mono text-[10px] uppercase tracking-wider text-stone">
-                    <th className="px-5 py-3.5">{t('opp.streams.colStream')}</th>
-                    <th className="px-5 py-3.5">{t('opp.streams.colAudience')}</th>
-                    <th className="px-5 py-3.5">{t('opp.streams.colModel')}</th>
-                    <th className="px-5 py-3.5">{t('opp.streams.colRange')}</th>
-                    <th className="px-5 py-3.5">{t('opp.streams.colCompliance')}</th>
-                    <th className="px-5 py-3.5 text-right">{t('opp.streams.colAction')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink/10">
-                  {fixtures.opportunityStreams.map((s) => {
-                    const isSelected = activeType === s.type
-                    return (
-                      <tr key={s.id} className={isSelected ? 'bg-ochre/[0.06]' : 'hover:bg-paper/50'}>
-                        <td className="px-5 py-4">
-                          <div className="font-mono text-[10px] text-ochre">{s.code}</div>
-                          <div className="font-display text-lg font-medium text-ink">{s.title}</div>
-                        </td>
-                        <td className="max-w-xs px-5 py-4 text-xs leading-relaxed text-stone">{s.targetAudience}</td>
-                        <td className="px-5 py-4 font-mono text-xs text-ink">{s.contractModel}</td>
-                        <td className="px-5 py-4 font-mono text-xs font-semibold text-ochre">{s.typicalValue}</td>
-                        <td className="px-5 py-4">
-                          <span className="inline-flex rounded-full bg-moss-light px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-moss">
-                            {s.complianceTag}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onSelectType(s.type)}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                              isSelected ? 'bg-ochre text-paper' : 'border border-ink/20 bg-white hover:border-ink'
-                            }`}
-                          >
-                            {isSelected ? t('opp.streams.showingStream') : t('opp.streams.filterStream')}
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
   )
 }
 
