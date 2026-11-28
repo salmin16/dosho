@@ -401,7 +401,7 @@ export function GuidedOpportunityWizard({
   onSubmitted?: (record: UserOpportunityRecord) => void;
 }) {
   const session = useAuthSession();
-  const { currency, formatExactUsd, rateForSelected } = useCurrency();
+  const { currency, rateForSelected } = useCurrency();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -427,9 +427,7 @@ export function GuidedOpportunityWizard({
   const [valueCurrency, setValueCurrency] = useState<'USD' | 'TZS'>('USD');
   const [indicativeValue, setIndicativeValue] = useState<string>('125000');
   const [deadline, setDeadline] = useState<string>('2026-12-31');
-  const [requirementsText, setRequirementsText] = useState<string>(
-    'Valid Tanzania Mining Commission Local Content Certificate\nTIN & Tax Clearance Certificate\nProven technical and HSE track record',
-  );
+  const [requirementsText, setRequirementsText] = useState<string>('');
 
   // Step 3: Structured Attachments & Compliance Checklist
   const [slotFiles, setSlotFiles] = useState<Record<string, PreparedVerificationFile>>({});
@@ -472,7 +470,13 @@ export function GuidedOpportunityWizard({
           setValueCurrency(d.valueCurrency);
         if (d.indicativeValue !== undefined) setIndicativeValue(String(d.indicativeValue));
         if (d.deadline) setDeadline(d.deadline);
-        if (d.requirementsText) setRequirementsText(d.requirementsText);
+        if (
+          typeof d.requirementsText === 'string' &&
+          d.requirementsText.trim() !==
+            'Valid Tanzania Mining Commission Local Content Certificate\nTIN & Tax Clearance Certificate\nProven technical and HSE track record'
+        ) {
+          setRequirementsText(d.requirementsText);
+        }
       }
     } catch {
       // ignore malformed draft
@@ -1145,11 +1149,6 @@ export function GuidedOpportunityWizard({
                     className="min-h-[44px] w-full rounded-lg border border-paper/20 bg-ink-2 px-3.5 py-2.5 font-mono text-base text-paper tabular-nums placeholder-paper/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
                   />
                 </div>
-                <p className="mt-1 font-mono text-[10.5px] text-paper/55 tabular-nums">
-                  {numericIndicativeValue > 0
-                    ? `Approx. ${formatExactUsd(normalizedCompensationUsd)} in active display currency (${currency})`
-                    : 'Leave 0 for Negotiable / Per Tender Schedule'}
-                </p>
               </div>
 
               <div className="field-group">
